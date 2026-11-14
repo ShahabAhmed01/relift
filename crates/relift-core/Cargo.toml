@@ -1,0 +1,21 @@
+[package]
+name = "relift-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Recovery engine for Relift: read-only sources, filesystem metadata recovery, validating carving"
+
+[dependencies]
+crc32fast.workspace = true
+flate2.workspace = true
+memchr.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+relift-testkit = { path = "../relift-testkit" }

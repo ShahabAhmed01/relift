@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  # Prepend the Rust toolchain bin directory so `cargo`/`rustc` resolve.
+  CARGO_NET_OFFLINE: "false"
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        rust: [ stable ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Show toolchain versions
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy (warnings allowed; deny is too strict for pre-1.0)
+        run: cargo clippy --workspace --all-targets
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Build release
+        run: cargo build --release --workspace
+
+  release-signing:
+    name: Release signing status
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Honest unsigned release notice
+        run: |
+          echo "Relift releases are honest/unsigned unless signing credentials are provided."
+          echo "No signing certificates or notarization credentials are configured in this repository."
