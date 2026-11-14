@@ -1,0 +1,36 @@
+[package]
+name = "relift-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Relift GUI: Tauri 2 + Svelte 5 frontend for the Relift recovery engine"
+
+[lib]
+path = "src-tauri/src/lib.rs"
+
+[[bin]]
+name = "relift-gui"
+path = "src-tauri/src/main.rs"
+
+[dependencies]
+tauri = { version = "2", features = ["default"] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+relift-core = { path = "../relift-core" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+anyhow = { workspace = true }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

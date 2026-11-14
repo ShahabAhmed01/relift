@@ -1,0 +1,40 @@
+{
+  "version": "0.1.0",
+  "description": "Free, open-source data recovery for Windows, macOS, and Linux. Recovers deleted files from HDDs, SSDs, USB drives, SD cards, and disk images.",
+  "homepage": "https://github.com/ShahabAhmed01/relift",
+  "license": "GPL-3.0-or-later",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-x86_64-pc-windows-gnu.zip",
+      "hash": "PLACEHOLDER_SHA256",
+      "extract_dir": "relift-x86_64-pc-windows-gnu"
+    },
+    "32bit": {
+      "url": "https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-i686-pc-windows-gnu.zip",
+      "hash": "PLACEHOLDER_SHA256",
+      "extract_dir": "relift-i686-pc-windows-gnu"
+    },
+    "arm64": {
+      "url": "https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-aarch64-pc-windows-gnu.zip",
+      "hash": "PLACEHOLDER_SHA256",
+      "extract_dir": "relift-aarch64-pc-windows-gnu"
+    }
+  },
+  "bin": "relift.exe",
+  "checkver": {
+    "github": "https://github.com/ShahabAhmed01/relift"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/ShahabAhmed01/relift/releases/download/v$version/relift-x86_64-pc-windows-gnu.zip"
+      },
+      "32bit": {
+        "url": "https://github.com/ShahabAhmed01/relift/releases/download/v$version/relift-i686-pc-windows-gnu.zip"
+      },
+      "arm64": {
+        "url": "https://github.com/ShahabAhmed01/relift/releases/download/v$version/relift-aarch64-pc-windows-gnu.zip"
+      }
+    }
+  }
+}

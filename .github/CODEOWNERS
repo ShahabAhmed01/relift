@@ -1,0 +1,32 @@
+# CODEOWNERS for Relift
+# These users/teams will be automatically requested for review on PRs touching these paths.
+
+# Global owners
+* @ShahabAhmed01
+
+# Core engine
+/crates/relift-core/ @ShahabAhmed01
+
+# CLI
+/crates/relift-cli/ @ShahabAhmed01
+
+# GUI
+/crates/relift-gui/ @ShahabAhmed01
+
+# Test fixtures
+/crates/relift-testkit/ @ShahabAhmed01
+
+# Benchmarks
+/crates/relift-bench/ @ShahabAhmed01
+
+# Documentation
+/docs/ @ShahabAhmed01
+
+# CI/CD
+/.github/workflows/ @ShahabAhmed01
+
+# Packaging
+/packaging/ @ShahabAhmed01
+
+# Security
+/SECURITY.md @ShahabAhmed01

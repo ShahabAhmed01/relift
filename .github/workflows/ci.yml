@@ -7,18 +7,110 @@ on:
     branches: [ main ]
 
 env:
-  # Prepend the Rust toolchain bin directory so `cargo`/`rustc` resolve.
   CARGO_NET_OFFLINE: "false"
+  RUST_BACKTRACE: 1
 
 jobs:
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.os }}, ${{ matrix.rust }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
-        rust: [ stable ]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        rust: [ stable, "1.82" ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - name: Show toolchain versions
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.rust }}
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace --all-targets
+
+      - name: Build release
+        run: cargo build --release --workspace
+
+      - name: Build bench (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo bench --no-run -p relift-bench
+
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks
+        run: cargo bench -p relift-bench -- --output-format=json > bench_results.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: bench_results.json
+          retention-days: 30
+
+  fuzz:
+    name: Fuzzing
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Run fuzzing (5 min per target)
+        run: |
+          cd crates/relift-core
+          for target in $(cargo fuzz list); do
+            echo "Fuzzing $target..."
+            timeout 300 cargo fuzz run $target -- -max_total_time=300 || true
+          done
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,29 +120,65 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Show toolchain versions
+      - name: Build docs
+        run: cargo doc --workspace --no-deps --document-private-items
+
+      - name: Check for broken links
         run: |
-          rustc --version
-          cargo --version
+          cargo install cargo-deadlinks
+          cargo deadlinks --workspace
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+  deny:
+    name: Dependency check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Run clippy (warnings allowed; deny is too strict for pre-1.0)
-        run: cargo clippy --workspace --all-targets
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
-      - name: Run tests
-        run: cargo test --workspace
+      - name: Check licenses and advisories
+        run: |
+          cargo install cargo-deny
+          cargo deny check
 
-      - name: Build release
-        run: cargo build --release --workspace
-
-  release-signing:
-    name: Release signing status
+  release:
+    name: Release
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     steps:
-      - name: Honest unsigned release notice
-        run: |
-          echo "Relift releases are honest/unsigned unless signing credentials are provided."
-          echo "No signing certificates or notarization credentials are configured in this repository."
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-dist
+        run: cargo install cargo-dist
+
+      - name: Build release artifacts
+        run: cargo dist build --artifacts=global
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: target/artifacts/**
+          retention-days: 7
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target/artifacts/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

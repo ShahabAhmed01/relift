@@ -1,0 +1,40 @@
+# Relift — Free Open-Source Data Recovery Tool
+
+## Summary
+Relift recovers deleted files from HDDs, SSDs, USB drives, SD cards, and disk images. It uses filesystem metadata (NTFS $MFT, FAT directories, ext4 inodes, APFS B-trees) to restore original names and paths, and falls back to validating signature carving for formatted or corrupted volumes. Strictly read-only on source, recovery only to a different physical volume.
+
+## Install
+- Windows: `winget install relift.vestige` or `scoop install relift`
+- macOS: `brew install relift`
+- Linux: `curl -sSL https://relift.rs/install.sh | sh` or `cargo install relift-cli`
+- Docker: `docker run --privileged ghcr.io/shahabahmed01/relift scan /dev/sdX --session /data/session`
+
+## Key capabilities
+- Filesystem metadata undelete: NTFS, FAT12/16/32, exFAT, ext2/3/4, APFS, HFS+, Btrfs, XFS
+- Validating file carving: 25+ formats (JPEG, PNG, PDF, ZIP/DOCX/XLSX/PPTX, MP4, MP3, SQLite, etc.)
+- Disk imaging (ddrescue-style with mapfile)
+- Session-based workflow with pause/resume
+- SHA-256 verification of every recovered file
+- Read-only guarantee (enforced at type level)
+- CLI with JSON output, stable exit codes, shell completions
+- GUI (Tauri 2 + Svelte 5): 3-screen flow, live results, preview, safe destination picker
+- Cross-platform: Windows, macOS, Linux (x64 + ARM64)
+
+## Limitations
+- SSD with TRIM: content usually unrecoverable (controller erases blocks)
+- Full format / secure erase / overwrite: data gone
+- Encryption without key: impossible
+- RAID 5/6 reconstruction: not yet implemented
+- ext4 metadata undelete limited (extent tree zeroed on delete)
+
+## Links
+- Repository: https://github.com/ShahabAhmed01/relift
+- Documentation: https://relift.rs
+- Releases: https://github.com/ShahabAhmed01/relift/releases
+- CLI reference: https://relift.rs/cli
+- GUI guide: https://relift.rs/gui
+- Filesystems: https://relift.rs/filesystems
+- Formats: https://relift.rs/formats
+- Benchmarks: https://relift.rs/benchmarks
+- Comparison: https://relift.rs/comparison
+- FAQ: https://relift.rs/faq

@@ -5,10 +5,14 @@
 //! is covered by fixtures. Everything else is identified but reported as
 //! unsupported for metadata recovery; raw carving may still find content.
 
+pub mod apfs;
+pub mod btrfs;
 pub mod exfat;
 pub mod ext;
 pub mod fat;
+pub mod hfs;
 pub mod ntfs;
+pub mod xfs;
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -265,6 +269,10 @@ pub fn scan_metadata(
     match info.kind {
         FsKind::Ntfs => ntfs::scan(src, volume, options, sink),
         FsKind::ExFat => exfat::scan(src, volume, options, sink),
+        FsKind::Apfs => apfs::scan(src, volume, options, sink),
+        FsKind::HfsPlus => hfs::scan(src, volume, options, sink),
+        FsKind::Btrfs => btrfs::scan(src, volume, options, sink),
+        FsKind::Xfs => xfs::scan(src, volume, options, sink),
         k if k.is_fat() => fat::scan(src, volume, options, sink),
         k if k.is_ext() => ext::scan(src, volume, options, sink),
         other => Ok(FsSummary {

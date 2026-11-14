@@ -1,0 +1,30 @@
+# Maintainer: Shahab Ahmed <shahab@example.com>
+pkgname=relift
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Free, open-source data recovery for Windows, macOS, and Linux"
+arch=('x86_64' 'aarch64')
+url="https://github.com/ShahabAhmed01/relift"
+license=('GPL-3.0-or-later')
+depends=('gcc-libs' 'glibc')
+makedepends=('rust' 'cargo')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/ShahabAhmed01/relift/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('PLACEHOLDER_SHA256')
+
+build() {
+  cd "${pkgname}-${pkgver}"
+  cargo build --release --workspace -p relift-cli --locked
+}
+
+check() {
+  cd "${pkgname}-${pkgver}"
+  cargo test --workspace --locked
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+  install -Dm755 "target/release/relift" "${pkgdir}/usr/bin/relift"
+  install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 "README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 "docs/CLI.md" "${pkgdir}/usr/share/doc/${pkgname}/CLI.md"
+}

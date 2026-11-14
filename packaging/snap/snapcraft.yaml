@@ -1,0 +1,55 @@
+name: relift
+version: '0.1.0'
+summary: Free, open-source data recovery for Windows, macOS, and Linux
+description: |
+  Relift recovers deleted files from HDDs, SSDs, USB drives, SD cards, and disk images.
+  It uses filesystem metadata (NTFS $MFT, FAT directories, ext4 inodes, APFS B-trees)
+  to restore original names and paths, and falls back to validating signature carving
+  for formatted or corrupted volumes.
+  
+  Features:
+  - Read-only guarantee on source devices
+  - Filesystem metadata undelete (NTFS, FAT, exFAT, ext4, APFS, HFS+, Btrfs, XFS)
+  - Validating file carving (25+ formats)
+  - Disk imaging (ddrescue-style)
+  - Session-based workflow with pause/resume
+  - SHA-256 verification
+  - CLI + GUI + TUI
+  
+  Free, open-source (GPL-3.0-or-later), no telemetry, no upsells.
+
+grade: stable
+confinement: classic
+base: core22
+
+apps:
+  relift:
+    command: bin/relift
+    plugs:
+      - block-devices
+      - removable-media
+      - home
+      - removable-media
+
+parts:
+  relift:
+    plugin: rust
+    source: .
+    source-type: git
+    source-tag: v0.1.0
+    source-depth: 1
+    cargo-features: []
+    build-packages:
+      - pkg-config
+      - libssl-dev
+    build-environment:
+      - CARGO_HOME: $SNAPCRAFT_PART_BUILD/cargo_home
+      - RUSTUP_HOME: $SNAPCRAFT_PART_BUILD/rustup_home
+    override-build: |
+      cargo build --release --workspace -p relift-cli --locked
+      install -Dm755 target/release/relift $SNAPCRAFT_PART_INSTALL/bin/relift
+
+layout:
+  /usr/bin/relift: bin/relift
+  /usr/share/licenses/relift/LICENSE: LICENSE
+  /usr/share/doc/relift/README.md: README.md

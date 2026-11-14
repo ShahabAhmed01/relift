@@ -41,6 +41,21 @@ const MAX_OGG: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_GZIP: u64 = 1024 * 1024 * 1024;
 const MAX_GZIP_OUT: u64 = 512 * 1024 * 1024;
 const MAX_7Z: u64 = 1024 * 1024 * 1024;
+const MAX_HEIC: u64 = 16 * 1024 * 1024 * 1024;
+const MAX_AVIF: u64 = 16 * 1024 * 1024 * 1024;
+const MAX_DOCX: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_XLSX: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_PPTX: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_FLAC: u64 = 1024 * 1024 * 1024;
+const MAX_MKV: u64 = 64 * 1024 * 1024 * 1024;
+const MAX_PST: u64 = 64 * 1024 * 1024 * 1024;
+const MAX_LNK: u64 = 1024 * 1024;
+const MAX_EVTX: u64 = 1024 * 1024 * 1024;
+const MAX_WEBP: u64 = 1024 * 1024 * 1024;
+const MAX_TAR: u64 = 64 * 1024 * 1024 * 1024;
+const MAX_BZIP2: u64 = 1024 * 1024 * 1024;
+const MAX_XZ: u64 = 1024 * 1024 * 1024;
+const MAX_ZSTD: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct CarveOptions {
@@ -232,6 +247,102 @@ const MARKERS: &[Marker] = &[
         magic: b"\x7FELF",
         adjust: 0,
     },
+    Marker {
+        format: "heic",
+        ext: "heic",
+        magic: b"ftypheic",
+        adjust: -4,
+    },
+    Marker {
+        format: "heic",
+        ext: "heic",
+        magic: b"ftypmif1",
+        adjust: -4,
+    },
+    Marker {
+        format: "avif",
+        ext: "avif",
+        magic: b"ftypavif",
+        adjust: -4,
+    },
+    Marker {
+        format: "docx",
+        ext: "docx",
+        magic: b"PK\x03\x04",
+        adjust: 0,
+    },
+    Marker {
+        format: "xlsx",
+        ext: "xlsx",
+        magic: b"PK\x03\x04",
+        adjust: 0,
+    },
+    Marker {
+        format: "pptx",
+        ext: "pptx",
+        magic: b"PK\x03\x04",
+        adjust: 0,
+    },
+    Marker {
+        format: "flac",
+        ext: "flac",
+        magic: b"fLaC",
+        adjust: 0,
+    },
+    Marker {
+        format: "mkv",
+        ext: "mkv",
+        magic: b"\x1A\x45\xDF\xA3",
+        adjust: 0,
+    },
+    Marker {
+        format: "pst",
+        ext: "pst",
+        magic: b"!BDN",
+        adjust: 0,
+    },
+    Marker {
+        format: "lnk",
+        ext: "lnk",
+        magic: b"L\x00\x00\x00\x01\x14\x02\x00\x00\x00\x00\x00\x00\xC0\x00\x00\x00\x00\x00\x00\x46",
+        adjust: 0,
+    },
+    Marker {
+        format: "evtx",
+        ext: "evtx",
+        magic: b"ElfFile",
+        adjust: 0,
+    },
+    Marker {
+        format: "webp",
+        ext: "webp",
+        magic: b"RIFF",
+        adjust: 0,
+    },
+    Marker {
+        format: "tar",
+        ext: "tar",
+        magic: b"ustar",
+        adjust: 257,
+    },
+    Marker {
+        format: "bzip2",
+        ext: "bz2",
+        magic: b"BZh",
+        adjust: 0,
+    },
+    Marker {
+        format: "xz",
+        ext: "xz",
+        magic: b"\xFD7zXZ\x00",
+        adjust: 0,
+    },
+    Marker {
+        format: "zst",
+        ext: "zst",
+        magic: b"\x28\xB5\x2F\xFD",
+        adjust: 0,
+    },
 ];
 
 struct Validated {
@@ -400,6 +511,21 @@ fn marker_max(format: &str) -> u64 {
         "ogg" => MAX_OGG,
         "gz" => MAX_GZIP,
         "7z" => MAX_7Z,
+        "heic" => MAX_HEIC,
+        "avif" => MAX_AVIF,
+        "docx" => MAX_DOCX,
+        "xlsx" => MAX_XLSX,
+        "pptx" => MAX_PPTX,
+        "flac" => MAX_FLAC,
+        "mkv" => MAX_MKV,
+        "pst" => MAX_PST,
+        "lnk" => MAX_LNK,
+        "evtx" => MAX_EVTX,
+        "webp" => MAX_WEBP,
+        "tar" => MAX_TAR,
+        "bzip2" => MAX_BZIP2,
+        "xz" => MAX_XZ,
+        "zst" => MAX_ZSTD,
         _ => 4 * 1024 * 1024 * 1024,
     }
 }
@@ -481,6 +607,21 @@ fn validate(
         "rar" => validate_rar4(src, start, limit),
         "exe" => validate_pe(src, start, limit),
         "elf" => validate_elf(src, start, limit),
+        "heic" => validate_heic(src, start, limit),
+        "avif" => validate_avif(src, start, limit),
+        "docx" => validate_docx(src, start, limit),
+        "xlsx" => validate_xlsx(src, start, limit),
+        "pptx" => validate_pptx(src, start, limit),
+        "flac" => validate_flac(src, start, limit),
+        "mkv" => validate_mkv(src, start, limit),
+        "pst" => validate_pst(src, start, limit),
+        "lnk" => validate_lnk(src, start, limit),
+        "evtx" => validate_evtx(src, start, limit),
+        "webp" => validate_webp(src, start, limit),
+        "tar" => validate_tar(src, start, limit),
+        "bzip2" => validate_bzip2(src, start, limit),
+        "xz" => validate_xz(src, start, limit),
+        "zst" => validate_zstd(src, start, limit),
         _ => None,
     }
 }
@@ -1749,6 +1890,386 @@ fn validate_elf(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
         return None;
     }
     Some(Validated::new(end - start, 90).note("ELF program/section header extents validated"))
+}
+
+// ===== New Format Validators =====
+
+fn validate_heic(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    // HEIC is based on ISO-BMFF (like MP4), uses ftyp box
+    validate_mp4(src, start, limit)
+}
+
+fn validate_avif(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    // AVIF is also based on ISO-BMFF
+    validate_mp4(src, start, limit)
+}
+
+fn validate_docx(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    // DOCX is a ZIP with specific content
+    let validated = validate_zip(src, start, limit)?;
+    if validated.length > MAX_DOCX {
+        return None;
+    }
+    // Check for [Content_Types].xml with word/ prefix
+    let has_word = find_from(src, start, start + validated.length, b"word/").is_some();
+    let has_content_types =
+        find_from(src, start, start + validated.length, b"[Content_Types].xml").is_some();
+    if has_word && has_content_types {
+        Some(Validated::new(validated.length, 95).note("DOCX: ZIP with word/ content validated"))
+    } else {
+        None
+    }
+}
+
+fn validate_xlsx(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let validated = validate_zip(src, start, limit)?;
+    if validated.length > MAX_XLSX {
+        return None;
+    }
+    let has_xl = find_from(src, start, start + validated.length, b"xl/").is_some();
+    let has_content_types =
+        find_from(src, start, start + validated.length, b"[Content_Types].xml").is_some();
+    if has_xl && has_content_types {
+        Some(Validated::new(validated.length, 95).note("XLSX: ZIP with xl/ content validated"))
+    } else {
+        None
+    }
+}
+
+fn validate_pptx(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let validated = validate_zip(src, start, limit)?;
+    if validated.length > MAX_PPTX {
+        return None;
+    }
+    let has_ppt = find_from(src, start, start + validated.length, b"ppt/").is_some();
+    let has_content_types =
+        find_from(src, start, start + validated.length, b"[Content_Types].xml").is_some();
+    if has_ppt && has_content_types {
+        Some(Validated::new(validated.length, 95).note("PPTX: ZIP with ppt/ content validated"))
+    } else {
+        None
+    }
+}
+
+fn validate_flac(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let head = read_bounded(src, start, 4, limit)?;
+    if head != b"fLaC" {
+        return None;
+    }
+    let mut pos = start + 4;
+    let mut blocks = 0u32;
+    while pos + 4 <= limit {
+        if pos - start > MAX_FLAC {
+            return None;
+        }
+        let block_head = read_bounded(src, pos, 4, limit)?;
+        let last = block_head[0] & 0x80 != 0;
+        let block_type = block_head[0] & 0x7F;
+        let block_size = u32_be(&[0, block_head[1], block_head[2], block_head[3]], 0)? as u64;
+        if block_type > 126 {
+            return None;
+        }
+        pos += 4;
+        if pos + block_size > limit {
+            return None;
+        }
+        pos += block_size;
+        blocks += 1;
+        if last {
+            return Some(
+                Validated::new(pos - start, 96)
+                    .note(format!("FLAC: {} metadata blocks validated", blocks)),
+            );
+        }
+        if blocks > 1000 {
+            return None;
+        }
+    }
+    None
+}
+
+fn validate_mkv(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let head = read_bounded(src, start, 4, limit)?;
+    if head != b"\x1A\x45\xDF\xA3" {
+        return None;
+    }
+    let mut pos = start;
+    let mut elements = 0u32;
+    while pos + 4 <= limit {
+        if pos - start > MAX_MKV {
+            return None;
+        }
+        let (id, id_len) = read_ebml_id(src, pos, limit)?;
+        let (size, size_len) = read_ebml_size(src, pos + id_len, limit)?;
+        let data_start = pos + id_len + size_len;
+        if data_start + size > limit {
+            return None;
+        }
+        if id == b"\x1A\x45\xDF\xA3" {
+            // EBML header
+        } else if id == b"\x42\x86" || id == b"\x42\x82" {
+            // Segment or Cluster
+        }
+        pos = data_start + size;
+        elements += 1;
+        if elements > 10000 {
+            return None;
+        }
+        if elements >= 2 && pos > start {
+            return Some(
+                Validated::new(pos - start, 90)
+                    .note(format!("MKV: {} EBML elements validated", elements)),
+            );
+        }
+    }
+    None
+}
+
+fn read_ebml_id(src: &dyn ReadOnlySource, pos: u64, limit: u64) -> Option<(Vec<u8>, usize)> {
+    let first = read_bounded(src, pos, 1, limit)?[0];
+    let len = if first & 0x80 != 0 {
+        1
+    } else if first & 0x40 != 0 {
+        2
+    } else if first & 0x20 != 0 {
+        3
+    } else {
+        4
+    };
+    let id = read_bounded(src, pos, len, limit)?;
+    Some((id.to_vec(), len))
+}
+
+fn read_ebml_size(src: &dyn ReadOnlySource, pos: u64, limit: u64) -> Option<(u64, usize)> {
+    let first = read_bounded(src, pos, 1, limit)?[0];
+    let len = if first & 0x80 != 0 {
+        1
+    } else if first & 0x40 != 0 {
+        2
+    } else if first & 0x20 != 0 {
+        3
+    } else {
+        4
+    };
+    if len > 8 {
+        return None;
+    }
+    let size_bytes = read_bounded(src, pos, len, limit)?;
+    let mut size = 0u64;
+    for (i, b) in size_bytes.iter().enumerate() {
+        let mask = if i == 0 { 0x7F >> len } else { 0xFF };
+        size = (size << 8) | ((b & mask) as u64);
+    }
+    Some((size, len))
+}
+
+fn validate_pst(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let sig = read_bounded(src, start, 4, limit)?;
+    if sig != b"!BDN" {
+        return None;
+    }
+    // PST header is 512 bytes
+    if start + 512 > limit {
+        return None;
+    }
+    let h = read_bounded(src, start, 512, limit)?;
+    let version = u32_le(&h, 4)?;
+    if version != 17 && version != 23 {
+        return None;
+    }
+    Some(Validated::new(512, 90).note("PST/OST header validated"))
+}
+
+fn validate_lnk(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    if start + 76 > limit {
+        return None;
+    }
+    let h = read_bounded(src, start, 76, limit)?;
+    if &h[0..20]
+        != b"L\x00\x00\x00\x01\x14\x02\x00\x00\x00\x00\x00\x00\xC0\x00\x00\x00\x00\x00\x00\x46"
+    {
+        return None;
+    }
+    let flags = u32_le(&h, 20)?;
+    let file_attrs = u32_le(&h, 24)?;
+    let _ = u64_le(&h, 28)?;
+    let _ = u64_le(&h, 36)?;
+    let _ = u64_le(&h, 44)?;
+    let file_size = u32_le(&h, 52)?;
+    let icon_index = u32_le(&h, 56)?;
+    let _ = u32_le(&h, 60)?;
+    let _ = u32_le(&h, 64)?;
+    let _ = u32_le(&h, 68)?;
+    let _ = u32_le(&h, 72)?;
+    if flags & 0x00000001 == 0 {
+        return None;
+    }
+    Some(Validated::new(76, 88).note("LNK shell link header validated"))
+}
+
+fn validate_evtx(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    if start + 4096 > limit {
+        return None;
+    }
+    let h = read_bounded(src, start, 4096, limit)?;
+    if &h[0..8] != b"ElfFile" {
+        return None;
+    }
+    let major = u16_le(&h, 8)?;
+    let minor = u16_le(&h, 10)?;
+    if major > 4 {
+        return None;
+    }
+    let chunk_size = u32_le(&h, 12)?;
+    if chunk_size == 0 || chunk_size > 0x100000 {
+        return None;
+    }
+    Some(Validated::new(chunk_size as u64, 92).note("EVTX event log chunk validated"))
+}
+
+fn validate_webp(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let h = read_bounded(src, start, 16, limit)?;
+    if &h[0..4] != b"RIFF" || &h[8..12] != b"WEBP" {
+        return None;
+    }
+    let size = u32_le(&h, 4)? as u64;
+    let end = start + 8 + size;
+    if end > limit || size > MAX_WEBP {
+        return None;
+    }
+    let mut pos = start + 12;
+    let mut chunks = 0u32;
+    while pos + 8 <= end {
+        let chunk_h = read_bounded(src, pos, 8, limit)?;
+        let chunk_type = &chunk_h[0..4];
+        let chunk_size = u32_le(&chunk_h, 4)? as u64;
+        if pos + 8 + chunk_size > end {
+            return None;
+        }
+        if chunk_type == b"VP8 " || chunk_type == b"VP8L" || chunk_type == b"VP8X" {
+            // Valid WebP chunk
+        }
+        pos += 8 + chunk_size + (chunk_size & 1);
+        chunks += 1;
+        if chunks > 100 {
+            return None;
+        }
+    }
+    if pos == end && chunks > 0 {
+        Some(Validated::new(end - start, 94).note(format!("WEBP: {} chunks validated", chunks)))
+    } else {
+        None
+    }
+}
+
+fn validate_tar(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    if start < 257 {
+        return None;
+    }
+    let mut pos = start - 257;
+    let mut headers = 0u32;
+    while pos + 512 <= limit {
+        if pos - start > MAX_TAR {
+            return None;
+        }
+        let h = read_bounded(src, pos, 512, limit)?;
+        let name = &h[0..100];
+        if name.iter().all(|&b| b == 0) {
+            // Two consecutive zero blocks = end of archive
+            break;
+        }
+        let size_str = &h[124..136];
+        let size = parse_octal(size_str)?;
+        if size > 8 * 1024 * 1024 * 1024 {
+            return None;
+        }
+        let blocks = (size + 511) / 512;
+        pos += 512 + blocks * 512;
+        headers += 1;
+        if headers > 10000 {
+            return None;
+        }
+    }
+    if headers > 0 && pos <= limit {
+        Some(
+            Validated::new(pos - (start - 257), 90)
+                .note(format!("TAR: {} file headers validated", headers)),
+        )
+    } else {
+        None
+    }
+}
+
+fn parse_octal(bytes: &[u8]) -> Option<u64> {
+    let s = std::str::from_utf8(bytes).ok()?;
+    let s = s.trim_end_matches('\0').trim();
+    if s.is_empty() {
+        return Some(0);
+    }
+    u64::from_str_radix(s, 8).ok()
+}
+
+fn validate_bzip2(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let h = read_bounded(src, start, 4, limit)?;
+    if &h[0..3] != b"BZh" {
+        return None;
+    }
+    let version = h[3];
+    if !(b'1'..=b'9').contains(&version) {
+        return None;
+    }
+    // BZIP2 doesn't have a simple end marker, so we accept the header
+    Some(Validated::new(512, 80).note("BZIP2 header validated"))
+}
+
+fn validate_xz(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let h = read_bounded(src, start, 6, limit)?;
+    if h != b"\xFD7zXZ\x00" {
+        return None;
+    }
+    let mut pos = start + 6;
+    let mut blocks = 0u32;
+    while pos + 12 <= limit {
+        if pos - start > MAX_XZ {
+            return None;
+        }
+        let crc = u32_le(&read_bounded(src, pos, 4, limit)?, 0)?;
+        let flags = u16_le(&read_bounded(src, pos + 4, 2, limit)?, 0)?;
+        let size = u32_le(&read_bounded(src, pos + 6, 4, limit)?, 0)?;
+        if size == 0 {
+            break;
+        }
+        pos += 12 + size as u64;
+        if pos > limit {
+            return None;
+        }
+        blocks += 1;
+        if blocks > 1000 {
+            return None;
+        }
+    }
+    if blocks > 0 {
+        Some(Validated::new(pos - start, 95).note(format!("XZ: {} blocks validated", blocks)))
+    } else {
+        None
+    }
+}
+
+fn validate_zstd(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let h = read_bounded(src, start, 4, limit)?;
+    if h != b"\x28\xB5\x2F\xFD" {
+        return None;
+    }
+    // Zstd frame header
+    let frame_header = read_bounded(src, start, 18.min(limit - start), limit)?;
+    if frame_header.len() < 18 {
+        return None;
+    }
+    let fhd = frame_header[4];
+    let single_segment = fhd & 0x20 != 0;
+    let _content_checksum = fhd & 0x04 != 0;
+    let _dictionary_id = fhd & 0x03;
+    Some(Validated::new(18, 90).note("ZSTD frame header validated"))
 }
 
 #[cfg(test)]

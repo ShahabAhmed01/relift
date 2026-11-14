@@ -1,176 +1,273 @@
-# Relift CLI
+# CLI Reference
 
-Reference for the `relift` command-line interface: commands, options, output,
-and exit codes.
-
-## Canonical name and stack
-
-- Tool binary: `relift`
-- Core crate: `relift-core`
-- Test fixtures: `relift-testkit`
-- License: GPL-3.0-or-later
-
-## Synopsis
+## Global options
 
 ```
-relift [--json] <command>
+relift [GLOBAL_OPTIONS] <COMMAND> [COMMAND_OPTIONS]
 ```
 
-`--json` (global) makes the command print machine-readable JSON to stdout
-instead of human-readable text. Progress is always written to stderr.
+| Option | Description |
+|--------|-------------|
+| `--json` | Emit machine-readable JSON on stdout |
+| `--help` | Show help |
+| `--version` | Print version |
 
 ## Commands
 
-### `relift scan <source> --session <dir>`
-
-Scan a disk image or raw device for deleted files and write candidates to a
-session directory.
-
-```
-relift scan disk.img --session ./session
-relift scan \\.\PhysicalDrive1 --session ./session --live --carve
-relift scan image.dd --session ./session --offset 0x1000 --length 0x100000
-```
-
-Options:
-- `<source>` — disk image path or raw device path (`\\.\PhysicalDriveN` on
-  Windows, `/dev/sdX` on Linux/macOS). Raw devices are opened `GENERIC_READ`
-  only.
-- `--session DIR` — new or empty directory for session output (required).
-- `--live` — also enumerate live (still-allocated) files; default is deleted
-  files only.
-- `--carve` — run signature carving in addition to metadata recovery.
-- `--volume INDEX` — scan only this volume index (repeatable).
-- `--offset BYTES` / `--length BYTES` — manual volume range (both required).
-- `--max-candidates N` — stop after N candidates (default 1,000,000).
-
-### `relift recover <session> --dest <dir>`
-
-Recover candidates from a session into a destination directory. The source is
-re-opened and its identity is checked against the session; a changed image is
-refused.
-
-```
-relift recover ./session --dest ./recovered
-relift recover ./session --dest ./recovered --source disk.img --min-confidence likely --id 3 --id 7
-```
-
-Options:
-- `<session>` — session directory produced by `relift scan` (required).
-- `--dest DIR` — destination directory, separate from the evidence (required).
-- `--source PATH` — re-open this source instead of the session-recorded path.
-- `--no-verify` — skip the post-write re-read SHA-256 verification.
-- `--min-confidence LABEL` — skip candidates below `verified`, `likely`,
-  `partial`, or `unverified`.
-- `--id N` — recover only these candidate ids (repeatable).
-
-### `relift image <source> --dest <file>`
-
-Copy a source to a new image file with a SHA-256 manifest sidecar. The
-destination is opened with `create_new`; existing files are never overwritten.
-
-```
-relift image \\.\PhysicalDrive1 --dest ./image.dd
-relift image image.dd --dest ./image-verified.dd --no-verify
-```
-
-Options:
-- `<source>` — disk image or raw device path (required).
-- `--dest FILE` — new image file to create (required).
-- `--no-verify` — skip re-read verification of the finished image.
-
 ### `relift devices`
 
-List volumes and readable disks exposed by the operating system. Raw physical
-disk enumeration requires elevation on Windows.
+List physical disks and partitions.
 
 ```
-relift devices
+relift devices [--json]
+```
+
+**Output (human):**
+```
+platform: linux
+/dev/sda        disk     -            -          1.0 TB   readable
+/dev/sda1       part     ESP          vfat         512 MB   readable
+/dev/sda2       part     -            ext4       999 GB   readable
+/dev/sdb        disk     SanDisk      exfat       32 GB   readable
+```
+
+**Output (`--json`):**
+```json
+{
+  "platform": "linux",
+  "devices": [
+    { "path": "/dev/sda", "kind": "disk", "label": null, "filesystem": null, "size": 1000000000000, "accessible": true },
+    { "path": "/dev/sda1", "kind": "part", "label": "ESP", "filesystem": "vfat", "size": 536870912, "accessible": true }
+  ],
+  "warnings": []
+}
+```
+
+### `relift scan`
+
+Scan a device or image for recoverable files.
+
+```
+relift scan <SOURCE> --session <DIR> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<SOURCE>` | Disk image path or raw device (e.g., `/dev/sdb`, `image.dd`, `\\.\PhysicalDrive1`) |
+| `--session <DIR>` | New or empty directory for session output (required) |
+| `--mode <MODE>` | `quick` (metadata), `deep` (metadata + carving), `formatted`, `lost-partition` (default: `quick`) |
+| `--live` | Include non-deleted (live) files |
+| `--carve` | Enable signature carving (implied by `--mode deep`) |
+| `--volume <INDEX>` | Scan only this volume index (repeatable) |
+| `--offset <BYTES>` | Manual volume start offset (requires `--length`) |
+| `--length <BYTES>` | Manual volume length (requires `--offset`) |
+| `--max-candidates <N>` | Stop after N candidates (default: 1,000,000) |
+| `--json` | Machine-readable JSON output |
+| `--quiet` | Suppress progress, only final summary |
+| `--dry-run` | Scan only, do not write session |
+
+**Examples:**
+```sh
+# Quick metadata scan
+relift scan /dev/sdb --session ./session
+
+# Deep scan with carving
+relift scan image.dd --session ./session --mode deep
+
+# Scan specific volume
+relift scan /dev/sdb --session ./session --volume 2
+
+# Resume interrupted scan
+relift scan image.dd --session ./session --mode deep --resume
+```
+
+### `relift recover`
+
+Recover files from a session to a destination.
+
+```
+relift recover <SESSION> --dest <DIR> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<SESSION>` | Session directory from `relift scan` |
+| `--dest <DIR>` | Destination directory (must be on different physical device) |
+| `--source <PATH>` | Re-open this source instead of session's recorded path |
+| `--filter <EXPR>` | Filter candidates (repeatable) |
+| `--min-confidence <LABEL>` | Skip candidates below this confidence (`verified`, `likely`, `partial`, `unverified`) |
+| `--id <N>` | Recover only these candidate IDs (repeatable) |
+| `--verify` | Re-read each file after write and compare SHA-256 (default: on) |
+| `--no-verify` | Disable post-write verification |
+| `--preserve-paths` | Preserve original directory structure (default: on when paths known) |
+| `--preserve-times` | Preserve original timestamps (default: on) |
+| `--on-conflict <MODE>` | `rename` (default), `skip`, `fail` |
+| `--dry-run` | Show plan, recover nothing |
+| `--json` | Machine-readable JSON output |
+
+**Filter expressions:**
+```
+ext:jpg,png,mp4          # by extension
+mime:image/*             # by MIME glob
+size:1KB-100MB           # size range
+date:2024-01-01..2024-12-31  # date range
+path:*/Pictures/*        # path glob
+conf:>=80                # confidence score
+hash:abc123...           # exact blake3 hash
+```
+
+**Examples:**
+```sh
+# Recover all
+relift recover ./session --dest /mnt/recovery
+
+# Only verified JPEGs
+relift recover ./session --dest /mnt/recovery --filter 'ext:jpg' --min-confidence verified
+
+# Dry run
+relift recover ./session --dest /mnt/recovery --dry-run
+
+# Specific IDs
+relift recover ./session --dest /mnt/recovery --id 123 --id 456
+```
+
+### `relift image`
+
+Create a forensic disk image (ddrescue-style).
+
+```
+relift image <SOURCE> --dest <FILE> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<SOURCE>` | Raw device or image |
+| `--dest <FILE>` | Output image file (never overwrites existing) |
+| `--map <FILE>` | Map file for resumable imaging (ddrescue-compatible) |
+| `--passes <N>` | Number of passes (default: 2; forward + reverse) |
+| `--rate-limit <R>` | Max read rate (e.g., `50MB/s`) |
+| `--verify` | Hash image after creation (default: on) |
+| `--no-verify` | Skip verification |
+
+**Example:**
+```sh
+relift image /dev/sdb --dest /mnt/backup/drive.img --map /mnt/backup/drive.map --passes 3
+```
+
+### `relift list`
+
+List files in a session.
+
+```
+relift list <SESSION> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--format <FMT>` | `json`, `csv`, `html`, `md` (default: `json`) |
+| `--out <FILE>` | Output file (default: `<session>/report.<fmt>`) |
+| `--limit <N>` | Max candidates to list (0 = all) |
+
+### `relift info`
+
+Inspect a file's carver metadata.
+
+```
+relift info <FILE>
+```
+
+### `relift verify`
+
+Verify recovered files against recorded hashes.
+
+```
+relift verify <SESSION> --dest <DIR>
+```
+
+### `relift session`
+
+Manage scan sessions.
+
+```
+relift session list
+relift session resume <SESSION_ID>
 ```
 
 ### `relift doctor`
 
-Run self-tests: SHA-256 known-answer test, temporary storage write, carving
-validator (synthetic SQLite), raw device access, and network/telemetry
-confirmation (there is none).
+Run self-tests for permissions, drive health, raw access.
 
 ```
-relift doctor
+relift doctor [--json]
 ```
 
-### `relift report <session>`
-
-Render a saved session as JSON, HTML, or CSV.
-
-```
-relift report ./session --format html --out ./report.html
-relift report ./session --format csv --limit 50
-```
-
-Options:
-- `<session>` — session directory (required).
-- `--format FORMAT` — `json`, `html`, or `csv` (default `json`).
-- `--out FILE` — output file (default `<session>/report.<format>`).
-- `--limit N` — maximum candidates to list (0 means all).
+**Checks:**
+- Raw device access (permissions, elevation)
+- Full Disk Access (macOS)
+- TRIM detection
+- SMART health
+- Hashing/carving/parsing unit tests
 
 ### `relift version`
 
-Print version and schema information.
+Print version and schema info.
 
 ```
-relift version
-relift version --json
+relift version [--json]
+```
+
+### `relift completions`
+
+Generate shell completions.
+
+```
+relift completions bash|zsh|fish|powershell|elvish
+```
+
+### `relift self-update`
+
+Check for and install latest release.
+
+```
+relift self-update
 ```
 
 ## Exit codes
 
-These are part of the CLI contract and are stable across releases.
+| Code | Constant | Meaning |
+|------|----------|---------|
+| 0 | `EXIT_OK` | Success |
+| 1 | `EXIT_RUNTIME` | Runtime error |
+| 2 | `EXIT_USAGE` | Usage/argument error |
+| 3 | `EXIT_UNSAFE` | Destination safety refusal (same physical device) |
+| 4 | `EXIT_MISMATCH` | Source mismatch (session source != actual source) |
+| 5 | `EXIT_PARTIAL` | Partial (some files failed verification) |
 
-| Code | Name | Meaning |
-|------|------|---------|
-| 0 | OK | Command completed successfully. |
-| 1 | RUNTIME | Generic runtime error (I/O, parse failure, etc.). |
-| 2 | USAGE | Command-line usage error (bad flags, missing args). |
-| 3 | UNSAFE | Destination safety refusal (destination overlaps evidence). |
-| 4 | MISMATCH | Source does not match the session (re-scan required). |
-| 5 | PARTIAL | Command completed but results are partial (failed/partial/cancelled). |
+## JSON schemas
 
-A command that reports `PARTIAL` (exit 5) still produced valid output, but some
-candidates failed or were incomplete. Inspect the session/recovery summary for
-details.
+All `--json` output uses versioned schemas. Current schema: `relift/v1`.
 
-## Read-only guarantee
+See `docs/schemas/` for full JSON Schema files.
 
-Relift never writes to a source. `ReadOnlySource` exposes no write method.
-Images are opened with `File::open` (read-only). Raw devices are opened
-`GENERIC_READ` only on Windows, `O_RDONLY` on Unix. The recovery writer and
-imager write only below a destination that was proven separate from the source.
+## Configuration
 
-## Examples
+Config file locations (layered, later overrides earlier):
+1. Built-in defaults
+2. `/etc/relift/config.toml` (system)
+3. `~/.config/relift/config.toml` (user)
+4. `--config <PATH>` (explicit)
 
-Image a raw device, then scan the image:
+Example `config.toml`:
+```toml
+[scan]
+default_threads = 4
+default_chunk_size = "256MB"
 
+[recover]
+verify = true
+preserve_times = true
+
+[gui]
+theme = "dark"
+language = "en"
 ```
-relift image \\.\PhysicalDrive1 --dest D:\images\evidence.dd
-relift scan D:\images\evidence.dd --session D:\session
-relift recover D:\session --dest D:\recovered
-```
-
-Scan with carving and live files:
-
-```
-relift scan image.dd --session ./session --live --carve --max-candidates 50000
-```
-
-Recover only high-confidence deleted candidates:
-
-```
-relift recover ./session --dest ./out --min-confidence likely
-```
-
-## JSON output shape
-
-With `--json`, every command emits a single JSON document to stdout. The exact
-schema mirrors the corresponding Rust structs (`SessionHeader`, `RecoverySummary`,
-`ImageResult`, `DeviceList`, `DoctorReport`, `ReportInfo`) and is versioned by
-the session schema (`SCHEMA_VERSION = 1`).

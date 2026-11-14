@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Relift",
+  "version": "0.1.0",
+  "identifier": "com.relift.recovery",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:1420",
+    "distDir": "../build",
+    "withGlobalTauri": true
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Relift - Data Recovery",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "hiddenTitle": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:;"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "wix": {
+        "language": "en-US",
+        "template": "wix/main.wxs"
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "licenseFile": "../../LICENSE"
+      }
+    },
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.15",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "entitlements": null,
+      "providerShortName": null,
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "appImage": {
+        "bundleMediaFramework": false
+      },
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libayatana-appindicator3-1", "librsvg2-common"]
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "libayatana-appindicator3-1", "librsvg2"]
+      }
+    }
+  },
+  "plugins": {
+    "fs": {
+      "scope": {
+        "allow": [
+          "$APPDATA/relift/*",
+          "$HOME/.local/share/relift/*"
+        ]
+      }
+    },
+    "dialog": {
+      "all": true,
+      "open": true,
+      "save": true
+    },
+    "shell": {
+      "all": false,
+      "open": true
+    }
+  }
+}

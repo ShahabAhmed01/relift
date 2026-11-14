@@ -1,0 +1,68 @@
+# cargo-deny configuration
+# Run with: cargo deny check
+
+[licenses]
+# Allowlist for licenses. GPL-3.0-or-later is our license.
+# We must not link GPL code into our MIT/Apache crates, but our crates are all GPL.
+allow = [
+    "GPL-3.0-or-later",
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "Zlib",
+    "Unlicense",
+    "Apache-2.0 WITH LLVM-exception",
+    "MPL-2.0",
+    "BSD-3-Clause-Clear",
+]
+
+# Deny copyleft licenses in non-copyleft crates (we're all GPL so this is fine)
+# But we should still be aware of dependencies with stronger copyleft
+copyleft = "allow"
+
+[licenses.allow]
+# Explicitly allow these licenses even if they'd be denied by copyleft rule
+"GPL-3.0-or-later" = { reason = "Project license" }
+"GPL-2.0-or-later" = { reason = "TestDisk/PhotoRec reference (not linked)" }
+
+[bans]
+# Deny specific crates/versions
+multiple_versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+# Deny known problematic crates
+deny = [
+    { name = "openssl", version = "<0.10", reason = "Security vulnerabilities" },
+    { name = "rustls", version = "<0.21", reason = "Security vulnerabilities" },
+]
+
+[advisories]
+# Vulnerability checking (RUSTSEC)
+db = "https://github.com/RustSec/advisory-db.git"
+db_path = "~/.cargo/advisory-db"
+fetch = true
+# Ignore specific advisories if they're false positives or not applicable
+ignore = [
+    # Add advisory IDs here if needed
+]
+
+[sources]
+# Source allowlist (crates.io only for now)
+allow_unknown = false
+allow = [
+    "crates.io",
+    "git+https://github.com",
+]
+
+[crate-versions]
+# Version requirements for direct dependencies
+# Use "latest" for active maintenance, or pin for stability
+"*" = "latest"
+
+[output]
+format = "json"
+# Also print human-readable summary
+print = true

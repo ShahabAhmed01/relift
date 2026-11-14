@@ -1,0 +1,36 @@
+<script lang="ts">
+  // Re-export all Lucide icons for consistent usage
+  export {
+    HardDrive,
+    Usb,
+    Database,
+    AlertTriangle,
+    CheckCircle,
+    Info,
+    ChevronRight,
+    Settings,
+    Sun,
+    Moon,
+    HelpCircle,
+    ExternalLink,
+    Pause,
+    StopCircle,
+    RotateCcw,
+    Search,
+    Filter,
+    XCircle,
+    Loader2,
+    Eye,
+    Download,
+    MoreHorizontal,
+    X,
+    Folder,
+    Image,
+    Video,
+    Music,
+    Archive,
+    FileText,
+    CheckCheck,
+    Minus
+  } from 'lucide-svelte';
+</script>

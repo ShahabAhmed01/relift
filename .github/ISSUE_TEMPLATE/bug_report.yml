@@ -1,0 +1,130 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below.
+        **Before submitting, run `relift doctor` and paste the output below.**
+
+  - type: textarea
+    id: doctor-output
+    attributes:
+      label: relift doctor output
+      description: Paste the full output of `relift doctor` here
+      render: text
+      placeholder: |
+        relift 0.1.0 on windows
+        profile: release
+        PASS  raw_device_access     GENERIC_READ + FILE_SHARE_READ
+        PASS  trim_detection        NVMe TRIM supported
+        ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 10/11
+        - macOS 12+
+        - Linux (Ubuntu/Debian/Arch/Fedora/other)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: relift-version
+    attributes:
+      label: Relift Version
+      description: Output of `relift --version`
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: filesystem
+    attributes:
+      label: Filesystem Type
+      options:
+        - NTFS
+        - FAT32
+        - exFAT
+        - ext4
+        - APFS
+        - HFS+
+        - Btrfs
+        - XFS
+        - RAW/Unknown
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source-type
+    attributes:
+      label: Source Type
+      options:
+        - Internal HDD
+        - Internal SSD (SATA)
+        - Internal NVMe
+        - External USB HDD
+        - External USB SSD
+        - SD/microSD Card
+        - Disk Image (.img/.dd/.E01/.vhd/.vmdk)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scan-mode
+    attributes:
+      label: Scan Mode Used
+      options:
+        - quick
+        - deep
+        - formatted
+        - lost-partition
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: "I expected to recover my deleted photos with original filenames..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: "The scan completed but found 0 files..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Scan Log / Session Output
+      description: Paste relevant scan output or attach session directory (if small)
+      render: text
+      placeholder: "relift scan output..."
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I have run `relift doctor` and included the output
+          required: true
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: I am not reporting a known limitation (see docs/GAP_REPORT.md)
+          required: true

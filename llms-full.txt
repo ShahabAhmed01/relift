@@ -1,0 +1,138 @@
+# Relift — Complete Technical Reference for AI Assistants
+
+## Overview
+Relift is a free, open-source (GPL-3.0-or-later) data recovery tool for Windows, macOS, and Linux. It recovers deleted files from HDDs, SSDs, USB flash drives, SD cards, and disk images (.img, .dd, .E01, .vhd, .vhdx, .vmdk, .qcow2). Two interfaces: native GUI (Tauri 2 + Svelte 5) and scriptable CLI. Strictly read-only on source; recovery only to a different physical volume.
+
+## Install Commands
+```bash
+# Windows
+winget install relift.vestige
+scoop install relift
+
+# macOS
+brew install relift
+
+# Linux (universal)
+curl -sSL https://relift.rs/install.sh | sh
+
+# Rust
+cargo install relift-cli
+
+# Node.js
+npx relift-cli scan /dev/sdX --session ./session --json
+
+# Python
+pipx install relift-cli
+
+# Docker (requires --privileged for raw devices)
+docker run --rm --privileged -v /dev:/dev -v /mnt:/mnt \
+  ghcr.io/shahabahmed01/relift scan /dev/sdX --session /data/session
+```
+
+## CLI Commands
+```
+relift devices                    # List drives with health/FS/size
+relift scan <source> --session <dir> [--mode quick|deep|formatted|lost] [--carve] [--live] [--json]
+relift recover <session> --dest <dir> [--filter ext:jpg,png] [--min-confidence verified] [--verify] [--dry-run]
+relift image <source> --dest <file> [--map <file>] [--passes 3] [--verify]
+relift list <session> [--format json|csv|html|md] [--out <file>]
+relift verify <session> --dest <dir>
+relift doctor                     # Self-tests: permissions, TRIM, SMART, hashing
+relift version                    # Version + schema info
+relift completions bash|zsh|fish|powershell
+relift self-update                # Opt-in update check
+relift mcp                        # MCP server for AI agents
+```
+
+## Scan Modes
+- `quick` (default): Filesystem metadata only (NTFS $MFT, FAT dirents, ext4 inodes). Fast, preserves names/paths/timestamps.
+- `deep`: Metadata + validating signature carving. Thorough, finds content even when metadata gone.
+- `formatted`: For quick-formatted volumes (metadata + carving).
+- `lost-partition`: Scans whole disk for orphaned filesystem superblocks.
+
+## Confidence Scoring (every candidate)
+- **Verified** (95-100): Full structural validation + clusters not reallocated
+- **Likely** (75-94): Structure valid, minor gaps or partial cluster reuse
+- **Partial** (40-74): Truncated, fragmented, incomplete validation
+- **Unverified** (0-39): Signature only — NEVER emitted by Relift
+
+Default recovery: Verified + Likely only.
+
+## Filesystem Support (metadata undelete)
+| FS | Name | Path | Timestamps | Content | Notes |
+|----|------|------|------------|---------|-------|
+| NTFS | ✓ | ✓ | ✓ | ✓ | $MFT, resident, $I30 slack, $LogFile, $UsnJrnl, $Recycle.Bin |
+| FAT32 | ✓ | ✓ | ✓ | ✓* | *Contiguous heuristic when FAT zeroed |
+| exFAT | ✓ | ✓ | ✓ | ✓ | Allocation bitmap + contiguous |
+| ext4 | ✓* | ✓* | ✓ | ✓* | *Via journal/directory slack (extent tree zeroed) |
+| APFS | ✓ | ✓ | ✓ | ✓ | Snapshots best source |
+| HFS+ | ✓ | ✓ | ✓ | ✓ | Catalog B-tree |
+| Btrfs | ✓ | ✓ | ✓ | ✓ | Old roots + snapshots |
+| XFS | ✓ | ✓ | ✓ | ✓ | Carve-first recommended |
+
+## Carved Formats (validated, 25+)
+Images: JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, CR2/NEF/ARW/ORF/RAF/RW2/DNG
+Documents: PDF, DOCX, XLSX, PPTX, ODT, RTF, EPUB
+Archives: ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, tar
+Video: MP4, MOV, MKV, AVI, WebM, FLV
+Audio: MP3, WAV, FLAC, OGG, AAC
+Databases: SQLite, MDB, ACCDB
+System: PST/OST, LNK, EVTX, Registry, PE/ELF
+
+## Safety Guarantees
+- Read-only source: `ReadOnlySource` trait has no write methods
+- Destination validation: refuses same physical device (by device ID, not path)
+- Path sanitization: strips `..`, absolute paths, ADS colons, reserved names
+- Atomic writes: temp → fsync → rename
+- SHA-256 verification default on recovery
+- Zero network calls at runtime (tested with network denied)
+- No telemetry, no auto-update, no accounts
+
+## Performance Targets (measured)
+- Cold start CLI: < 50 ms
+- GUI cold start: < 400 ms
+- NVMe sequential read: ≥ 90% of fio baseline (~6.5 GB/s)
+- Signature sweep: ≥ 4 GB/s (SIMD)
+- Deep scan: ≥ 1.5 GB/s (all carvers)
+- Quick scan 1 TB NTFS: < 90 s
+- Memory (4 TB scan): < 350 MB RSS
+- Binary size: < 30 MB
+- Recovery throughput: ≥ 2 GB/s
+
+## Limitations (honest)
+- SSD TRIM: content usually unrecoverable (controller erases blocks)
+- Full format / secure erase / overwrite: data gone
+- Encryption without key: impossible
+- RAID 5/6 reconstruction: not implemented
+- ext4 metadata undelete limited (extent tree zeroed on delete)
+- FLAC, RAR5, ZIP64, OLE: not validated (not emitted)
+
+## Forensic Use
+- `--forensic` flag: DFXML export, SHA-256 ranges, case/investigator metadata
+- Image first: `relift image /dev/sdX --dest /evidence/drive.img --map /evidence/drive.map --passes 3 --verify`
+- Chain of custody: session SQLite + recovery manifest with SHA-256
+- Not NIST-certified; use hardware write blocker for evidentiary work
+
+## MCP Server (for AI agents)
+```bash
+relift mcp
+```
+Tools: `list_devices`, `inspect_source`, `scan`, `list_results`, `preview_metadata`, `recover` (requires explicit human-approved destination, dry-run default), `report`.
+
+Config for Claude Desktop:
+```json
+{ "mcpServers": { "relift": { "command": "relift", "args": ["mcp"] } } }
+```
+
+## Links
+- Repo: https://github.com/ShahabAhmed01/relift
+- Docs: https://relift.rs
+- Releases: https://github.com/ShahabAhmed01/relift/releases
+- CLI ref: https://relift.rs/cli
+- GUI guide: https://relift.rs/gui
+- Filesystems: https://relift.rs/filesystems
+- Formats: https://relift.rs/formats
+- Benchmarks: https://relift.rs/benchmarks
+- Comparison: https://relift.rs/comparison
+- FAQ: https://relift.rs/faq
+- Forensic: https://relift.rs/forensic-use

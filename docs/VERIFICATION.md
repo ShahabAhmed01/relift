@@ -1,46 +1,206 @@
-# Verification
+# Verification — Relift Gate Status
 
-Relift validates recovery against deterministic synthetic filesystem fixtures
-with SHA-256 byte comparison. No simulated or mock results are ever presented as
-recovery.
+This document tracks the verification status of all acceptance gates from the master prompt. Each gate must have real evidence (command output, test results, benchmark data) to be marked PASS.
 
-## How verification works
+## Gate Status Summary
 
-1. A fixture builder constructs a real, structurally valid filesystem image
-   (FAT32, exFAT, NTFS, ext4) byte by byte.
-2. Each fixture file has an independently computed SHA-256 digest.
-3. Relift scans the image, recovers deleted files, and the test reads the output
-   bytes back.
-4. The recovered bytes are compared byte-for-byte and by SHA-256 against the
-   fixture's independent expectation.
+| Gate | Description | Status | Evidence |
+|------|-------------|--------|----------|
+| G1 | CI builds on Linux/macOS/Windows | ⬜ PENDING | CI run links |
+| G2 | Metadata recall ≥99%, precision ≥99% | ⬜ PENDING | Corpus results JSON |
+| G3 | Carving recall ≥95%, precision ≥98% | ⬜ PENDING | Corpus results JSON |
+| G4 | Zero writes to source (hash before/after) | ⬜ PENDING | Test output |
+| G5 | Destination-on-source refused | ⬜ PENDING | Test output |
+| G6 | Throughput targets met | ⬜ PENDING | Benchmark CSV |
+| G7 | Quick scan 1TB NTFS < 90s | ⬜ PENDING | Benchmark CSV |
+| G8 | GUI cold start <500ms, 60fps at 500k rows | ⬜ PENDING | Perf measurement |
+| G9 | CLI JSON schema stable, exit codes tested | ⬜ PENDING | CLI test output |
+| G10 | Resume after kill -9 works | ⬜ PENDING | Test output |
+| G11 | Fuzzing clean 24h | ⬜ PENDING | Fuzz logs |
+| G12 | Signed releases all platforms | ⬜ PENDING | Release assets + attestation |
+| G13 | Real screenshots from running app | ⬜ PENDING | Screenshot files |
+| G14 | Docs site live, indexed, JSON-LD valid | ⬜ PENDING | Link check + validator |
+| G15 | Anti-slop + honesty review passed | ⬜ PENDING | Checklist |
+| G16 | All package managers installable | ⬜ PENDING | Install test logs |
+| G17 | Launch kit complete | ⬜ PENDING | Growth assets |
+| G18 | This file complete with real evidence | ⬜ PENDING | This file |
 
-## What is verified
+---
 
-| Filesystem | Fixture | Live files | Deleted files | Sparse/holes | Unwritten extents | Fragmented | Orphan inodes |
-|------------|---------|------------|---------------|--------------|-------------------|------------|---------------|
-| FAT32 | `fat32_image()` | Yes | Yes | — | — | — | — |
-| exFAT | `exfat_image()` | Yes | Yes | — | — | — | — |
-| NTFS | `ntfs_image()` | Yes | Yes | Yes | — | Yes | — |
-| ext4 | `ext4_image()` | Yes | Yes | Yes | Yes | Yes | Yes |
+## Detailed Evidence (to be filled during verification)
 
-Sparse files (NTFS `sparse.bin`, ext4 `sparse.bin`) are recovered with an
-explicit `Segment::Zero` hole. Unwritten extents (ext4 `unwritten.bin`) are
-emitted as zeroes even though the physical block contains nonzero garbage.
-
-## Running the tests
-
+### G1: CI Builds
 ```
-cargo test -p relift-core
+# Command: git push origin main
+# Expected: All 3 OS matrix jobs green
+# Evidence: [CI run URL]
 ```
 
-Includes:
-- 43 unit tests (parsers, safety, hashing, sessions, carving, partitions).
-- 6 end-to-end tests (scan → recover → SHA-256 verify for FAT32, exFAT, NTFS,
-  ext4; destination separation; output confinement).
+### G2: Metadata Recovery Accuracy
+```bash
+cargo test -p relift-core -- --test-threads=1 2>&1 | tail -20
+# Expected: All 4 filesystem e2e tests pass with recall ≥99%, precision ≥99%
+# Evidence: [test output with recall/precision numbers]
+```
 
-## Honesty policy
+### G3: Carving Accuracy
+```bash
+# Run carving tests on mixed corpus
+cargo test -p relift-core carve 2>&1 | tail -20
+# Expected: Carving recall ≥95%, precision ≥98% across 25+ formats
+# Evidence: [test output with per-format numbers]
+```
 
-- No simulated/mock results.
-- No faked benchmarks, screenshots, stars, reviews, or release claims.
-- Publish only what is actually verified.
-- No real-volume validation claimed for NTFS/ext until public images prove it.
+### G4: Read-Only Invariant
+```bash
+# Test: hash source before/after scan
+# Evidence: [test output showing identical hashes]
+```
+
+### G5: Destination Safety
+```bash
+# Test: attempt recovery to same physical device
+# Expected: Exit code 3 (EXIT_UNSAFE)
+# Evidence: [test output]
+```
+
+### G6: Performance Benchmarks
+```bash
+cargo bench -p relift-bench 2>&1 | tail -30
+# Expected: All targets in docs/benchmarks.md met
+# Evidence: [benchmark output with MB/s, RSS, times]
+```
+
+### G7: Quick Scan Performance
+```bash
+# Run on 1TB NTFS fixture (or scaled)
+# Evidence: [benchmark output showing <90s]
+```
+
+### G8: GUI Performance
+```bash
+# Measure cold start with Tauri devtools
+# Measure 500k row virtualization FPS
+# Evidence: [screenshots of perf overlay]
+```
+
+### G9: CLI Contract
+```bash
+cargo test -p relift-cli 2>&1 | tail -20
+# Evidence: [test output showing JSON schema, exit codes, examples pass]
+```
+
+### G10: Resume After Kill
+```bash
+# Test: start scan, kill -9, resume, compare results
+# Evidence: [test output showing identical results]
+```
+
+### G11: Fuzzing
+```bash
+# Run cargo-fuzz for 24h on all targets
+# Evidence: [fuzz log summary showing 0 crashes]
+```
+
+### G12: Signed Releases
+```bash
+# Evidence: [gh attestation verify output + minisign verify + codesign verify]
+```
+
+### G13: Real Screenshots
+```bash
+# Evidence: [ls docs/assets/screenshots/ showing 8+ real captures]
+```
+
+### G14: Docs Site
+```bash
+# Evidence: [linkcheck output + structured data validator output + sitemap]
+```
+
+### G15: Anti-Slop Checklist
+- [ ] No emoji in headings/UI
+- [ ] No "🚀 Blazingly fast" marketing fluff
+- [ ] No gradient heroes, glassmorphism, purple-blue AI gradients
+- [ ] No stock illustrations, lorem ipsum, placeholder names
+- [ ] No fake progress bars, invented ETAs
+- [ ] No dead buttons or "coming soon" in shipped UI
+- [ ] No mock/stub data in production paths
+- [ ] No `unwrap()` on external input in library code
+- [ ] No swallowed errors
+- [ ] Consistent spacing/typography
+- [ ] Honest limitations table in README
+
+### G16: Package Managers
+```bash
+# Test each in clean container:
+brew install relift          # macOS
+winget install relift.vestige # Windows
+scoop install relift         # Windows
+cargo install relift-cli     # Anywhere
+npx relift-cli --version     # Node
+pipx install relift-cli      # Python
+# AUR, Flatpak, Snap: manual verification
+# Evidence: [install logs from clean containers]
+```
+
+### G17: Launch Kit
+- [ ] Show HN draft (`growth/show-hn.md`)
+- [ ] Reddit drafts for r/rust, r/datarecovery, r/sysadmin, r/opensource
+- [ ] Product Hunt assets (`growth/producthunt.md`)
+- [ ] 90s demo video (`growth/demo.mp4`)
+- [ ] asciinema cast (`growth/demo.cast`)
+- [ ] Chinese track (`growth/zh/` with README.zh-CN.md, 掘金/知乎/Bilibili posts)
+- [ ] Press kit (`growth/press-kit/`)
+
+### G18: This File
+- [ ] All gates have real command output pasted above
+- [ ] No gate marked PASS without evidence
+- [ ] Known gaps documented below
+
+---
+
+## Known Gaps (Honest Assessment)
+
+### Not Yet Implemented
+- [ ] ReFS metadata recovery
+- [ ] F2FS metadata recovery  
+- [ ] ZFS/ReiserFS support
+- [ ] RAID 0/1/5 reconstruction
+- [ ] E01/AFF4 write support
+- [ ] FLAC, RAR5, ZIP64, OLE carvers
+- [ ] TUI (ratatui)
+- [ ] MCP server
+- [ ] WASM carver plugins
+
+### Not Yet Verified
+- [ ] Real NTFS/ext4 volumes (only synthetic fixtures)
+- [ ] macOS raw device paths
+- [ ] Windows ARM64 builds
+- [ ] Full 24h fuzz campaign
+- [ ] Signed releases (no certificates yet)
+- [ ] Package manager submissions
+- [ ] Docs site deployment
+- [ ] SEO indexing
+- [ ] Launch execution
+
+### Performance Not Yet Measured
+- [ ] 1TB NTFS quick scan on NVMe
+- [ ] 4TB deep scan memory profile
+- [ ] GUI 500k row virtualization FPS
+- [ ] Cold start on all platforms
+
+---
+
+## Verification Log
+
+| Date | Gate | Status | Verifier | Notes |
+|------|------|--------|----------|-------|
+| 2024-11-14 | All | PENDING | — | Initial document creation |
+
+---
+
+## Final Sign-Off
+
+This project is **not** verified for release until all 18 gates have real evidence pasted above and all are marked PASS.
+
+**Do not mark gates PASS without pasted command output.** An accurate gap report is a success; a fake "100% complete" is a failure.

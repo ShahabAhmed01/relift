@@ -1,0 +1,29 @@
+{
+  "name": "Relift",
+  "short_name": "Relift",
+  "description": "Read-only deleted-file recovery for disk images and drives",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0E1116",
+  "theme_color": "#2DD4BF",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "system-tools"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Scan Drive",
+      "short_name": "Scan",
+      "description": "Start a new recovery scan",
+      "url": "/",
+      "icons": [{ "src": "favicon.svg", "sizes": "192x192" }]
+    }
+  ]
+}
