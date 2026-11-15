@@ -4,6 +4,7 @@
 PackageIdentifier: relift.vestige
 PackageName: Relift
 PackageVersion: 0.1.0
+PackageLocale: en-US
 Publisher: Shahab Ahmed
 PublisherUrl: https://github.com/ShahabAhmed01/relift
 PublisherSupportUrl: https://github.com/ShahabAhmed01/relift/issues
