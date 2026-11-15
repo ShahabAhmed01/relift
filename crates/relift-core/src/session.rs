@@ -255,7 +255,7 @@ impl Session {
             .write(true)
             .open(&candidates_path)
             .map_err(|e| Error::Session(format!("create {}: {e}", candidates_path.display())))?;
-        let mut session = Self {
+        let session = Self {
             dir,
             header,
             candidates: BufWriter::new(file),

@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gui:
+    name: GUI bundle (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            args: "--target x86_64-unknown-linux-gnu"
+            targets: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            platform: windows-x86_64
+            args: ""
+            targets: ""
+          - os: macos-latest
+            platform: macos-universal
+            args: "--target universal-apple-darwin"
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            pkg-config \
+            build-essential
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.targets }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.platform }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: crates/relift-gui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: crates/relift-gui
+        run: npm ci
+
+      - name: Build and publish GUI bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: crates/relift-gui
+          tagName: ${{ github.ref_name }}
+          releaseName: "Relift ${{ github.ref_name }}"
+          releaseBody: |
+            Read-only deleted-file recovery for disk images and drives.
+
+            Downloads include unsigned CLI archives and desktop installers.
+            Verify checksums published with each asset before running.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  cli:
+    name: CLI (${{ matrix.platform }})
+    needs: gui
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            archive: relift-linux-x86_64.tar.gz
+          - os: ubuntu-latest
+            platform: linux-aarch64
+            target: aarch64-unknown-linux-gnu
+            archive: relift-linux-aarch64.tar.gz
+          - os: windows-latest
+            platform: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            archive: relift-windows-x86_64.zip
+          - os: macos-latest
+            platform: macos-x86_64
+            target: x86_64-apple-darwin
+            archive: relift-macos-x86_64.tar.gz
+          - os: macos-latest
+            platform: macos-aarch64
+            target: aarch64-apple-darwin
+            archive: relift-macos-aarch64.tar.gz
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux cross linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-cli-${{ matrix.platform }}
+
+      - name: Build CLI
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --locked -p relift-cli --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          tar -czf "dist/${{ matrix.archive }}" \
+            -C "target/${{ matrix.target }}/release" relift
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path "target/${{ matrix.target }}/release/relift.exe" `
+            -DestinationPath "dist/${{ matrix.archive }}"
+
+      - name: Upload CLI archive to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: dist/${{ matrix.archive }}

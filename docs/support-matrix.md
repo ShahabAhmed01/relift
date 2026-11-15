@@ -1,83 +1,74 @@
 # Support Matrix
 
+This matrix separates what is implemented and fixture-tested from what is only
+identified or experimental. It is intentionally conservative: a checkmark
+means there is code plus at least a deterministic fixture or end-to-end test.
+
 ## Filesystem support
 
-| Filesystem | Metadata undelete | Carving | Status | Notes |
-|------------|-------------------|---------|--------|-------|
-| FAT12 | ✓ | ✓ | Tested | Fixture-validated |
-| FAT16 | ✓ | ✓ | Tested | Fixture-validated |
-| FAT32 | ✓ | ✓ | Tested | Fixture-validated, LFN support |
-| exFAT | ✓ | ✓ | Tested | Fixture-validated, allocation bitmap |
-| NTFS | ✓ | ✓ | Tested | $MFT, resident/non-resident, sparse, $I30 slack |
-| ext2 | ✓ | ✓ | Tested | Inode + block pointers |
-| ext3 | ✓ | ✓ | Tested | Journal-assisted |
-| ext4 | ✓ | ✓ | Tested | Extents, indirect, sparse, unwritten, orphans |
-| HFS+ | ✓ | ✓ | Experimental | Catalog B-tree, extents overflow |
-| APFS | ✓ | ✓ | Experimental | Container/volume, snapshots, B-tree |
-| Btrfs | ✓ | ✓ | Experimental | Root tree, subvolumes, snapshots |
-| XFS | ✓ | ✓ | Experimental | AG headers, inode B+tree |
-| ReFS | ✗ | ✓ | Identified only | Metadata recovery not implemented |
-| F2FS | ✗ | ✓ | Identified only | Metadata recovery not implemented |
-| ISO 9660 | ✗ | ✓ | Identified only | Optical media |
-| UDF | ✗ | ✓ | Identified only | Optical media |
-| ZFS | ✗ | ✓ | Identified only | Not implemented |
-| ReiserFS | ✗ | ✓ | Identified only | Not implemented |
+| Filesystem | Metadata undelete | Status | Notes |
+|------------|-------------------|--------|-------|
+| FAT12/16/32 | ✓ | Fixture-validated | Directory entries, LFN, cluster chains |
+| exFAT | ✓ | Fixture-validated | Entry sets, allocation bitmap, NoFatChain |
+| NTFS | ✓ | Fixture-validated | $MFT records, resident/non-resident data, sparse runs |
+| ext2/3/4 | ✓ | Fixture-validated | Inodes, direct/indirect blocks, extent trees, sparse/unwritten runs |
+| HFS+ | ✓ | Experimental | Catalog B-tree and extent descriptors; no fixture yet |
+| APFS | ✓ | Experimental | Container/volume headers and B-tree inode scan; no fixture yet |
+| Btrfs | ✓ | Experimental | Root/chunk tree probing and inode items; no fixture yet |
+| XFS | ✓ | Experimental | AG headers and inode B+tree scan; no fixture yet |
+| ReFS, F2FS, ZFS, ReiserFS, ISO 9660, UDF | ✗ | Identified only | Detected by `probe()`; metadata recovery not implemented |
 
-**Legend:**
-- ✓ = Implemented and tested (has fixture + e2e test)
-- Experimental = Implemented but limited real-media validation
-- Identified only = Detected by `probe()`, metadata recovery not implemented
-- ✗ = Not supported for metadata recovery
+**Legend**
+
+- **Fixture-validated** — exercised by the deterministic testkit and end-to-end
+  scan → recover → SHA-256 tests.
+- **Experimental** — parser exists and is wired into scan, but has not been
+  validated against a fixture or real volume.
+- **Identified only** — detected and reported; no metadata recovery.
 
 ## Platform support
 
-| Platform | Raw device access | GUI | CLI | Imaging | Notes |
-|----------|-------------------|-----|-----|---------|-------|
-| Windows 10/11 x64 | ✓ (admin) | ✓ (WebView2) | ✓ | ✓ | Requires elevation for physical drives |
-| Windows ARM64 | ✓ (admin) | ✓ | ✓ | ✓ | Untested |
-| macOS 12+ (Intel) | ✓ (root/FDA) | ✓ | ✓ | ✓ | Full Disk Access required |
-| macOS 12+ (Apple Silicon) | ✓ (root/FDA) | ✓ | ✓ | ✓ | Universal binary |
-| Linux (glibc 2.31+) | ✓ (root) | ✓ | ✓ | ✓ | io_uring on kernel 5.1+ |
-| Linux ARM64 | ✓ (root) | ✓ | ✓ | ✓ | Tested on Raspberry Pi 4 |
-| Linux musl | Static binary | ✓ | ✓ | ✓ | Alpine, containers |
+| Platform | Build status | Runtime status | Notes |
+|----------|--------------|----------------|-------|
+| Windows 10/11 x64 (MSVC) | Built and tested locally | Exercised on synthetic fixtures | Raw devices require elevation |
+| Windows ARM64 | Untested | Untested | No prebuilt artifact yet |
+| macOS Intel / Apple Silicon | CI build target | Not exercised | Raw-device destination safety fails closed |
+| Linux x86_64 | CI build target | Not exercised locally | Raw devices may require root |
+| Linux ARM64 | Cross-build target | Not exercised | CLI archive built by the release workflow |
+| Linux musl | Not built | Not built | Planned |
 
-**Raw device access notes:**
-- Windows: `CreateFile` with `GENERIC_READ | FILE_SHARE_READ | FILE_SHARE_WRITE`, `FILE_FLAG_OVERLAPPED`
-- Linux: `open("/dev/sdX", O_RDONLY | O_DIRECT)` with fallback
-- macOS: `open("/dev/rdiskX", O_RDONLY)` with Full Disk Access
+Raw-device access is implemented with a read-only handle on each platform:
+
+- **Windows:** `CreateFileW` with `GENERIC_READ` only.
+- **Linux:** `open(..., O_RDONLY)`.
+- **macOS:** `open(..., O_RDONLY)`; destination checks fail closed.
+
+There is no io_uring, `O_DIRECT`, or OS-specific direct-I/O path.
 
 ## Image format support
 
 | Format | Read | Write | Notes |
 |--------|------|-------|-------|
-| Raw / .img / .dd / .001 | ✓ | ✓ | Split images supported |
-| E01 / Ex01 (EnCase) | ✓ | Planned | Via ewf-rs fork, CRC per chunk |
-| AFF4 | Planned | Planned | |
-| VHD / VHDX | ✓ | Planned | Fixed/dynamic/differencing |
-| VMDK | ✓ | Planned | Monolithic/split/sparse |
-| QCOW2 | ✓ | Planned | Backing chain support |
-| DMG / UDIF | ✓ | Planned | Read-only |
-| ISO 9660 / UDF | ✓ | ✗ | Optical images |
+| Raw image (`.img`, `.dd`, `.001`, any block file) | ✓ | ✓ | Imaging writes a raw image plus SHA-256 manifest |
+| E01/Ex01, AFF4, VHD/VHDX, VMDK, QCOW2, DMG/UDIF | ✗ | ✗ | Not implemented; convert to raw first |
 
-## Carved format support (validated)
+## Carved format support
 
-| Category | Formats | Validation |
-|----------|---------|------------|
-| Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF | Full structural (CRC, Huffman, IFD, box tree) |
-| Documents | PDF, DOCX, XLSX, PPTX, ODT, ODS, ODP, RTF, EPUB | Container + content-type check |
-| Archives | ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, tar | Central directory / CRC / block validation |
-| Video | MP4, MOV, MKV, AVI, WebM, FLV, MPEG-TS, 3GP | Box tree / RIFF / EBML validation |
-| Audio | MP3, WAV, FLAC, OGG, AAC, M4A, AIFF | Frame sync / CRC / header validation |
-| Databases | SQLite, MDB, ACCDB | Page header / freelist validation |
-| System | PST/OST, LNK, EVTX, Registry hives | Header / block validation |
-| Executables | PE (exe/dll), ELF | Header / section validation |
+Every emitted carve must pass a structural validator. The current validators are:
 
-**Not yet validated (carved but not emitted):**
-- FLAC (no structural validator)
-- RAR5 (no validator)
-- ZIP64 (no validator)
-- OLE compound files (DOC/XLS/PPT legacy)
-- ISO 9660 filesystem carving
+| Category | Formats |
+|----------|---------|
+| Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF |
+| Documents | PDF, DOCX, XLSX, PPTX |
+| Archives | ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, tar |
+| Video | MP4/MOV, MKV (WebM) |
+| Audio | MP3, WAV/RIFF, FLAC, Ogg |
+| Databases | SQLite |
+| System | PST/OST, LNK, EVTX |
+| Executables | PE (EXE/DLL), ELF |
+
+**Not implemented as validated carvers:** RAR5, ZIP64, OLE compound files
+(legacy DOC/XLS/PPT), MPEG-TS, ISO 9660.
 
 ## Feature matrix
 
@@ -85,28 +76,20 @@
 |---------|-----|-----|-------|
 | Device enumeration | ✓ | ✓ | `relift devices` |
 | Quick scan (metadata) | ✓ | ✓ | `--mode quick` |
-| Deep scan (carve) | ✓ | ✓ | `--mode deep` |
-| Formatted partition scan | ✓ | ✓ | `--mode formatted` |
-| Lost partition scan | ✓ | ✓ | `--mode lost-partition` |
-| Pause/resume scan | ✓ | ✓ | Session-based |
+| Deep scan (carve) | ✓ | ✓ | `--mode deep` / `--carve` |
+| Pause/resume scan | ✓ | Partial | Session-based; GUI exposes stop |
 | Live file listing | ✓ | ✓ | `--live` |
-| Filter by extension | ✓ | ✓ | `--filter ext:jpg,png` |
-| Filter by size | ✓ | ✓ | `--filter size:1KB-100MB` |
-| Filter by date | ✓ | ✓ | `--filter date:2024-01-01..2024-12-31` |
-| Filter by confidence | ✓ | ✓ | `--min-confidence verified` |
-| Filter by path | ✓ | ✓ | `--filter path:*/Pictures/*` |
-| Preview (images/text) | ✗ | ✓ | Right pane |
-| Preview (hex) | ✗ | ✓ | Right pane |
+| Filter by extension/confidence | ✓ | ✓ | Filter expressions |
+| Preview (text/hex/metadata) | ✗ | ✓ | Results pane |
 | SHA-256 verification | ✓ | ✓ | Default on |
-| Destination safety | ✓ | ✓ | Blocks same physical device |
-| Disk imaging | ✓ | ✓ | `relift image` |
-| ddrescue map file | ✓ | ✓ | Compatible format |
+| Destination safety | ✓ | ✓ | Blocks the same physical device |
+| Disk imaging | ✓ | ✗ | CLI only |
+| ddrescue-style map/resume | ✓ | ✗ | CLI only |
 | JSON output | ✓ | ✗ | `--json` |
-| CSV/HTML/MD report | ✓ | ✓ | `relift list` / GUI export |
+| JSON/CSV/HTML/Markdown reports | ✓ | ✗ | `relift report` |
 | Shell completions | ✓ | ✗ | `relift completions` |
-| Man page | ✓ | ✗ | `man relift` |
-| Self-tests (doctor) | ✓ | ✓ | `relift doctor` |
+| Self-tests (`doctor`) | ✓ | ✓ | Permission and device checks |
 
 ## Known limitations
 
-See `docs/GAP_REPORT.md` and `docs/limitations.md` for detailed gap tracking.
+See `docs/GAP_REPORT.md` and `docs/limitations.md` for the full list.

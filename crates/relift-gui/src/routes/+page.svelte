@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page, goto } from '$app/state';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { 
@@ -201,10 +202,10 @@
       <button class="btn-ghost p-2" title="Help" aria-label="Help">
         <HelpCircle class="w-5 h-5" />
       </button>
-      <button class="btn-ghost p-2" on:click={toggleTheme} aria-label="Toggle theme">
-        {theme === 'dark' ? <Sun class="w-5 h-5" /> : <Moon class="w-5 h-5" />}
+      <button class="btn-ghost p-2" onclick={toggleTheme} aria-label="Toggle theme">
+        {#if theme === 'dark'}<Sun class="w-5 h-5" />{:else}<Moon class="w-5 h-5" />{/if}
       </button>
-      <button class="btn-ghost p-2" on:click={() => showAdvanced = !showAdvanced} aria-label="Advanced options">
+      <button class="btn-ghost p-2" onclick={() => showAdvanced = !showAdvanced} aria-label="Advanced options">
         <Settings class="w-5 h-5" />
       </button>
     </div>
@@ -218,7 +219,7 @@
       <div class="text-sm text-text">
         <strong>Important:</strong> Stop using the drive immediately. Do not write anything to it. 
         Recover files to a <strong>different physical drive</strong>. 
-        <a href="#" class="underline hover:text-accent" on:click|preventDefault={() => alert('Detailed safety guide coming soon')}>
+        <a href="#" class="underline hover:text-accent" onclick={(e) => { e.preventDefault(); alert('Detailed safety guide coming soon'); }}>
           Why this matters
         </a>
       </div>
@@ -228,7 +229,7 @@
     <section class="mb-6">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-base font-medium text-text">Select a source</h2>
-        <button class="btn-secondary text-sm" on:click={handleImageSelect}>
+        <button class="btn-secondary text-sm" onclick={handleImageSelect}>
           <Database class="w-4 h-4" />
           Open disk image…
         </button>
@@ -237,7 +238,7 @@
       {#if showImagePicker}
         <div class="mb-4 p-4 rounded-lg bg-surface border border-border">
           <p class="text-sm text-text-muted mb-2">Selected image: <code class="monospace">{selectedImage}</code></p>
-          <button class="btn-ghost text-sm" on:click={() => { selectedImage = null; showImagePicker = false; }}>
+          <button class="btn-ghost text-sm" onclick={() => { selectedImage = null; showImagePicker = false; }}>
             Change image
           </button>
         </div>
@@ -250,7 +251,7 @@
             class:ring-2={selectedDevice?.path === device.path}
             class:ring-accent={selectedDevice?.path === device.path}
             class:bg-surface-hover={selectedDevice?.path === device.path}
-            on:click={() => { selectedDevice = device; selectedImage = null; showImagePicker = false; }}
+            onclick={() => { selectedDevice = device; selectedImage = null; showImagePicker = false; }}
             disabled={!device.accessible}
             aria-pressed={selectedDevice?.path === device.path}
           >
@@ -344,7 +345,7 @@
         class="btn w-full sm:w-auto min-w-[200px]"
         class:btn-primary={primaryButtonVariant === 'primary'}
         class:btn-secondary={primaryButtonVariant === 'secondary'}
-        on:click={startScan}
+        onclick={startScan}
         disabled={scanDisabled || loading}
       >
         {#if loading}

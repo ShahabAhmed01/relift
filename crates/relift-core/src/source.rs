@@ -7,7 +7,7 @@
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Seek, SeekFrom};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};

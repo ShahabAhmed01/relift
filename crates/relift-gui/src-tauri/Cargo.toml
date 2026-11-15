@@ -9,11 +9,11 @@ authors.workspace = true
 description = "Relift GUI: Tauri 2 + Svelte 5 frontend for the Relift recovery engine"
 
 [dependencies]
-tauri = { version = "2", features = ["fs", "dialog", "shell", "global-shortcut"] }
+tauri = { version = "2", features = ["default"] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-shell = { version = "2", features = ["open"] }
-relift-core = { path = "../relift-core" }
+tauri-plugin-shell = "2"
+relift-core = { path = "../../relift-core" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -23,7 +23,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 anyhow = { workspace = true }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { workspace = true }
-parking_lot = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -16,20 +16,25 @@ for %%D in (
     crates\relift-cli\src
     crates\relift-testkit\src
     crates\relift-gui\src-tauri\src
-    crates\relift-gui\src\routes
+    crates\relift-gui\src
     crates\relift-gui\src\lib\components
+    crates\relift-gui\src\routes
+    crates\relift-gui\src\routes\scan
+    crates\relift-gui\src\routes\results
+    crates\relift-gui\src\routes\recover
     crates\relift-gui\static
+    crates\relift-gui\src-tauri
+    crates\relift-gui\src-tauri\capabilities
+    crates\relift-gui\src-tauri\icons
     crates\relift-bench\src
     docs\decisions
     docs\research
-    docs\benches\results
+    docs\benches
     .github\workflows
     .github\ISSUE_TEMPLATE
     packaging
-    fixtures
-    growth
 ) do (
-    if exist %%D (
+    if exist %%D\nul (
         echo   ✓ %%D
     ) else (
         echo   ✗ MISSING: %%D
@@ -65,6 +70,9 @@ for %%F in (
     build.bat
     llms.txt
     llms-full.txt
+    BUILD_STATUS.md
+    FINAL_REPORT.md
+    PROJECT_SUMMARY.md
     docs\architecture.md
     docs\CLI.md
     docs\GUI.md
@@ -80,6 +88,7 @@ for %%F in (
     docs\threat-model.md
     docs\GAP_REPORT.md
     docs\VERIFICATION.md
+    docs\robots.txt
     docs\decisions\ADR-0001-canonical-name-stack.md
     docs\decisions\ADR-0002-read-only-invariant.md
     docs\decisions\ADR-0003-sparse-segment-model.md
@@ -89,9 +98,9 @@ for %%F in (
     docs\decisions\CONFLICT_REGISTER.md
     docs\research\landscape.md
     docs\benches\METHODOLOGY.md
-    docs\robots.txt
     crates\relift-core\Cargo.toml
     crates\relift-core\src\lib.rs
+    crates\relift-core\src\filter.rs
     crates\relift-core\src\scan.rs
     crates\relift-core\src\carve.rs
     crates\relift-core\src\fs\mod.rs
@@ -120,42 +129,50 @@ for %%F in (
     crates\relift-cli\src\main.rs
     crates\relift-testkit\Cargo.toml
     crates\relift-testkit\src\lib.rs
-    crates\relift-gui\Cargo.toml
     crates\relift-gui\package.json
     crates\relift-gui\svelte.config.js
     crates\relift-gui\vite.config.ts
     crates\relift-gui\tsconfig.json
-    crates\relift-gui\src\app.html
     crates\relift-gui\src\app.css
-    crates\relift-gui\src\main.ts
-    crates\relift-gui\src\App.svelte
+    crates\relift-gui\src\app.d.ts
+    crates\relift-gui\src\app.html
+    crates\relift-gui\src\lib\components\Icons.svelte
     crates\relift-gui\src\routes\+layout.svelte
+    crates\relift-gui\src\routes\+layout.ts
     crates\relift-gui\src\routes\+page.svelte
     crates\relift-gui\src\routes\scan\+page.svelte
     crates\relift-gui\src\routes\results\+page.svelte
     crates\relift-gui\src\routes\recover\+page.svelte
-    crates\relift-gui\src\lib\components\Icons.svelte
-    crates\relift-gui\src-tauri\Cargo.toml
-    crates\relift-gui\src-tauri\tauri.conf.json
-    crates\relift-gui\src-tauri\src\main.rs
-    crates\relift-gui\src-tauri\icons\icon.svg
-    crates\relift-gui\src-tauri\icons\README.md
     crates\relift-gui\static\favicon.svg
     crates\relift-gui\static\manifest.json
+    crates\relift-gui\src-tauri\Cargo.toml
+    crates\relift-gui\src-tauri\build.rs
+    crates\relift-gui\src-tauri\tauri.conf.json
+    crates\relift-gui\src-tauri\src\main.rs
+    crates\relift-gui\src-tauri\src\lib.rs
+    crates\relift-gui\src-tauri\src\commands.rs
+    crates\relift-gui\src-tauri\src\state.rs
+    crates\relift-gui\src-tauri\capabilities\default.json
+    crates\relift-gui\src-tauri\icons\icon.svg
+    crates\relift-gui\src-tauri\icons\icon.ico
+    crates\relift-gui\src-tauri\icons\icon.icns
+    crates\relift-gui\src-tauri\icons\README.md
     crates\relift-bench\Cargo.toml
     crates\relift-bench\src\main.rs
     .github\workflows\ci.yml
+    .github\workflows\release.yml
     .github\CODEOWNERS
+    .github\PULL_REQUEST_TEMPLATE.md
     .github\ISSUE_TEMPLATE\bug_report.yml
     .github\ISSUE_TEMPLATE\feature_request.yml
     .github\ISSUE_TEMPLATE\recovery-failure.md
-    .github\PULL_REQUEST_TEMPLATE.md
-    packaging\winget
-    packaging\scoop
-    packaging\homebrew
-    packaging\aur
-    packaging\snap
-    packaging\flatpak
+    packaging\winget\relift.vestige.yaml
+    packaging\scoop\relift.json
+    packaging\homebrew\relift.rb
+    packaging\aur\PKGBUILD
+    packaging\aur\PKGBUILD-bin
+    packaging\snap\snapcraft.yaml
+    packaging\flatpak\com.github.ShahabAhmed01.relift.yml
 ) do (
     if exist %%F (
         echo   ✓ %%F

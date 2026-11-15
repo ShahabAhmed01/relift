@@ -1,3 +1,6 @@
+# TEMPLATE - DO NOT SUBMIT until first release assets exist.
+# Placeholder checksum must be replaced after tagging v0.1.0 and publishing
+# release artifacts.
 # Maintainer: Shahab Ahmed <shahab@example.com>
 pkgname=relift
 pkgver=0.1.0

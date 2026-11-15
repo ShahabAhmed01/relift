@@ -530,7 +530,7 @@ fn parse_nonresident_data(
     attr: &[u8],
     boot: &NtfsBoot,
     volume: &VolumeRef,
-    record_number: u64,
+    _record_number: u64,
 ) -> Option<NtfsData> {
     if attr.len() < 64 {
         return None;
@@ -586,13 +586,8 @@ fn parse_nonresident_data(
             if end > boot.cluster_count {
                 return None;
             }
-            if boot
-                .cluster_offset(start)
-                .map(|v| v.saturating_add(volume.offset))
-                .is_none()
-            {
-                return None;
-            }
+            boot.cluster_offset(start)
+                .map(|v| v.saturating_add(volume.offset))?;
         }
         runs.push(Run {
             vcn,
@@ -787,9 +782,8 @@ fn read_segments(
             break;
         }
         match segment {
-            Segment::Data { extent } => {
-                let abs = extent
-                    .offset
+            Segment::Data { offset, length: _ } => {
+                let abs = offset
                     .checked_add(within)
                     .ok_or_else(|| Error::Corrupt("stream data offset overflow".into()))?;
                 src.read_exact_at(abs, &mut out[filled..filled + take])?;
@@ -921,8 +915,7 @@ fn resolve_parent_path(
         visiting.remove(&record);
         return (String::new(), true);
     };
-    let (mut parent_path, mut cycle) =
-        resolve_parent_path(summary.parent, summaries, memo, visiting);
+    let (mut parent_path, cycle) = resolve_parent_path(summary.parent, summaries, memo, visiting);
     if !parent_path.is_empty() {
         parent_path.push('/');
     }
@@ -1073,8 +1066,8 @@ pub fn scan(
             ConfidenceLabel::Likely
         };
         let mut score: u8 = if parsed.in_use { 96 } else { 86 };
-        let mut complete = false;
-        let mut data = DataLocation::None;
+        let mut complete;
+        let mut data;
         let mut size = primary.real_size;
 
         if !parsed.fixup_ok {

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Rust 1.82+ (via rustup)
+- Rust 1.90+ (via rustup)
 - Node.js 20+ (for frontend)
 - Tauri 2 prerequisites:
   - **Windows**: WebView2 Runtime (Win 10 1809+ includes it), Visual Studio Build Tools

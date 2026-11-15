@@ -1,3 +1,6 @@
+# TEMPLATE - DO NOT SUBMIT until first release assets exist.
+# Placeholder checksums and ProductCode GUIDs must be replaced after tagging
+# v0.1.0 and publishing release artifacts.
 # winget manifest for Relift
 # Submit to microsoft/winget-pkgs
 

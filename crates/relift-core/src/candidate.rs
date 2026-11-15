@@ -23,6 +23,8 @@ pub enum RecoveryMethod {
     Carved,
     /// Metadata identified a file but its content location is not available.
     MetadataOnly,
+    /// Full metadata recovery (original name, path, timestamps).
+    Metadata,
 }
 
 impl RecoveryMethod {
@@ -36,6 +38,7 @@ impl RecoveryMethod {
             Self::DirectorySlack => "directory-slack",
             Self::Carved => "carved",
             Self::MetadataOnly => "metadata-only",
+            Self::Metadata => "metadata",
         }
     }
 
@@ -126,16 +129,14 @@ impl Extent {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Segment {
     /// Bytes read from the source.
-    Data { extent: Extent },
+    Data { offset: u64, length: u64 },
     /// Bytes that are logically zero and are not present in the source.
     Zero { length: u64 },
 }
 
 impl Segment {
     pub fn data(offset: u64, length: u64) -> Self {
-        Self::Data {
-            extent: Extent::new(offset, length),
-        }
+        Self::Data { offset, length }
     }
 
     pub fn zero(length: u64) -> Self {
@@ -144,7 +145,7 @@ impl Segment {
 
     pub fn length(&self) -> u64 {
         match self {
-            Self::Data { extent } => extent.length,
+            Self::Data { length, .. } => *length,
             Self::Zero { length } => *length,
         }
     }
@@ -240,7 +241,7 @@ impl Category {
             | "iso" => Self::Archive,
             "sqlite" | "db" | "sqlite3" | "mdb" | "accdb" | "dbf" => Self::Database,
             "exe" | "dll" | "elf" | "so" | "dylib" | "bin" | "msi" => Self::Executable,
-            "rs" | "c" | "h" | "cpp" | "hpp" | "py" | "js" | "ts" | "go" | "java" | "cs" | "rb"
+            "rs" | "c" | "h" | "cpp" | "hpp" | "py" | "js" | "go" | "java" | "cs" | "rb"
             | "php" | "sh" | "ps1" => Self::SourceCode,
             _ => Self::Other,
         }
@@ -304,6 +305,8 @@ pub struct Candidate {
     pub notes: Vec<String>,
     #[serde(default)]
     pub content_sha256: Option<String>,
+    #[serde(default)]
+    pub mode: Option<u16>,
 }
 
 impl Candidate {
@@ -339,6 +342,7 @@ impl Candidate {
             validation: Vec::new(),
             notes: Vec::new(),
             content_sha256: None,
+            mode: None,
         }
     }
 

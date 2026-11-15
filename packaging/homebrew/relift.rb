@@ -1,3 +1,6 @@
+# TEMPLATE - DO NOT SUBMIT until first release assets exist.
+# Placeholder checksums and versions must be replaced after tagging v0.1.0
+# and publishing release artifacts.
 class Relift < Formula
   desc "Free, open-source data recovery for Windows, macOS, and Linux"
   homepage "https://github.com/ShahabAhmed01/relift"

@@ -114,11 +114,16 @@ impl HfsPlusVolumeHeader {
                 u32_be(&buf, 104).unwrap_or(0),
                 u32_be(&buf, 108).unwrap_or(0),
             ],
-            allocation_file: BTreeRef::parse(&buf, 112)?,
-            extents_file: BTreeRef::parse(&buf, 160)?,
-            catalog_file: BTreeRef::parse(&buf, 208)?,
-            attributes_file: BTreeRef::parse(&buf, 256)?,
-            startup_file: BTreeRef::parse(&buf, 304)?,
+            allocation_file: BTreeRef::parse(&buf, 112)
+                .ok_or_else(|| Error::Corrupt("invalid allocation file btree".into()))?,
+            extents_file: BTreeRef::parse(&buf, 160)
+                .ok_or_else(|| Error::Corrupt("invalid extents file btree".into()))?,
+            catalog_file: BTreeRef::parse(&buf, 208)
+                .ok_or_else(|| Error::Corrupt("invalid catalog file btree".into()))?,
+            attributes_file: BTreeRef::parse(&buf, 256)
+                .ok_or_else(|| Error::Corrupt("invalid attributes file btree".into()))?,
+            startup_file: BTreeRef::parse(&buf, 304)
+                .ok_or_else(|| Error::Corrupt("invalid startup file btree".into()))?,
         })
     }
 }
@@ -289,7 +294,7 @@ struct ForkData {
     extents: [ExtentDescriptor; 8],
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct ExtentDescriptor {
     start_block: u32,
     block_count: u32,
@@ -347,8 +352,8 @@ impl FileRecord {
         };
 
         let mut finder_info = [0u32; 16];
-        for i in 0..16 {
-            finder_info[i] = u32_be(buf, offset + 78 + i * 4)?;
+        for (i, slot) in finder_info.iter_mut().enumerate() {
+            *slot = u32_be(buf, offset + 78 + i * 4)?;
         }
 
         let text_encoding = u32_be(buf, offset + 142)?;
@@ -394,9 +399,9 @@ impl ForkData {
             start_block: 0,
             block_count: 0,
         }; 8];
-        for i in 0..8 {
+        for (i, slot) in extents.iter_mut().enumerate() {
             if let Some(e) = ExtentDescriptor::parse(buf, offset + 16 + i * 8) {
-                extents[i] = e;
+                *slot = e;
             }
         }
         Some(Self {
@@ -421,12 +426,12 @@ impl BTreeNode {
         if buf.len() < 14 {
             return None;
         }
-        let f_link = u32_be(buf, 0)?;
-        let b_link = u32_be(buf, 4)?;
+        let _f_link = u32_be(buf, 0)?;
+        let _b_link = u32_be(buf, 4)?;
         let node_type = u8_at(buf, 8)?;
         let height = u8_at(buf, 9)?;
         let num_records = u16_be(buf, 10)?;
-        let reserved = u16_be(buf, 12)?;
+        let _reserved = u16_be(buf, 12)?;
         Some(Self {
             node_type,
             height,
@@ -491,11 +496,14 @@ pub fn scan(
     options: &FsScanOptions,
     sink: &mut dyn CandidateSink,
 ) -> Result<FsSummary> {
-    let Some(header) = HfsPlusVolumeHeader::parse(src, volume) else {
-        return Ok(FsSummary {
-            warnings: vec!["failed to parse HFS+ volume header".into()],
-            ..Default::default()
-        });
+    let header = match HfsPlusVolumeHeader::parse(src, volume) {
+        Ok(h) => h,
+        Err(_) => {
+            return Ok(FsSummary {
+                warnings: vec!["failed to parse HFS+ volume header".into()],
+                ..Default::default()
+            });
+        }
     };
 
     let mut summary = FsSummary::new(FsKind::HfsPlus, None);
@@ -504,7 +512,7 @@ pub fn scan(
 
     let catalog_ref = header.catalog_file;
     let node_size = catalog_ref.node_size as usize;
-    if node_size < 512 || node_size > 32768 || !node_size.is_power_of_two() {
+    if !(512..=32768).contains(&node_size) || !node_size.is_power_of_two() {
         summary.warnings.push("invalid catalog node size".into());
         return Ok(summary);
     }
@@ -549,7 +557,7 @@ pub fn scan(
             continue;
         }
 
-        let mut offset = 0;
+        let _offset = 0;
         let record_offsets: Vec<u16> = (0..node.num_records)
             .filter_map(|i| {
                 let off = node.data.len().checked_sub((i + 1) as usize * 2)?;
@@ -591,7 +599,7 @@ pub fn scan(
                     }
                 }
                 0x0002 => {
-                    if let Some(file_thread) = ThreadRecord::parse(record_data, 2) {
+                    if let Some(_file_thread) = ThreadRecord::parse(record_data, 2) {
                         // File thread record
                     }
                 }
@@ -677,6 +685,7 @@ pub fn scan(
     Ok(summary)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_hfs_file_candidate(
     sink: &mut dyn CandidateSink,
     summary: &mut FsSummary,

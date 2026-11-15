@@ -5,6 +5,11 @@
 //! is covered by fixtures. Everything else is identified but reported as
 //! unsupported for metadata recovery; raw carving may still find content.
 
+// On-disk format definitions intentionally keep every documented field (and
+// parsers for key types not yet wired into the recovery path) so the structs
+// remain faithful to the published layouts and usable by follow-up work.
+#![allow(dead_code)]
+
 pub mod apfs;
 pub mod btrfs;
 pub mod exfat;
@@ -314,8 +319,7 @@ pub(crate) fn read_at_volume(
 
 /// Compute cluster size from BPB values with sanity bounds.
 pub(crate) fn cluster_size(bytes_per_sector: u32, sectors_per_cluster: u32) -> Option<u64> {
-    if bytes_per_sector < 128
-        || bytes_per_sector > 4096
+    if !(128..=4096).contains(&bytes_per_sector)
         || !bytes_per_sector.is_power_of_two()
         || sectors_per_cluster == 0
         || sectors_per_cluster > 4096

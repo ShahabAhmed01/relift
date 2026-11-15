@@ -15,7 +15,7 @@ use crate::fs::{
     read_at_volume, CandidateSink, FsInfo, FsKind, FsScanOptions, FsSummary, VolumeRef,
 };
 use crate::source::ReadOnlySource;
-use crate::util::{filetime_to_iso, u16_le, u32_le, u64_le, u8_at, utf16le_to_string};
+use crate::util::{u16_le, u32_le, u64_le};
 
 const APFS_CONTAINER_MAGIC: &[u8] = b"NXSB";
 const APFS_VOLUME_MAGIC: &[u8] = b"APSB";
@@ -52,7 +52,7 @@ impl ApfsContainer {
 
         let mut warnings = Vec::new();
         let block_size = u32_le(&buf, 24).unwrap_or(4096);
-        if !block_size.is_power_of_two() || block_size < 4096 || block_size > 65536 {
+        if !block_size.is_power_of_two() || !(4096..=65536).contains(&block_size) {
             return Err(Error::invalid("invalid APFS block size"));
         }
         let total_blocks = u64_le(&buf, 32).unwrap_or(0);
@@ -438,6 +438,7 @@ fn read_btree_node(
     Ok(Some(buf))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scan_btree_nodes(
     src: &dyn ReadOnlySource,
     volume: &VolumeRef,
@@ -488,8 +489,12 @@ fn scan_btree_nodes(
             if offset + 8 > node_buf.len() {
                 break;
             }
-            let key_len = u16_le(&node_buf, offset)? as usize;
-            let val_len = u16_le(&node_buf, offset + 2)? as usize;
+            let key_len = u16_le(&node_buf, offset)
+                .ok_or_else(|| Error::Corrupt("invalid key length".into()))?
+                as usize;
+            let val_len = u16_le(&node_buf, offset + 2)
+                .ok_or_else(|| Error::Corrupt("invalid val length".into()))?
+                as usize;
             offset += 8;
 
             if offset + key_len + val_len > node_buf.len() {
@@ -500,40 +505,37 @@ fn scan_btree_nodes(
             let val = &node_buf[offset + key_len..offset + key_len + val_len];
 
             match header.node_type {
-                BTreeNodeType::Leaf | BTreeNodeType::Internal => {
-                    if key.len() >= 16 {
-                        let obj_key = JObjectKey::parse(key, 0);
-                        if let Some(obj_key) = obj_key {
-                            if obj_key.obj_type == 1 {
-                                if let Some(inode) = JInodeVal::parse(val, 0) {
-                                    if inode.is_deleted() || options.include_live {
-                                        summary.deleted_entries +=
-                                            if inode.is_deleted() { 1 } else { 0 };
-                                        summary.live_entries +=
-                                            if !inode.is_deleted() { 1 } else { 0 };
+                BTreeNodeType::Leaf | BTreeNodeType::Internal if key.len() >= 16 => {
+                    let obj_key = JObjectKey::parse(key, 0);
+                    if let Some(obj_key) = obj_key {
+                        if obj_key.obj_type == 1 {
+                            if let Some(inode) = JInodeVal::parse(val, 0) {
+                                if inode.is_deleted() || options.include_live {
+                                    summary.deleted_entries +=
+                                        if inode.is_deleted() { 1 } else { 0 };
+                                    summary.live_entries += if !inode.is_deleted() { 1 } else { 0 };
 
-                                        let path =
-                                            build_path(path_map, inode.parent_id, obj_key.obj_id);
-                                        let name = format!("inode_{}", obj_key.obj_id);
+                                    let path =
+                                        build_path(path_map, inode.parent_id, obj_key.obj_id);
+                                    let name = format!("inode_{}", obj_key.obj_id);
 
-                                        emit_inode_candidate(
-                                            sink,
-                                            &mut summary,
-                                            &name,
-                                            &path,
-                                            inode.mod_time,
-                                            inode.access_time,
-                                            inode.change_time,
-                                            inode.create_time,
-                                            inode.mode,
-                                            inode.extents_ref,
-                                            inode.private_id,
-                                            volume_offset,
-                                            block_size,
-                                            src,
-                                            inode.is_deleted(),
-                                        )?;
-                                    }
+                                    emit_inode_candidate(
+                                        sink,
+                                        &mut summary,
+                                        &name,
+                                        &path,
+                                        inode.mod_time,
+                                        inode.access_time,
+                                        inode.change_time,
+                                        inode.create_time,
+                                        inode.mode,
+                                        inode.extents_ref,
+                                        inode.private_id,
+                                        volume_offset,
+                                        block_size,
+                                        src,
+                                        inode.is_deleted(),
+                                    )?;
                                 }
                             }
                         }
@@ -573,6 +575,7 @@ fn build_path(path_map: &HashMap<u64, String>, parent_id: u64, obj_id: u64) -> S
     format!("{}/{}", parent_path, obj_id)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_inode_candidate(
     sink: &mut dyn CandidateSink,
     summary: &mut FsSummary,
@@ -580,7 +583,7 @@ fn emit_inode_candidate(
     path: &str,
     mod_time: u64,
     access_time: u64,
-    change_time: u64,
+    _change_time: u64,
     create_time: u64,
     mode: u16,
     extents_ref: u64,
@@ -625,8 +628,6 @@ fn emit_inode_candidate(
             offset: 0,
             length: 0,
         }
-    } else if extents.len() == 1 {
-        DataLocation::Segments { segments: extents }
     } else {
         DataLocation::Segments { segments: extents }
     };
@@ -684,17 +685,17 @@ fn apfs_time_to_iso(ns: u64) -> String {
     let secs = ns / 1_000_000_000;
     let nanos = (ns % 1_000_000_000) as u32;
     // Use a simple RFC3339 formatter without chrono
-    let dt = time_from_unix(secs, nanos);
-    dt
+
+    time_from_unix(secs, nanos)
 }
 
-fn time_from_unix(secs: u64, nanos: u32) -> String {
+fn time_from_unix(secs: u64, _nanos: u32) -> String {
     // Simple implementation - in production this would use chrono
     // For now return a basic ISO format
     let days = secs / 86400;
     let _secs_of_day = secs % 86400;
     // Approximate year calculation (good enough for display)
-    let years = 1970 + (days / 365) as u64;
+    let years = 1970 + (days / 365);
     format!("{:04}-01-01T00:00:00Z", years)
 }
 
@@ -760,17 +761,23 @@ pub fn scan(
     options: &FsScanOptions,
     sink: &mut dyn CandidateSink,
 ) -> Result<FsSummary> {
-    let Some(container) = ApfsContainer::parse(src, volume) else {
-        return Ok(FsSummary {
-            warnings: vec!["failed to parse APFS container".into()],
-            ..Default::default()
-        });
+    let container = match ApfsContainer::parse(src, volume) {
+        Ok(c) => c,
+        Err(_) => {
+            return Ok(FsSummary {
+                warnings: vec!["failed to parse APFS container".into()],
+                ..Default::default()
+            });
+        }
     };
-    let Some(apfs_volume) = ApfsVolume::parse(src, volume, &container) else {
-        return Ok(FsSummary {
-            warnings: vec!["failed to parse APFS volume".into()],
-            ..Default::default()
-        });
+    let apfs_volume = match ApfsVolume::parse(src, volume, &container) {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(FsSummary {
+                warnings: vec!["failed to parse APFS volume".into()],
+                ..Default::default()
+            });
+        }
     };
 
     let mut summary = FsSummary::new(FsKind::Apfs, None);
@@ -781,7 +788,7 @@ pub fn scan(
     let block_size = apfs_volume.block_size;
 
     if apfs_volume.root_tree_oid != 0 {
-        let mut tree_summary = scan_btree_nodes(
+        let tree_summary = scan_btree_nodes(
             src,
             volume,
             volume_offset,

@@ -13,6 +13,7 @@ pub mod candidate;
 pub mod carve;
 pub mod devices;
 pub mod error;
+pub mod filter;
 pub mod fs;
 pub mod hash;
 pub mod imaging;

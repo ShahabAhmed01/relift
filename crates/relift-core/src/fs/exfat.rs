@@ -722,7 +722,7 @@ impl<'a> ExfatScan<'a> {
             score = 20;
             reasons.push("first cluster is unavailable; content cannot be located".into());
         } else {
-            let (mut clusters, mut exact) = if set.no_fat_chain {
+            let (clusters, exact) = if set.no_fat_chain {
                 self.contiguous_clusters(set.first_cluster, set.data_length)
             } else {
                 let (chain, exact) = self.chain_clusters(set.first_cluster, set.data_length);

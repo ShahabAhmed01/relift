@@ -18,6 +18,7 @@ use serde::Serialize;
 
 use crate::candidate::{Candidate, ConfidenceLabel, DataLocation};
 use crate::error::{Error, Result};
+use crate::filter::CandidateFilter;
 use crate::hash::{hash_file, Hasher};
 use crate::safety::{sanitize_filename, sanitize_relative, validate_destination};
 use crate::session::{
@@ -35,6 +36,10 @@ pub struct RecoverOptions {
     pub verify: bool,
     pub min_confidence: Option<ConfidenceLabel>,
     pub ids: Option<HashSet<u64>>,
+    pub filter: Option<CandidateFilter>,
+    /// Plan only: validate the source and destination, list what would be
+    /// written, and leave both the session and destination untouched.
+    pub dry_run: bool,
     pub cancelled: Arc<AtomicBool>,
 }
 
@@ -45,6 +50,8 @@ impl RecoverOptions {
             verify: true,
             min_confidence: None,
             ids: None,
+            filter: None,
+            dry_run: false,
             cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -57,10 +64,14 @@ impl RecoverOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryStatus {
+    /// A real run completed this file and the bytes were verified when
+    /// verification was enabled.
     Recovered,
     Partial,
     Failed,
     Skipped,
+    /// A dry run selected this file but wrote nothing.
+    Planned,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -81,6 +92,7 @@ pub struct RecoveredFile {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RecoverySummary {
+    pub dry_run: bool,
     pub considered: u64,
     pub attempted: u64,
     pub succeeded: u64,
@@ -88,6 +100,9 @@ pub struct RecoverySummary {
     pub failed: u64,
     pub skipped: u64,
     pub bytes_written: u64,
+    /// Sum of the recorded sizes of candidates a dry run selected. Zero for a
+    /// real run, where `bytes_written` is authoritative.
+    pub bytes_planned: u64,
     pub destination: String,
     pub results: Vec<RecoveredFile>,
     pub results_truncated: bool,
@@ -123,23 +138,26 @@ pub fn run_recovery(
     }
     let dest = validate_destination(&header.source, &options.dest)?;
     let started = now_iso();
-    header.status = SessionStatus::Recovering;
-    header.destination = Some(dest.to_string_lossy().to_string());
-    header.recovery = Some(RecoveryTotals {
-        attempted: 0,
-        succeeded: 0,
-        partial: 0,
-        failed: 0,
-        skipped: 0,
-        bytes_written: 0,
-        started: started.clone(),
-        finished: None,
-    });
-    save_header_to(session_dir, &header)?;
+    if !options.dry_run {
+        header.status = SessionStatus::Recovering;
+        header.destination = Some(dest.to_string_lossy().to_string());
+        header.recovery = Some(RecoveryTotals {
+            attempted: 0,
+            succeeded: 0,
+            partial: 0,
+            failed: 0,
+            skipped: 0,
+            bytes_written: 0,
+            started: started.clone(),
+            finished: None,
+        });
+        save_header_to(session_dir, &header)?;
+    }
 
     let total = header.summary.candidates;
     let mut reader = CandidateReader::open(session_dir)?;
     let mut summary = RecoverySummary {
+        dry_run: options.dry_run,
         considered: 0,
         attempted: 0,
         succeeded: 0,
@@ -147,6 +165,7 @@ pub fn run_recovery(
         failed: 0,
         skipped: 0,
         bytes_written: 0,
+        bytes_planned: 0,
         destination: dest.to_string_lossy().to_string(),
         results: Vec::new(),
         results_truncated: false,
@@ -178,6 +197,12 @@ pub fn run_recovery(
                 continue;
             }
         }
+        if let Some(filter) = &options.filter {
+            if !filter.matches(&candidate) {
+                summary.skipped += 1;
+                continue;
+            }
+        }
         if candidate.size > 0 && !candidate.has_content() {
             summary.skipped += 1;
             let record = RecoveredFile {
@@ -194,45 +219,68 @@ pub fn run_recovery(
                 method: candidate.method.as_str().into(),
                 note: Some("no content location was recoverable from metadata".into()),
             };
-            append_json_line(session_dir, RECOVERED_FILE, &record)?;
+            if !options.dry_run {
+                append_json_line(session_dir, RECOVERED_FILE, &record)?;
+            }
             push_result(&mut summary, record);
             continue;
         }
         summary.attempted += 1;
-        let outcome = recover_one(src, &dest, &candidate, options.verify);
-        match outcome {
-            Ok(record) => {
-                summary.bytes_written += record.bytes_written;
-                match record.status {
-                    RecoveryStatus::Recovered => summary.succeeded += 1,
-                    RecoveryStatus::Partial => summary.partial += 1,
-                    RecoveryStatus::Failed => summary.failed += 1,
-                    RecoveryStatus::Skipped => summary.skipped += 1,
+        if options.dry_run {
+            summary.bytes_planned = summary.bytes_planned.saturating_add(candidate.size);
+            let relative = output_relative_path(&candidate);
+            let record = RecoveredFile {
+                id: candidate.id,
+                name: candidate.name.clone(),
+                original_path: candidate.display_path(),
+                output_path: Some(dest.join(relative).to_string_lossy().to_string()),
+                expected_size: candidate.size,
+                bytes_written: 0,
+                sha256: None,
+                verified: false,
+                status: RecoveryStatus::Planned,
+                confidence: candidate.confidence.label.as_str().into(),
+                method: candidate.method.as_str().into(),
+                note: Some("dry run: nothing was written".into()),
+            };
+            push_result(&mut summary, record);
+        } else {
+            let outcome = recover_one(src, &dest, &candidate, options.verify);
+            match outcome {
+                Ok(record) => {
+                    summary.bytes_written += record.bytes_written;
+                    match record.status {
+                        RecoveryStatus::Recovered => summary.succeeded += 1,
+                        RecoveryStatus::Partial => summary.partial += 1,
+                        RecoveryStatus::Failed => summary.failed += 1,
+                        RecoveryStatus::Skipped => summary.skipped += 1,
+                        RecoveryStatus::Planned => {}
+                    }
+                    append_json_line(session_dir, RECOVERED_FILE, &record)?;
+                    push_result(&mut summary, record);
                 }
-                append_json_line(session_dir, RECOVERED_FILE, &record)?;
-                push_result(&mut summary, record);
-            }
-            Err(e) => {
-                summary.failed += 1;
-                let record = RecoveredFile {
-                    id: candidate.id,
-                    name: candidate.name.clone(),
-                    original_path: candidate.display_path(),
-                    output_path: None,
-                    expected_size: candidate.size,
-                    bytes_written: 0,
-                    sha256: None,
-                    verified: false,
-                    status: RecoveryStatus::Failed,
-                    confidence: candidate.confidence.label.as_str().into(),
-                    method: candidate.method.as_str().into(),
-                    note: Some(e.to_string()),
-                };
-                append_json_line(session_dir, RECOVERED_FILE, &record)?;
-                push_result(&mut summary, record.clone());
-                summary
-                    .warnings
-                    .push(format!("candidate {} failed: {e}", candidate.id));
+                Err(e) => {
+                    summary.failed += 1;
+                    let record = RecoveredFile {
+                        id: candidate.id,
+                        name: candidate.name.clone(),
+                        original_path: candidate.display_path(),
+                        output_path: None,
+                        expected_size: candidate.size,
+                        bytes_written: 0,
+                        sha256: None,
+                        verified: false,
+                        status: RecoveryStatus::Failed,
+                        confidence: candidate.confidence.label.as_str().into(),
+                        method: candidate.method.as_str().into(),
+                        note: Some(e.to_string()),
+                    };
+                    append_json_line(session_dir, RECOVERED_FILE, &record)?;
+                    push_result(&mut summary, record.clone());
+                    summary
+                        .warnings
+                        .push(format!("candidate {} failed: {e}", candidate.id));
+                }
             }
         }
         progress(RecoveryProgress {
@@ -243,32 +291,41 @@ pub fn run_recovery(
         });
     }
 
+    if options.dry_run {
+        summary.warnings.push(
+            "dry run: destination and source were validated, but no files were written and the \
+             session was not modified"
+                .into(),
+        );
+    }
     summary.finished = now_iso();
     if options.is_cancelled() {
         summary.warnings.push("recovery was cancelled".into());
     }
-    header.recovery = Some(RecoveryTotals {
-        attempted: summary.attempted,
-        succeeded: summary.succeeded,
-        partial: summary.partial,
-        failed: summary.failed,
-        skipped: summary.skipped,
-        bytes_written: summary.bytes_written,
-        started: summary.started.clone(),
-        finished: Some(summary.finished.clone()),
-    });
-    header.status = if summary.failed > 0 || summary.partial > 0 || options.is_cancelled() {
-        SessionStatus::RecoveryPartial
-    } else {
-        SessionStatus::Recovered
-    };
-    header.finished = Some(summary.finished.clone());
-    for w in &summary.warnings {
-        if !header.warnings.contains(w) {
-            header.warnings.push(w.clone());
+    if !options.dry_run {
+        header.recovery = Some(RecoveryTotals {
+            attempted: summary.attempted,
+            succeeded: summary.succeeded,
+            partial: summary.partial,
+            failed: summary.failed,
+            skipped: summary.skipped,
+            bytes_written: summary.bytes_written,
+            started: summary.started.clone(),
+            finished: Some(summary.finished.clone()),
+        });
+        header.status = if summary.failed > 0 || summary.partial > 0 || options.is_cancelled() {
+            SessionStatus::RecoveryPartial
+        } else {
+            SessionStatus::Recovered
+        };
+        header.finished = Some(summary.finished.clone());
+        for w in &summary.warnings {
+            if !header.warnings.contains(w) {
+                header.warnings.push(w.clone());
+            }
         }
+        save_header_to(session_dir, &header)?;
     }
-    save_header_to(session_dir, &header)?;
     Ok(summary)
 }
 
@@ -280,7 +337,7 @@ fn push_result(summary: &mut RecoverySummary, record: RecoveredFile) {
     }
 }
 
-fn confidence_rank(label: ConfidenceLabel) -> u8 {
+pub fn confidence_rank(label: ConfidenceLabel) -> u8 {
     match label {
         ConfidenceLabel::Unverified => 0,
         ConfidenceLabel::Partial => 1,
@@ -345,26 +402,23 @@ fn recover_one(
 
     let mut verified = false;
     let mut output_path = Some(path.to_string_lossy().to_string());
-    if !io_failed {
-        if verify {
-            match hash_file(&path) {
-                Ok(actual) if actual == hash => verified = true,
-                Ok(actual) => {
-                    io_failed = true;
-                    note = Some(format!(
-                        "written file hash {actual} does not match copy hash {hash}"
-                    ));
-                }
-                Err(e) => {
-                    io_failed = true;
-                    note = Some(format!("could not re-read written file: {e}"));
-                }
+    if !io_failed && verify {
+        match hash_file(&path) {
+            Ok(actual) if actual == hash => verified = true,
+            Ok(actual) => {
+                io_failed = true;
+                note = Some(format!(
+                    "written file hash {actual} does not match copy hash {hash}"
+                ));
+            }
+            Err(e) => {
+                io_failed = true;
+                note = Some(format!("could not re-read written file: {e}"));
             }
         }
     }
     if io_failed {
         status = RecoveryStatus::Failed;
-        complete = false;
         match quarantine(&path) {
             Some(partial) => {
                 output_path = Some(partial.to_string_lossy().to_string());
@@ -433,16 +487,8 @@ fn write_data(
                     break;
                 }
                 match segment {
-                    crate::candidate::Segment::Data { extent } => {
-                        copy_extent(
-                            src,
-                            out,
-                            extent.offset,
-                            extent.length,
-                            size,
-                            written,
-                            hasher,
-                        )?;
+                    crate::candidate::Segment::Data { offset, length } => {
+                        copy_extent(src, out, *offset, *length, size, written, hasher)?;
                     }
                     crate::candidate::Segment::Zero { length } => {
                         write_zeros(out, *length, size, written, hasher)?;
@@ -758,6 +804,66 @@ mod tests {
         let mut progress = |_p: RecoveryProgress| {};
         let err = run_recovery(&session, &src, &options, &mut progress).unwrap_err();
         assert!(err.to_string().contains("does not match"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn dry_run_plans_without_writing_or_mutating_the_session() {
+        let (base, session) = setup();
+        let image = base.join("src.img");
+        let src = FileSource::open(&image).unwrap();
+        let mut header = load_header(&session).unwrap();
+        header.source = src.identity();
+        save_header_to(&session, &header).unwrap();
+        let dest = base.join("out");
+        fs::create_dir_all(&dest).unwrap();
+
+        let mut options = RecoverOptions::new(&dest);
+        options.dry_run = true;
+        let mut progress = |_p: RecoveryProgress| {};
+        let summary = run_recovery(&session, &src, &options, &mut progress).unwrap();
+
+        assert!(summary.dry_run);
+        assert_eq!(summary.attempted, 1);
+        assert_eq!(summary.succeeded, 0);
+        assert_eq!(summary.bytes_written, 0);
+        assert_eq!(summary.bytes_planned, 11);
+        assert_eq!(summary.results[0].status, RecoveryStatus::Planned);
+        assert_eq!(fs::read_dir(&dest).unwrap().count(), 0);
+        assert!(!session.join(RECOVERED_FILE).exists());
+        assert_eq!(
+            load_header(&session).unwrap().status,
+            SessionStatus::Complete
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn filter_selects_candidates_for_recovery() {
+        let (base, session) = setup();
+        let image = base.join("src.img");
+        let src = FileSource::open(&image).unwrap();
+        let mut header = load_header(&session).unwrap();
+        header.source = src.identity();
+        save_header_to(&session, &header).unwrap();
+        let dest = base.join("out");
+        fs::create_dir_all(&dest).unwrap();
+
+        let mut options = RecoverOptions::new(&dest);
+        options.dry_run = true;
+        options.filter = CandidateFilter::parse("ext:jpg").unwrap().into();
+        let mut progress = |_p: RecoveryProgress| {};
+        let summary = run_recovery(&session, &src, &options, &mut progress).unwrap();
+        assert_eq!(summary.attempted, 0);
+        assert_eq!(summary.skipped, 1);
+        assert_eq!(summary.bytes_planned, 0);
+
+        let mut options = RecoverOptions::new(&dest);
+        options.dry_run = true;
+        options.filter = CandidateFilter::parse("ext:txt").unwrap().into();
+        let summary = run_recovery(&session, &src, &options, &mut progress).unwrap();
+        assert_eq!(summary.attempted, 1);
+        assert_eq!(summary.bytes_planned, 11);
         let _ = fs::remove_dir_all(&base);
     }
 }

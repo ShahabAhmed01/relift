@@ -11,9 +11,9 @@ Relift is a data recovery tool built around a **read-only recovery engine** (`re
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
 │  │  Source I/O  │  │  Partition   │  │   Filesystem Parsers │  │
 │  │  (read-only) │──►│   Detection  │──►│  (NTFS, FAT, exFAT,  │  │
-│  │  BlockDevice │  │  (MBR/GPT/   │  │   ext2/3/4, APFS,    │  │
-│  │  memmap2,    │  │   APM, LVM,  │  │   HFS+, Btrfs, XFS)  │  │
-│  │  io_uring)   │  │   RAID)      │  └──────────┬───────────┘  │
+│  │  positioned  │  │  (MBR/GPT)   │  │   ext2/3/4, APFS,    │  │
+│  │  reads       │  │              │  │   HFS+, Btrfs, XFS)  │  │
+│  │              │  │              │  └──────────┬───────────┘  │
 │  └──────────────┘  └──────────────┘             │              │
 │         │                                       ▼              │
 │         │  ┌──────────────────────────────────────────────┐   │
@@ -27,9 +27,9 @@ Relift is a data recovery tool built around a **read-only recovery engine** (`re
 │         │                     ▼                                │
 │         │  ┌──────────────────────────────────────────────┐   │
 │         │  │           Carver Registry                     │   │
-│         │  │  • 25+ format validators (CRC, Huffman, etc.) │   │
-│         │  │  • SIMD-accelerated multi-pattern search      │   │
-│         │  │  • Fragmented file reconstruction             │   │
+│         │  │  • 30+ signature entries with validators      │   │
+│         │  │  • memchr-based signature sweep               │   │
+│         │  │  • Bounded reads, no full-image buffering     │   │
 │         │  └──────────────────────────────────────────────┘   │
 │         │                     │                                │
 │         ▼                     ▼                                │

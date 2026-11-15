@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { 
     CheckCircle, 
     AlertTriangle, 
@@ -100,7 +101,7 @@
   <!-- Header -->
   <header class="border-b border-border px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <button class="btn-ghost p-2" on:click={goHome} aria-label="Home">
+      <button class="btn-ghost p-2" onclick={goHome} aria-label="Home">
         <RotateCcw class="w-5 h-5" />
       </button>
       <div>
@@ -183,11 +184,11 @@
         {/if}
 
         <div class="flex gap-3 pt-4">
-          <button class="btn-secondary flex-1" on:click={() => goto('/results')}>
+          <button class="btn-secondary flex-1" onclick={() => goto('/results')}>
             <RotateCcw class="w-4 h-4" />
             Back to results
           </button>
-          <button class="btn-primary flex-1" on:click={goHome}>
+          <button class="btn-primary flex-1" onclick={goHome}>
             <HardDrive class="w-4 h-4" />
             New recovery
           </button>
@@ -214,7 +215,7 @@
                 readonly
                 class="input flex-1 bg-surface"
               />
-              <button class="btn-secondary" on:click={startRecovery}>
+              <button class="btn-secondary" onclick={startRecovery}>
                 <Folder class="w-4 h-4" />
                 Browse…
               </button>
@@ -248,7 +249,7 @@
         </div>
 
         <div class="pt-4">
-          <button class="btn-primary w-full min-h-[48px] text-base" on:click={startRecovery}>
+          <button class="btn-primary w-full min-h-[48px] text-base" onclick={startRecovery}>
             <Download class="w-5 h-5" />
             Start recovery
           </button>

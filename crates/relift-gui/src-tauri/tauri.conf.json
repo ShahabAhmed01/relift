@@ -6,9 +6,8 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:1420",
-    "distDir": "../build",
-    "withGlobalTauri": true
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../build"
   },
   "app": {
     "windows": [
@@ -21,17 +20,19 @@
         "center": true,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true,
-        "hiddenTitle": false
+        "decorations": true
       }
     ],
     "security": {
-      "csp": "default-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:;"
+      "csp": "default-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost; font-src 'self' data:"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Read-only deleted-file recovery",
+    "longDescription": "Relift recovers deleted files from disk images and raw devices using filesystem metadata recovery and validating signature carving. The source is always opened read-only.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,54 +40,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "windows": {
-      "wix": {
-        "language": "en-US",
-        "template": "wix/main.wxs"
-      },
-      "nsis": {
-        "installerIcon": "icons/icon.ico",
-        "licenseFile": "../../LICENSE"
-      }
-    },
-    "macOS": {
-      "frameworks": [],
-      "minimumSystemVersion": "10.15",
-      "exceptionDomain": "",
-      "signingIdentity": null,
-      "entitlements": null,
-      "providerShortName": null,
-      "category": "public.app-category.utilities"
-    },
     "linux": {
-      "appImage": {
+      "appimage": {
         "bundleMediaFramework": false
       },
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libayatana-appindicator3-1", "librsvg2-common"]
-      },
-      "rpm": {
-        "depends": ["webkit2gtk4.1", "libayatana-appindicator3-1", "librsvg2"]
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libayatana-appindicator3-1",
+          "librsvg2-common"
+        ]
       }
     }
   },
-  "plugins": {
-    "fs": {
-      "scope": {
-        "allow": [
-          "$APPDATA/relift/*",
-          "$HOME/.local/share/relift/*"
-        ]
-      }
-    },
-    "dialog": {
-      "all": true,
-      "open": true,
-      "save": true
-    },
-    "shell": {
-      "all": false,
-      "open": true
-    }
-  }
+  "plugins": {}
 }

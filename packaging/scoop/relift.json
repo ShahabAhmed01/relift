@@ -1,4 +1,7 @@
 {
+  // TEMPLATE - DO NOT SUBMIT until first release assets exist.
+  // Placeholder checksums and versions must be replaced after tagging v0.1.0
+  // and publishing release artifacts.
   "version": "0.1.0",
   "description": "Free, open-source data recovery for Windows, macOS, and Linux. Recovers deleted files from HDDs, SSDs, USB drives, SD cards, and disk images.",
   "homepage": "https://github.com/ShahabAhmed01/relift",

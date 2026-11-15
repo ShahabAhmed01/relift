@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::candidate::{
-    Candidate, Confidence, ConfidenceLabel, DataLocation, EntryState, RecoveryMethod, Segment,
+    Candidate, Confidence, ConfidenceLabel, DataLocation, EntryState, RecoveryMethod,
 };
 use crate::error::{Error, Result};
 use crate::fs::{
@@ -338,7 +338,7 @@ pub fn probe(src: &dyn ReadOnlySource, volume: &VolumeRef) -> Option<FsInfo> {
     if buf.len() < 4096 {
         return None;
     }
-    let magic_pos = if &buf[256..264] == BTRFS_MAGIC {
+    let _magic_pos = if &buf[256..264] == BTRFS_MAGIC {
         256
     } else if &buf[0x10000..0x10008] == BTRFS_MAGIC {
         0x10000
@@ -379,11 +379,14 @@ pub fn scan(
     options: &FsScanOptions,
     sink: &mut dyn CandidateSink,
 ) -> Result<FsSummary> {
-    let Some(sb) = BtrfsSuperblock::parse(src, volume) else {
-        return Ok(FsSummary {
-            warnings: vec!["failed to parse Btrfs superblock".into()],
-            ..Default::default()
-        });
+    let sb = match BtrfsSuperblock::parse(src, volume) {
+        Ok(sb) => sb,
+        Err(_) => {
+            return Ok(FsSummary {
+                warnings: vec!["failed to parse Btrfs superblock".into()],
+                ..Default::default()
+            });
+        }
     };
 
     let mut summary = FsSummary::new(FsKind::Btrfs, None);
@@ -415,8 +418,9 @@ pub fn scan(
             continue;
         }
         let buf = read_at_volume(src, volume, node_offset, nodesize as u64)?;
-        let Some(header) = BtrfsLeafHeader::parse(&buf) else {
-            continue;
+        let header = match BtrfsLeafHeader::parse(&buf) {
+            Some(h) => h,
+            None => continue,
         };
 
         if header.level == 0 {
@@ -433,8 +437,9 @@ pub fn scan(
                 if offset + 25 > buf.len() {
                     break;
                 }
-                let Some(item) = BtrfsItem::parse(&buf, offset) else {
-                    break;
+                let item = match BtrfsItem::parse(&buf, offset) {
+                    Some(item) => item,
+                    None => break,
                 };
                 offset += 25;
 
@@ -517,14 +522,15 @@ fn build_btrfs_path(path_map: &HashMap<u64, String>, flags: u64, objectid: u64) 
         .unwrap_or_else(|| format!("/inode_{}", objectid))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_btrfs_candidate(
     sink: &mut dyn CandidateSink,
     summary: &mut FsSummary,
     name: &str,
     path: &str,
     inode: &BtrfsInodeItem,
-    volume_offset: u64,
-    block_size: u64,
+    _volume_offset: u64,
+    _block_size: u64,
     inode_id: u64,
     is_deleted: bool,
 ) -> Result<()> {

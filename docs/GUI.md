@@ -20,7 +20,7 @@ Relift's GUI is a native desktop application built with Tauri 2 and Svelte 5. It
 
 ### Actions:
 - **Click a device** to select it
-- **"Open disk image…"** — Select `.img`, `.dd`, `.raw`, `.E01`, `.vhd`, `.vhdx`, `.vmdk`, `.qcow2`
+- **"Open disk image…"** — Select a raw image (`.img`, `.dd`, `.raw`, or any block file)
 - **Advanced options** (collapsed by default):
   - Scan mode: Quick / Deep / Formatted / Lost partition
   - Include live files

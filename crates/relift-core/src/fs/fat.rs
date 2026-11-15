@@ -470,7 +470,9 @@ fn parse_short_name(raw: &[u8]) -> (String, bool) {
     (full.trim_start_matches('.').to_string(), lost)
 }
 
-fn decode_lfn(parts: &[(u8, String)], checksum_ok: bool) -> Option<String> {
+// The LFN checksum is informational only: a mismatch does not invalidate the
+// decoded name, because recovery intentionally reads stale/deleted metadata.
+fn decode_lfn(parts: &[(u8, String)], _checksum_ok: bool) -> Option<String> {
     if parts.is_empty() {
         return None;
     }
@@ -488,8 +490,6 @@ fn decode_lfn(parts: &[(u8, String)], checksum_ok: bool) -> Option<String> {
     let trimmed = joined.trim_end_matches('\u{0}').trim_end().to_string();
     if trimmed.is_empty() {
         None
-    } else if checksum_ok {
-        Some(trimmed)
     } else {
         Some(trimmed)
     }
@@ -729,7 +729,7 @@ impl<'a> FatScan<'a> {
         let needed = if entry.size == 0 {
             0
         } else {
-            (entry.size as u64 + self.boot.cluster_size - 1) / self.boot.cluster_size
+            (entry.size as u64).div_ceil(self.boot.cluster_size)
         };
         let mut data = DataLocation::None;
         let mut complete = true;

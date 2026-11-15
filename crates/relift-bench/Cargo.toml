@@ -12,5 +12,5 @@ description = "Benchmarks for Relift recovery engine"
 relift-core = { path = "../relift-core" }
 relift-testkit = { path = "../relift-testkit" }
 criterion = { version = "0.5", features = ["html_reports"] }
-rayon = { workspace = true }
 tempfile = "3"
+memchr = { workspace = true }

@@ -2,21 +2,18 @@
 
 use relift_core::{
     candidate::ConfidenceLabel,
-    devices::{list_devices, DeviceInfo, DeviceKind},
-    error::Error,
+    devices::list_devices,
     imaging::{create_image, ImageOptions},
-    recover::{run_recovery, RecoverOptions, RecoverySummary},
+    recover::{run_recovery, RecoverOptions},
     scan::{run_scan, ScanProgress, ScanRequest},
-    session::{load_header, ManualVolume, SessionHeader, SessionStatus},
+    session::load_header,
     source::open_source,
-    util::human_bytes,
 };
 
+use crate::state::AppState;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager, State, Window};
-use tracing::{error, info};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State, Window};
 
 // ===== Tauri Commands =====
 
@@ -150,28 +147,14 @@ pub struct CandidateDto {
     pub validation: Vec<String>,
 }
 
-struct AppState {
-    scan_cancel: Arc<Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>>,
-    recover_cancel: Arc<Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            scan_cancel: Arc::new(Mutex::new(None)),
-            recover_cancel: Arc::new(Mutex::new(None)),
-        }
-    }
-}
-
 #[tauri::command]
-async fn list_devices_cmd() -> Result<Vec<DeviceInfoDto>, String> {
+pub async fn list_devices_cmd() -> Result<Vec<DeviceInfoDto>, String> {
     let list = list_devices();
     let mut devices = Vec::new();
     for device in list.devices {
         let size_human = device
             .size
-            .map(crate::util::human_bytes)
+            .map(relift_core::util::human_bytes)
             .unwrap_or_else(|| "unknown".to_string());
         let health = if !device.accessible {
             "locked".to_string()
@@ -204,7 +187,7 @@ async fn list_devices_cmd() -> Result<Vec<DeviceInfoDto>, String> {
 }
 
 #[tauri::command]
-async fn scan_cmd(
+pub async fn scan_cmd(
     app: AppHandle,
     options: ScanOptionsDto,
     state: State<'_, AppState>,
@@ -251,7 +234,7 @@ async fn scan_cmd(
         session_dir: options.session_dir,
         source_path: header.source.path,
         source_size: header.source.size,
-        source_size_human: crate::util::human_bytes(header.source.size),
+        source_size_human: relift_core::util::human_bytes(header.source.size),
         status: format!("{:?}", header.status).to_lowercase(),
         filesystems: header
             .filesystems
@@ -287,7 +270,7 @@ async fn scan_cmd(
 }
 
 #[tauri::command]
-async fn cancel_scan_cmd(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn cancel_scan_cmd(state: State<'_, AppState>) -> Result<(), String> {
     if let Some(flag) = state.scan_cancel.lock().unwrap().take() {
         flag.store(true, std::sync::atomic::Ordering::Relaxed);
     }
@@ -295,8 +278,8 @@ async fn cancel_scan_cmd(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn list_candidates_cmd(session_dir: String) -> Result<Vec<CandidateDto>, String> {
-    let candidates = relift_core::session::load_candidates(&std::path::PathBuf::from(&session_dir))
+pub async fn list_candidates_cmd(session_dir: String) -> Result<Vec<CandidateDto>, String> {
+    let candidates = relift_core::session::load_candidates(std::path::PathBuf::from(&session_dir))
         .map_err(|e| format!("could not load candidates: {}", e))?;
 
     Ok(candidates
@@ -306,7 +289,7 @@ async fn list_candidates_cmd(session_dir: String) -> Result<Vec<CandidateDto>, S
             name: c.name,
             path: c.path,
             size: c.size,
-            size_human: crate::util::human_bytes(c.size),
+            size_human: relift_core::util::human_bytes(c.size),
             format: c.format,
             confidence: format!("{:?}", c.confidence.label).to_lowercase(),
             confidence_score: c.confidence.score,
@@ -325,7 +308,7 @@ async fn list_candidates_cmd(session_dir: String) -> Result<Vec<CandidateDto>, S
 }
 
 #[tauri::command]
-async fn recover_cmd(
+pub async fn recover_cmd(
     app: AppHandle,
     options: RecoverOptionsDto,
     state: State<'_, AppState>,
@@ -333,7 +316,7 @@ async fn recover_cmd(
     let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     *state.recover_cancel.lock().unwrap() = Some(cancel_flag.clone());
 
-    let header = load_header(&std::path::PathBuf::from(&options.session_dir))
+    let header = load_header(std::path::PathBuf::from(&options.session_dir))
         .map_err(|e| format!("could not read session: {}", e))?;
 
     let source_path = std::path::PathBuf::from(&header.source.path);
@@ -360,7 +343,7 @@ async fn recover_cmd(
     let mut recover_options = RecoverOptions::new(dest);
     recover_options.verify = options.verify;
     recover_options.min_confidence = min_confidence;
-    recover_options.ids = options.ids;
+    recover_options.ids = options.ids.map(|v| v.into_iter().collect());
 
     let app_handle = app.clone();
     let mut progress = move |p: relift_core::recover::RecoveryProgress| {
@@ -380,7 +363,7 @@ async fn recover_cmd(
     };
 
     let summary = run_recovery(
-        &options.session_dir,
+        std::path::Path::new(&options.session_dir),
         src.as_ref(),
         &recover_options,
         &mut progress,
@@ -396,13 +379,13 @@ async fn recover_cmd(
         failed: summary.failed,
         skipped: summary.skipped,
         bytes_written: summary.bytes_written,
-        bytes_written_human: crate::util::human_bytes(summary.bytes_written),
+        bytes_written_human: relift_core::util::human_bytes(summary.bytes_written),
         warnings: summary.warnings,
     })
 }
 
 #[tauri::command]
-async fn cancel_recover_cmd(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn cancel_recover_cmd(state: State<'_, AppState>) -> Result<(), String> {
     if let Some(flag) = state.recover_cancel.lock().unwrap().take() {
         flag.store(true, std::sync::atomic::Ordering::Relaxed);
     }
@@ -410,7 +393,7 @@ async fn cancel_recover_cmd(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn create_image_cmd(
+pub async fn create_image_cmd(
     app: AppHandle,
     options: ImageOptionsDto,
 ) -> Result<serde_json::Value, String> {
@@ -450,7 +433,7 @@ async fn create_image_cmd(
     Ok(serde_json::json!({
         "path": result.path,
         "bytes": result.bytes,
-        "bytes_human": crate::util::human_bytes(result.bytes),
+        "bytes_human": relift_core::util::human_bytes(result.bytes),
         "sha256": result.sha256,
         "verified": result.verified,
         "elapsed_seconds": result.elapsed_seconds,
@@ -458,20 +441,24 @@ async fn create_image_cmd(
 }
 
 #[tauri::command]
-async fn doctor_cmd() -> Result<serde_json::Value, String> {
+pub async fn doctor_cmd() -> Result<serde_json::Value, String> {
     let report = relift_core::devices::doctor();
-    Ok(serde_json::to_value(report).map_err(|e| e.to_string())?)
+    serde_json::to_value(report).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn select_directory(window: Window) -> Result<Option<String>, String> {
+pub async fn select_directory(window: Window) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let result = window.dialog().file().pick_folder().await;
-    Ok(result.map(|p| p.to_string()))
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    window.dialog().file().pick_folder(move |p| {
+        let _ = tx.send(p.map(|p| p.to_string()));
+    });
+    let result = rx.await.map_err(|e| e.to_string())?;
+    Ok(result)
 }
 
 #[tauri::command]
-async fn get_sessions_dir() -> Result<String, String> {
+pub async fn get_sessions_dir() -> Result<String, String> {
     let base = std::env::temp_dir();
     Ok(base.to_string_lossy().to_string())
 }

@@ -88,9 +88,8 @@ See `CITATION.cff` for machine-readable citation.
 ## Acknowledgments
 
 Relift builds on the work of many open-source projects:
-- `serde`, `clap`, `memchr`, `crc32fast`, `flate2`, `sha2`, `thiserror`, `anyhow`
-- `rayon`, `nom`, `parking_lot`, `smallvec`, `blake3`, `aho-corasick`, `memmap2`
+- `serde`, `serde_json`, `clap`, `memchr`, `crc32fast`, `flate2`, `sha2`, `thiserror`, `anyhow`, `chrono`
 - `tauri`, `svelte`, `tailwindcss`, `lucide-svelte`
-- `criterion`, `proptest`, `insta`, `cargo-fuzz`
+- `criterion`, `proptest`, `insta`
 - TestDisk/PhotoRec (reference behavior, not code)
 - The Sleuth Kit (file system reference implementations)

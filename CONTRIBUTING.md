@@ -4,7 +4,7 @@ Thank you for contributing! This document explains how to set up a development e
 
 ## Development setup
 
-1. Install Rust 1.82+ (GNU toolchain on Windows):
+1. Install Rust 1.90+ (MSVC toolchain recommended on Windows):
    ```sh
    rustup toolchain install stable --profile minimal --component rustfmt,clippy
    rustup default stable
@@ -85,9 +85,10 @@ Key design rules:
    fn truncated_<format>_rejected() { ... }
    ```
 
-6. Add fuzz target in `fuzz/` directory.
+6. Add a fuzz target once the `cargo-fuzz` harness lands (tracked in
+   `docs/GAP_REPORT.md`); until then, cover malformed inputs with unit tests.
 
-7. Run `cargo test -p relift-core` and `cargo fuzz run <target>`.
+7. Run `cargo test -p relift-core` and `cargo clippy --workspace --all-targets -- -D warnings`.
 
 ## Adding a new filesystem parser
 

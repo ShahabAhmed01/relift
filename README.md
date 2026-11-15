@@ -8,14 +8,14 @@ Relift scans disk images and raw devices without writing to them, records what i
 
 - **Name:** Relift (binary `relift`)
 - **License:** GPL-3.0-or-later
-- **Stack:** Rust 1.82+ (GNU toolchain on Windows)
+- **Stack:** Rust 1.90+ (MSVC toolchain recommended on Windows)
 - **Crates:** `relift-core`, `relift-cli`, `relift-testkit`, `relift-gui`, `relift-bench`
 
 ## Features
 
 - **Read-only-by-construction:** `ReadOnlySource` exposes no write method; the engine cannot modify the source device.
 - **Real byte-level recovery, fixture-validated with SHA-256 comparison.**
-- **Filesystem metadata recovery:** FAT12/16/32, exFAT, NTFS, ext2/3/4, HFS+, APFS, Btrfs, XFS.
+- **Filesystem metadata recovery:** FAT12/16/32, exFAT, NTFS, ext2/3/4 (fixture-validated); HFS+, APFS, Btrfs and XFS parsers are implemented but only lightly exercised (experimental).
 - **Signature carving with structural validators:** JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, PDF, ZIP/DOCX/XLSX/PPTX, OLE, 7z, RAR4, gzip, bzip2, xz, zstd, tar, MP4/MOV/MKV/AVI/WEBM, MP3, WAV, FLAC, OGG, SQLite, PE/ELF, PST/OST, LNK, EVTX, and more (25+ formats).
 - **Sparse-file segment preservation:** holes and unwritten extents keep byte offsets.
 - **Destination safety:** output proven separate from evidence before any write.
@@ -24,7 +24,7 @@ Relift scans disk images and raw devices without writing to them, records what i
 - **Pause/resume** scans and recover across restarts.
 - **`devices` and `doctor`** self-tests for permissions and drive health.
 - **No telemetry;** default offline.
-- **GUI (Tauri 2 + Svelte 5):** three-screen flow, live results, preview, safe destination picker.
+- **GUI (Tauri 2 + Svelte 5):** four-screen flow, live results, preview, safe destination picker.
 - **CLI:** full feature parity, JSON output, shell completions, man page.
 
 ## Quick start
@@ -71,14 +71,14 @@ See `docs/CLI.md` for the full command reference.
 
 ## GUI
 
-Relift includes a native desktop GUI built with Tauri 2 and Svelte 5. Three screens, one primary action each:
+Relift includes a native desktop GUI built with Tauri 2 and Svelte 5. Four screens, one primary action each:
 
 1. **Source picker** — drives and images with health verdicts
 2. **Scan** — live progress, streaming results, pause/resume
 3. **Results** — filterable table, preview pane, safe destination picker
 4. **Recover** — progress, verification, summary report
 
-Installers available for Windows (MSI), macOS (DMG), Linux (AppImage, .deb, .rpm, Flatpak, Snap).
+The release workflow builds unsigned desktop bundles (Windows NSIS/MSI, macOS DMG, Linux AppImage/DEB). No signing or notarization credentials are configured in this repository, so verify downloaded artifacts against the checksums published with each release.
 
 ## Comparison
 
@@ -91,8 +91,8 @@ Installers available for Windows (MSI), macOS (DMG), Linux (AppImage, .deb, .rpm
 | NTFS $MFT undelete | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | FAT/exFAT undelete | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | ext4 undelete | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | Partial |
-| APFS/HFS+ undelete | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Btrfs/XFS undelete | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | Partial |
+| APFS/HFS+ undelete | Partial | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Btrfs/XFS undelete | Partial | ✗ | ✗ | ✗ | ✗ | ✗ | Partial |
 | Validating carving | ✓ | Partial | ✗ | Partial | Partial | Partial | ✓ |
 | Fragmented file recovery | ✓ | ✗ | ✗ | Partial | Partial | Partial | ✓ |
 | Read-only guarantee | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
@@ -108,18 +108,19 @@ Installers available for Windows (MSI), macOS (DMG), Linux (AppImage, .deb, .rpm
 
 ## Benchmarks
 
+Performance targets are tracked in `docs/benches/METHODOLOGY.md`. Published measurements are not yet available; run `cargo bench -p relift-bench` locally and record the machine details before quoting numbers.
+
 | Metric | Target | Method |
 |--------|--------|--------|
 | Cold start (CLI) | < 50 ms | `hyperfine` median of 100 runs |
 | GUI cold start | < 400 ms | Tauri `window_created` → first paint |
-| Sequential read (NVMe) | ≥ 90% of `fio` baseline | `fio` baseline comparison |
 | Deep scan sweep | ≥ 4 GB/s | 64 MB test buffer, `memchr` SIMD |
 | Deep scan full | ≥ 1.5 GB/s | Real fixtures, all carvers |
-| Quick scan (1 TB NTFS) | < 90 s | 1M MRT records, NVMe |
+| Quick scan (1 TB NTFS) | < 90 s | 1M MFT records, NVMe |
 | Memory (4 TB scan) | < 350 MB RSS | Bounded streaming, no full buffering |
 | Binary size (release) | < 30 MB | `strip`, LTO, single codegen unit |
 
-See `benches/METHODOLOGY.md` for full methodology and `benches/results/` for published CSV results.
+See `docs/benches/METHODOLOGY.md` for full methodology.
 
 ## Documentation
 
@@ -138,34 +139,28 @@ See `benches/METHODOLOGY.md` for full methodology and `benches/results/` for pub
 
 ## Building
 
-Requires Rust 1.82+ (GNU toolchain) via rustup:
+Requires Rust 1.90+ via rustup. On Windows the MSVC toolchain is recommended (`rustup default stable-x86_64-pc-windows-msvc`):
 
 ```sh
-cargo build --release
+cargo build --release --workspace
 ```
 
-The release binary is `target/release/relift.exe` (Windows) or `target/release/relift` (Unix).
-
-For GUI development:
+The CLI binary is `target/release/relift.exe` (Windows) or `target/release/relift` (Unix). The GUI is a Tauri application; build it through the Tauri CLI so the frontend is embedded:
 
 ```sh
 cd crates/relift-gui
 npm install
-npm run tauri dev
+npm run tauri build
 ```
 
 ## Tests
 
 ```sh
 cargo test -p relift-core
-cargo test --workspace
+cargo test --workspace --all-targets
 ```
 
-Includes:
-- 43 unit tests (parsers, safety, hashing, sessions, carving, partitions).
-- 6 end-to-end tests (scan → recover → SHA-256 verify for FAT32, exFAT, NTFS, ext4; destination separation; output confinement).
-- Property-based tests with `proptest`.
-- Fuzzing targets for all parsers (`cargo fuzz`).
+The current suite is 51 tests: 43 core unit tests, 6 end-to-end tests (scan → recover → SHA-256 verify for FAT32, exFAT, NTFS and ext4; destination separation; output confinement), and 2 CLI integration tests. Property-based tests use `proptest`. A `cargo-fuzz` harness is planned but not yet included.
 
 ## Honesty policy
 
@@ -197,4 +192,4 @@ See `SECURITY.md`. Threat model, vulnerability disclosure, signed-release verifi
 
 ## Acknowledgements
 
-Built with: `serde`, `clap`, `memchr`, `crc32fast`, `flate2`, `sha2`, `thiserror`, `anyhow`, `rayon`, `nom`, `parking_lot`, `smallvec`, `blake3`, `aho-corasick`, `memmap2`, `tauri`, `svelte`, `tailwindcss`, `lucide-svelte`, `criterion`, `proptest`, `insta`, `cargo-fuzz`.
+Built with: `serde`, `serde_json`, `clap`, `memchr`, `crc32fast`, `flate2`, `sha2`, `thiserror`, `anyhow`, `chrono`, `tauri`, `svelte`, `tailwindcss`, `lucide-svelte`, `criterion`, `proptest`, `insta`.

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { invoke, listen } from '@tauri-apps/api/core';
+  import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { 
     Pause, 
     StopCircle, 
@@ -190,7 +191,7 @@
   <!-- Header -->
   <header class="border-b border-border px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <button class="btn-ghost p-2" on:click={() => goto('/')} aria-label="Back">
+      <button class="btn-ghost p-2" onclick={() => goto('/')} aria-label="Back">
         <RotateCcw class="w-5 h-5" />
       </button>
       <div>
@@ -263,7 +264,7 @@
       <section class="card p-4">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-base font-medium text-text">Results found so far</h2>
-          <button class="btn-secondary text-sm" on:click={() => goto('/results')}>
+          <button class="btn-secondary text-sm" onclick={() => goto('/results')}>
             <Search class="w-4 h-4" />
             View all results
           </button>
@@ -296,7 +297,7 @@
     <div class="sticky bottom-0 bg-bg/80 backdrop-blur-sm border-t border-border px-4 py-4 flex items-center justify-end gap-3">
       <button
         class="btn-secondary"
-        on:click={togglePause}
+        onclick={togglePause}
         disabled={!scanning}
       >
         {#if paused}
@@ -307,7 +308,7 @@
       </button>
       <button
         class="btn-secondary"
-        on:click={stopScan}
+        onclick={stopScan}
         disabled={!scanning}
       >
         <StopCircle class="w-4 h-4" /> Stop & keep results

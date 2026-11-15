@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { invoke, listen } from '@tauri-apps/api/core';
+  import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { 
     Search, 
     Filter, 
@@ -63,7 +64,6 @@
 
   // State
   let candidates = $state<Candidate[]>([]);
-  let filteredCandidates = $state<Candidate[]>([]);
   let selectedIds = $state<Set<number>>(new Set());
   let searchQuery = $state('');
   let selectedType = $state<string>('all');
@@ -78,7 +78,6 @@
   let recoveryProgress = $state({ index: 0, total: 0, percent: 0 });
   let recoverySummary: RecoverySummary | null = $state(null);
   let loading = $state(true);
-  let selectAllState = $state<'none' | 'all' | 'partial'>('none');
 
   // File type categories
   const typeCategories = [
@@ -108,6 +107,52 @@
       return sum + (c?.size || 0);
     }, 0)
   );
+
+  // Filtering and sorting are derived from the raw candidate list plus the
+  // current query/sort state, so no manual recomputation is needed.
+  let filteredCandidates = $derived.by(() => {
+    let result = candidates;
+
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        c.path.toLowerCase().includes(q) ||
+        c.format.toLowerCase().includes(q)
+      );
+    }
+
+    if (selectedType !== 'all') {
+      result = result.filter(c => getTypeCategory(c.format) === selectedType);
+    }
+
+    if (selectedConfidence !== 'all') {
+      result = result.filter(c => c.confidence === selectedConfidence);
+    }
+
+    return [...result].sort((a, b) => {
+      let aVal: any = a[sortColumn as keyof Candidate];
+      let bVal: any = b[sortColumn as keyof Candidate];
+
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = bVal.toLowerCase();
+      }
+
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  });
+
+  let selectAllState = $derived.by<'none' | 'all' | 'partial'>(() => {
+    const visible = filteredCandidates.map(c => c.id);
+    if (visible.length === 0) return 'none';
+    if (visible.every(id => selectedIds.has(id))) return 'all';
+    if (visible.some(id => selectedIds.has(id))) return 'partial';
+    return 'none';
+  });
+
   let selectAllIndeterminate = $derived(selectAllState === 'partial');
   let selectAllChecked = $derived(selectAllState === 'all');
 
@@ -160,59 +205,6 @@
     return icons[cat] || FileText;
   }
 
-  // Filtering
-  function applyFilters() {
-    let result = candidates;
-    
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(c => 
-        c.name.toLowerCase().includes(q) ||
-        c.path.toLowerCase().includes(q) ||
-        c.format.toLowerCase().includes(q)
-      );
-    }
-    
-    if (selectedType !== 'all') {
-      result = result.filter(c => getTypeCategory(c.format) === selectedType);
-    }
-    
-    if (selectedConfidence !== 'all') {
-      result = result.filter(c => c.confidence === selectedConfidence);
-    }
-    
-    // Sort
-    result = [...result].sort((a, b) => {
-      let aVal: any = a[sortColumn as keyof Candidate];
-      let bVal: any = b[sortColumn as keyof Candidate];
-      
-      if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase();
-        bVal = bVal.toLowerCase();
-      }
-      
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-    
-    filteredCandidates = result;
-    updateSelectAllState();
-  }
-
-  function updateSelectAllState() {
-    const visible = filteredCandidates.map(c => c.id);
-    if (visible.length === 0) {
-      selectAllState = 'none';
-    } else if (visible.every(id => selectedIds.has(id))) {
-      selectAllState = 'all';
-    } else if (visible.some(id => selectedIds.has(id))) {
-      selectAllState = 'partial';
-    } else {
-      selectAllState = 'none';
-    }
-  }
-
   function toggleSelectAll() {
     if (selectAllState === 'all') {
       // Deselect all visible
@@ -221,7 +213,6 @@
       // Select all visible
       filteredCandidates.forEach(c => selectedIds.add(c.id));
     }
-    applyFilters();
   }
 
   function toggleSelect(id: number) {
@@ -230,19 +221,16 @@
     } else {
       selectedIds.add(id);
     }
-    applyFilters();
   }
 
   function selectHighConfidence() {
     candidates
       .filter(c => c.confidence === 'verified' || c.confidence === 'likely')
       .forEach(c => selectedIds.add(c.id));
-    applyFilters();
   }
 
   function clearSelection() {
     selectedIds.clear();
-    applyFilters();
   }
 
   function handleSort(column: string) {
@@ -252,7 +240,6 @@
       sortColumn = column;
       sortDirection = 'asc';
     }
-    applyFilters();
   }
 
   async function loadCandidates() {
@@ -263,7 +250,6 @@
         const session = JSON.parse(sessionDir);
         const result = await invoke<Candidate[]>('list_candidates_cmd', { session_dir: session.session_dir });
         candidates = result;
-        applyFilters();
       }
     } catch (e) {
       console.error('Failed to load candidates:', e);
@@ -336,16 +322,13 @@
   onMount(async () => {
     await loadCandidates();
   });
-
-  // Watch for filter changes
-  $: applyFilters();
 </script>
 
 <div class="min-h-screen flex flex-col">
   <!-- Header -->
   <header class="border-b border-border px-4 py-3 flex items-center justify-between sticky top-0 z-40 bg-bg/95 backdrop-blur-sm">
     <div class="flex items-center gap-3">
-      <button class="btn-ghost p-2" on:click={() => goto('/scan')} aria-label="Back">
+      <button class="btn-ghost p-2" onclick={() => goto('/scan')} aria-label="Back">
         <RotateCcw class="w-5 h-5" />
       </button>
       <div>
@@ -400,10 +383,10 @@
         </div>
         
         <div class="flex gap-2">
-          <button class="btn-ghost text-xs flex-1" on:click={selectHighConfidence}>
+          <button class="btn-ghost text-xs flex-1" onclick={selectHighConfidence}>
             <CheckCheck class="w-3 h-3" /> Select Verified+
           </button>
-          <button class="btn-ghost text-xs flex-1" on:click={clearSelection}>
+          <button class="btn-ghost text-xs flex-1" onclick={clearSelection}>
             <X class="w-3 h-3" /> Clear
           </button>
         </div>
@@ -428,7 +411,7 @@
               type="checkbox"
               checked={selectAllChecked}
               indeterminate={selectAllIndeterminate}
-              on:change={toggleSelectAll}
+              onchange={toggleSelectAll}
               class="w-4 h-4 accent-accent"
             />
             <span class="text-sm text-text-muted">Select all visible</span>
@@ -442,7 +425,7 @@
               class="btn-ghost px-2 py-1"
               class:bg-accent-muted={viewMode === 'table'}
               class:text-accent={viewMode === 'table'}
-              on:click={() => viewMode = 'table'}
+              onclick={() => viewMode = 'table'}
               aria-label="Table view"
             >
               <Table class="w-4 h-4" />
@@ -451,7 +434,7 @@
               class="btn-ghost px-2 py-1"
               class:bg-accent-muted={viewMode === 'tree'}
               class:text-accent={viewMode === 'tree'}
-              on:click={() => viewMode = 'tree'}
+              onclick={() => viewMode = 'tree'}
               aria-label="Tree view"
             >
               <Folder class="w-4 h-4" />
@@ -481,28 +464,28 @@
                     type="checkbox"
                     checked={selectAllChecked}
                     indeterminate={selectAllIndeterminate}
-                    on:change={toggleSelectAll}
+                    onchange={toggleSelectAll}
                     class="w-4 h-4 accent-accent"
                     aria-label="Select all"
                   />
                 </th>
                 <th class="w-10"></th>
-                <th on:click={() => handleSort('name')} class="cursor-pointer select-none flex items-center gap-1">
+                <th onclick={() => handleSort('name')} class="cursor-pointer select-none flex items-center gap-1">
                   Name {sortColumn === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                 </th>
-                <th on:click={() => handleSort('path')} class="cursor-pointer select-none flex items-center gap-1 hidden sm:table-cell">
+                <th onclick={() => handleSort('path')} class="cursor-pointer select-none flex items-center gap-1 hidden sm:table-cell">
                   Path {sortColumn === 'path' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                 </th>
-                <th on:click={() => handleSort('size')} class="cursor-pointer select-none flex items-center gap-1 monospace">
+                <th onclick={() => handleSort('size')} class="cursor-pointer select-none flex items-center gap-1 monospace">
                   Size {sortColumn === 'size' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                 </th>
-                <th on:click={() => handleSort('format')} class="cursor-pointer select-none flex items-center gap-1 hidden md:table-cell">
+                <th onclick={() => handleSort('format')} class="cursor-pointer select-none flex items-center gap-1 hidden md:table-cell">
                   Type {sortColumn === 'format' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                 </th>
-                <th on:click={() => handleSort('confidence')} class="cursor-pointer select-none flex items-center gap-1">
+                <th onclick={() => handleSort('confidence')} class="cursor-pointer select-none flex items-center gap-1">
                   Confidence {sortColumn === 'confidence' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                 </th>
-                <th on:click={() => handleSort('modified')} class="cursor-pointer select-none flex items-center gap-1 hidden lg:table-cell">
+                <th onclick={() => handleSort('modified')} class="cursor-pointer select-none flex items-center gap-1 hidden lg:table-cell">
                   Modified {sortColumn === 'modified' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th class="w-10"></th>
@@ -515,7 +498,7 @@
                     <input
                       type="checkbox"
                       checked={selectedIds.has(candidate.id)}
-                      on:change={() => toggleSelect(candidate.id)}
+                      onchange={() => toggleSelect(candidate.id)}
                       class="w-4 h-4 accent-accent"
                     />
                   </td>
@@ -543,7 +526,7 @@
                   <td>
                     <button
                       class="btn-ghost p-1"
-                      on:click={() => previewFile(candidate)}
+                      onclick={() => previewFile(candidate)}
                       aria-label="Preview"
                     >
                       <Eye class="w-4 h-4" />
@@ -568,7 +551,7 @@
               readonly
               class="input w-64 bg-surface"
             />
-            <button class="btn-ghost p-2" on:click={selectDestination} aria-label="Browse">
+            <button class="btn-ghost p-2" onclick={selectDestination} aria-label="Browse">
               <MoreHorizontal class="w-4 h-4" />
             </button>
           </label>
@@ -580,7 +563,7 @@
           </span>
           <button
             class="btn-primary min-w-[160px]"
-            on:click={startRecovery}
+            onclick={startRecovery}
             disabled={recovering || totalSelected === 0 || !destination}
           >
             {#if recovering}
@@ -606,7 +589,7 @@
               <p class="text-xs text-text-muted">{previewCandidate.path}</p>
             </div>
           </div>
-          <button class="btn-ghost p-2" on:click={() => { showPreview = false; previewCandidate = null; }}>
+          <button class="btn-ghost p-2" onclick={() => { showPreview = false; previewCandidate = null; }}>
             <X class="w-5 h-5" />
           </button>
         </div>
@@ -686,10 +669,10 @@
           <dd class="text-text font-medium monospace">{recoverySummary.bytes_written_human}</dd>
         </dl>
         <div class="flex gap-2">
-          <button class="btn-secondary flex-1" on:click={() => { recoverySummary = null; }}>
+          <button class="btn-secondary flex-1" onclick={() => { recoverySummary = null; }}>
             Close
           </button>
-          <button class="btn-primary flex-1" on:click={() => { recoverySummary = null; goto('/'); }}>
+          <button class="btn-primary flex-1" onclick={() => { recoverySummary = null; goto('/'); }}>
             Recover More
           </button>
         </div>

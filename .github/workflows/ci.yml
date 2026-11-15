@@ -3,12 +3,19 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags-ignore: [ "v*" ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 env:
-  CARGO_NET_OFFLINE: "false"
+  CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -18,10 +25,24 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
-        rust: [ stable, "1.82" ]
+        rust: [ stable, "1.90" ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            pkg-config \
+            build-essential
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -48,12 +69,63 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-targets
 
-      - name: Build release
+      - name: Build release binaries
         run: cargo build --release --workspace
 
-      - name: Build bench (Linux only)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Build bench harness (Linux only)
+        if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
         run: cargo bench --no-run -p relift-bench
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            pkg-config \
+            build-essential
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build documentation
+        run: cargo doc --workspace --no-deps
+
+  deny:
+    name: Dependency and license check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Check advisories, licenses, bans, sources
+        run: cargo deny check
 
   bench:
     name: Benchmarks
@@ -67,118 +139,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Run benchmarks
-        run: cargo bench -p relift-bench -- --output-format=json > bench_results.json
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: bench_results.json
-          retention-days: 30
-
-  fuzz:
-    name: Fuzzing
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    timeout-minutes: 120
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: nightly
-          components: rustfmt, clippy
-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
-
-      - name: Run fuzzing (5 min per target)
-        run: |
-          cd crates/relift-core
-          for target in $(cargo fuzz list); do
-            echo "Fuzzing $target..."
-            timeout 300 cargo fuzz run $target -- -max_total_time=300 || true
-          done
-
-  docs:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Build docs
-        run: cargo doc --workspace --no-deps --document-private-items
-
-      - name: Check for broken links
-        run: |
-          cargo install cargo-deadlinks
-          cargo deadlinks --workspace
-
-  deny:
-    name: Dependency check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Check licenses and advisories
-        run: |
-          cargo install cargo-deny
-          cargo deny check
-
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Install cargo-dist
-        run: cargo install cargo-dist
-
-      - name: Build release artifacts
-        run: cargo dist build --artifacts=global
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts
-          path: target/artifacts/**
-          retention-days: 7
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: target/artifacts/**/*
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run benchmark smoke test
+        run: cargo bench -p relift-bench -- --test

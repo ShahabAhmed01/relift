@@ -10,10 +10,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Context};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::{generate, Shell};
 use relift_core::candidate::ConfidenceLabel;
 use relift_core::devices::{doctor, list_devices, CheckStatus};
 use relift_core::error::Error;
+use relift_core::filter::CandidateFilter;
 use relift_core::imaging::{create_image, ImageOptions};
 use relift_core::recover::{run_recovery, RecoverOptions, RecoveryStatus, RecoverySummary};
 use relift_core::report::{write_report, ReportFormat};
@@ -56,6 +58,8 @@ struct Cli {
 enum Command {
     /// Probe filesystems and write deleted-file candidates to a session.
     Scan(ScanArgs),
+    /// List candidates saved in a session without writing anything.
+    List(ListArgs),
     /// Recover candidates from a session into a destination directory.
     Recover(RecoverArgs),
     /// Copy a source to a new image file and write a SHA-256 manifest.
@@ -66,8 +70,18 @@ enum Command {
     Doctor,
     /// Render a saved session as JSON, HTML or CSV.
     Report(ReportArgs),
+    /// Generate shell completions.
+    Completions(CompletionsArgs),
     /// Print version and schema information.
     Version,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ScanMode {
+    /// Metadata recovery only. Never reads the whole volume.
+    Quick,
+    /// Metadata recovery plus validated signature carving.
+    Deep,
 }
 
 #[derive(Debug, Args)]
@@ -78,6 +92,10 @@ struct ScanArgs {
     /// New or empty directory for session output.
     #[arg(long, value_name = "DIR")]
     session: PathBuf,
+
+    /// Scan preset: quick (metadata only) or deep (metadata + carving).
+    #[arg(long, value_enum, default_value_t = ScanMode::Quick, value_name = "MODE")]
+    mode: ScanMode,
 
     /// Also list files that are still allocated.
     #[arg(long)]
@@ -105,6 +123,24 @@ struct ScanArgs {
 }
 
 #[derive(Debug, Args)]
+struct ListArgs {
+    /// Session directory produced by `relift scan`.
+    session: PathBuf,
+
+    /// Filter candidates (repeatable): ext:jpg,png, format:pdf, name:IMG_, path:DCIM.
+    #[arg(long, value_name = "EXPR")]
+    filter: Vec<String>,
+
+    /// Hide candidates below this confidence.
+    #[arg(long, value_name = "LABEL")]
+    min_confidence: Option<String>,
+
+    /// Maximum rows to print (0 means all).
+    #[arg(long, default_value_t = 100, value_name = "N")]
+    limit: usize,
+}
+
+#[derive(Debug, Args)]
 struct RecoverArgs {
     /// Session directory produced by `relift scan`.
     session: PathBuf,
@@ -112,6 +148,14 @@ struct RecoverArgs {
     /// Destination directory. Must be separate from the evidence.
     #[arg(long, value_name = "DIR")]
     dest: PathBuf,
+
+    /// Plan only: validate source and destination and list what would be written.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Filter candidates (repeatable): ext:jpg,png, format:pdf, name:IMG_, path:DCIM.
+    #[arg(long, value_name = "EXPR")]
+    filter: Vec<String>,
 
     /// Re-open this source instead of the path recorded in the session.
     #[arg(long, value_name = "PATH")]
@@ -128,6 +172,13 @@ struct RecoverArgs {
     /// Recover only these candidate ids (repeatable).
     #[arg(long = "id", value_name = "N")]
     id: Vec<u64>,
+}
+
+#[derive(Debug, Args)]
+struct CompletionsArgs {
+    /// Shell to generate completions for.
+    #[arg(value_enum)]
+    shell: Shell,
 }
 
 #[derive(Debug, Args)]
@@ -176,11 +227,13 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> anyhow::Result<u8> {
     match cli.command {
         Command::Scan(args) => cmd_scan(args, cli.json),
+        Command::List(args) => cmd_list(args, cli.json),
         Command::Recover(args) => cmd_recover(args, cli.json),
         Command::Image(args) => cmd_image(args, cli.json),
         Command::Devices => cmd_devices(cli.json),
         Command::Doctor => cmd_doctor(cli.json),
         Command::Report(args) => cmd_report(args, cli.json),
+        Command::Completions(args) => cmd_completions(args),
         Command::Version => cmd_version(cli.json),
     }
 }
@@ -206,7 +259,7 @@ fn cmd_scan(args: ScanArgs, json: bool) -> anyhow::Result<u8> {
     }
     let mut request = ScanRequest::new(&args.session);
     request.include_live = args.live;
-    request.carve = args.carve;
+    request.carve = args.carve || args.mode == ScanMode::Deep;
     request.volume_indices = args.volume.clone();
     request.manual_volume = manual_volume;
     request.max_candidates = args.max_candidates.max(1);
@@ -247,11 +300,14 @@ fn cmd_recover(args: RecoverArgs, json: bool) -> anyhow::Result<u8> {
     } else {
         Some(args.id.iter().copied().collect())
     };
+    let filter = CandidateFilter::parse_all(&args.filter)?;
     let dest = prepare_destination(&args.dest)?;
     let mut options = RecoverOptions::new(dest);
     options.verify = !args.no_verify;
     options.min_confidence = min_confidence;
     options.ids = ids;
+    options.filter = filter;
+    options.dry_run = args.dry_run;
 
     let mut printer = Progress::new(!json);
     let mut progress = |p: relift_core::recover::RecoveryProgress| {
@@ -418,6 +474,75 @@ fn cmd_version(json: bool) -> anyhow::Result<u8> {
     Ok(EXIT_OK)
 }
 
+fn cmd_list(args: ListArgs, json: bool) -> anyhow::Result<u8> {
+    let candidates = relift_core::session::load_candidates(&args.session)
+        .with_context(|| format!("could not load candidates from {}", args.session.display()))?;
+    let min_confidence = match args.min_confidence.as_deref() {
+        Some(value) => Some(parse_confidence(value)?),
+        None => None,
+    };
+    let filter = CandidateFilter::parse_all(&args.filter)?;
+
+    let mut listed: Vec<&relift_core::candidate::Candidate> = candidates
+        .iter()
+        .filter(|c| {
+            if let Some(min) = min_confidence {
+                if relift_core::recover::confidence_rank(c.confidence.label)
+                    < relift_core::recover::confidence_rank(min)
+                {
+                    return false;
+                }
+            }
+            filter.as_ref().is_none_or(|f| f.matches(c))
+        })
+        .collect();
+    listed.sort_by_key(|c| c.id);
+
+    let limit = if args.limit == 0 {
+        usize::MAX
+    } else {
+        args.limit
+    };
+    let shown = listed.len().min(limit);
+    let total = listed.len();
+
+    if json {
+        print_json(&serde_json::json!({
+            "session": args.session,
+            "total": total,
+            "shown": shown,
+            "candidates": &listed[..shown],
+        }))?;
+    } else {
+        println!("session: {}", args.session.display());
+        println!("total:   {total}");
+        println!("shown:   {shown}");
+        println!("id  confidence  format      name                                       path",);
+        println!("--  ----------  ------      ----                                       ----",);
+        for c in &listed[..shown] {
+            println!(
+                "{:<3} {:<10} {:<10} {:<42} {}",
+                c.id,
+                c.confidence.label.as_str(),
+                c.format,
+                c.name,
+                c.path
+            );
+        }
+        if total > shown {
+            println!("... ({} more candidates not shown)", total - shown);
+        }
+    }
+    Ok(EXIT_OK)
+}
+
+fn cmd_completions(args: CompletionsArgs) -> anyhow::Result<u8> {
+    let mut cli = Cli::command();
+    let bin_name = "relift";
+    generate(args.shell, &mut cli, bin_name, &mut std::io::stdout());
+    Ok(EXIT_OK)
+}
+
 fn print_scan_summary(header: &SessionHeader, session: &Path) {
     println!("session:    {}", session.display());
     println!("source:     {}", header.source.path);
@@ -473,11 +598,20 @@ fn print_recovery_summary(summary: &RecoverySummary) {
         summary.failed,
         summary.skipped
     );
-    println!(
-        "bytes:       {} ({})",
-        summary.bytes_written,
-        human_bytes(summary.bytes_written)
-    );
+    if summary.dry_run {
+        println!(
+            "bytes planned: {} ({})",
+            summary.bytes_planned,
+            human_bytes(summary.bytes_planned)
+        );
+        println!("dry run:     nothing was written; session was not modified");
+    } else {
+        println!(
+            "bytes:       {} ({})",
+            summary.bytes_written,
+            human_bytes(summary.bytes_written)
+        );
+    }
     println!(
         "elapsed:     {}",
         human_duration_between(&summary.started, &summary.finished)
@@ -488,6 +622,7 @@ fn print_recovery_summary(summary: &RecoverySummary) {
             RecoveryStatus::Partial => "partial",
             RecoveryStatus::Failed => "failed",
             RecoveryStatus::Skipped => "skipped",
+            RecoveryStatus::Planned => "planned",
         };
         match &record.output_path {
             Some(path) => println!("{status:<10} {} -> {path}", record.original_path),

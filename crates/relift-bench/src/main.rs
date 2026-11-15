@@ -2,15 +2,9 @@
 //!
 //! Run with: `cargo bench -p relift-bench`
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use relift_core::{
-    carve::{scan_volume, CarveOptions},
-    fs::{probe, scan_metadata, FsScanOptions, VolumeRef},
-    source::FileSource,
-};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use relift_core::{carve::CarveOptions, fs::FsScanOptions, source::FileSource};
 use relift_testkit::{exfat_image, ext4_image, fat32_image, ntfs_image};
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use tempfile::tempdir;
 
 fn bench_signature_sweep(c: &mut Criterion) {
@@ -153,21 +147,64 @@ fn bench_metadata_scan(c: &mut Criterion) {
 fn bench_probe(c: &mut Criterion) {
     let mut group = c.benchmark_group("probe");
 
-    let fixtures = [
-        ("fat32", fat32_image()),
-        ("exfat", exfat_image()),
-        ("ntfs", ntfs_image()),
-        ("ext4", ext4_image()),
-    ];
-
-    for (name, fixture) in fixtures {
+    // FAT32
+    {
+        let fixture = fat32_image();
         let dir = tempdir().unwrap();
-        let path = dir.path().join(format!("{}.img", name));
+        let path = dir.path().join("fat32.img");
         std::fs::write(&path, fixture.image()).unwrap();
         let src = FileSource::open(&path).unwrap();
         let volume = relift_core::fs::VolumeRef::new(0, fixture.image().len() as u64);
 
-        group.bench_function(name, |b| {
+        group.bench_function("fat32", |b| {
+            b.iter(|| {
+                let _ = relift_core::fs::probe(black_box(&src), black_box(&volume));
+            });
+        });
+    }
+
+    // exFAT
+    {
+        let fixture = exfat_image();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("exfat.img");
+        std::fs::write(&path, fixture.image()).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = relift_core::fs::VolumeRef::new(0, fixture.image().len() as u64);
+
+        group.bench_function("exfat", |b| {
+            b.iter(|| {
+                let _ = relift_core::fs::probe(black_box(&src), black_box(&volume));
+            });
+        });
+    }
+
+    // NTFS
+    {
+        let fixture = ntfs_image();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("ntfs.img");
+        std::fs::write(&path, fixture.image()).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = relift_core::fs::VolumeRef::new(0, fixture.image().len() as u64);
+
+        group.bench_function("ntfs", |b| {
+            b.iter(|| {
+                let _ = relift_core::fs::probe(black_box(&src), black_box(&volume));
+            });
+        });
+    }
+
+    // ext4
+    {
+        let fixture = ext4_image();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("ext4.img");
+        std::fs::write(&path, fixture.image()).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = relift_core::fs::VolumeRef::new(0, fixture.image().len() as u64);
+
+        group.bench_function("ext4", |b| {
             b.iter(|| {
                 let _ = relift_core::fs::probe(black_box(&src), black_box(&volume));
             });

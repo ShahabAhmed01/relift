@@ -1,6 +1,5 @@
 //! Shared state management for Relift GUI.
 
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 /// Global application state for managing scan and recovery operations.

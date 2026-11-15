@@ -1,4 +1,5 @@
 /target
+/target-msrv/
 **/*.rs.bk
 *.pdb
 .DS_Store
@@ -8,3 +9,15 @@ Thumbs.db
 /fixtures/generated/
 *.relift-session
 *.log
+
+# Tauri / frontend
+node_modules/
+.svelte-kit/
+build/
+crates/relift-gui/src-tauri/gen/
+crates/relift-gui/src-tauri/target/
+crates/relift-gui/src-tauri/WixTools/
+
+# Scratch artifacts
+mingw.7z
+*.7z

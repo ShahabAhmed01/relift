@@ -15,7 +15,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::candidate::{
-    format_from_name, Candidate, Confidence, ConfidenceLabel, DataLocation, EntryState, Extent,
+    format_from_name, Candidate, Confidence, ConfidenceLabel, DataLocation, EntryState,
     RecoveryMethod, Segment,
 };
 use crate::error::{Error, Result};
@@ -23,7 +23,7 @@ use crate::fs::{
     read_at_volume, CandidateSink, FsInfo, FsKind, FsScanOptions, FsSummary, VolumeRef,
 };
 use crate::source::ReadOnlySource;
-use crate::util::{u16_le, u32_le, u8_at, unix_to_iso, utf16le_to_string};
+use crate::util::{u16_le, u32_le, u8_at, unix_to_iso};
 
 const EXT_MAGIC: u16 = 0xEF53;
 const ROOT_INODE: u32 = 2;
@@ -646,9 +646,10 @@ impl<'a> ExtScan<'a> {
             }
             let take = seg_len.min(size - logical) as usize;
             match segment {
-                Segment::Data { extent } => {
+                Segment::Data { offset, length } => {
+                    let take = take.min(length.saturating_sub(logical) as usize);
                     self.src
-                        .read_exact_at(extent.offset, &mut out[filled..filled + take])?;
+                        .read_exact_at(*offset, &mut out[filled..filled + take])?;
                 }
                 Segment::Zero { .. } => {}
             }
@@ -680,7 +681,8 @@ impl<'a> ExtScan<'a> {
         if depth != expected_depth || entries > max_entries {
             return Err(Error::Corrupt("ext extent header is inconsistent".into()));
         }
-        let entry_size = if depth == 0 { 12 } else { 12 };
+        // Leaf entries (extent) and index entries (index) are both 12 bytes.
+        let entry_size = 12;
         let needed = 12usize
             .checked_add(
                 entries
@@ -854,7 +856,7 @@ impl<'a> ExtScan<'a> {
     }
 
     fn indirect_pointer(&mut self, inode: &Inode, logical: u64) -> Result<Option<u64>> {
-        let per = (self.boot.block_size / 4) as u64;
+        let per = self.boot.block_size / 4;
         if logical < 12 {
             return Ok(Some(
                 u32_le(&inode.i_block, logical as usize * 4).unwrap_or(0) as u64,
@@ -945,10 +947,11 @@ impl<'a> ExtScan<'a> {
             if len == 0 {
                 return;
             }
-            if zero || data_start.is_none() {
-                segments.push(Segment::zero(len * block_size));
-            } else {
-                segments.push(Segment::data(data_start.unwrap(), len * block_size));
+            match data_start {
+                Some(start) if !zero => {
+                    segments.push(Segment::data(start, len * block_size));
+                }
+                _ => segments.push(Segment::zero(len * block_size)),
             }
         };
         for logical in 0..needed {
@@ -1001,7 +1004,7 @@ impl<'a> ExtScan<'a> {
         };
         let mut score: u8 = if deleted { 80 } else { 95 };
         let mut complete = true;
-        let mut data = DataLocation::None;
+        let data;
         let name;
         let parent;
         if let Some(p) = path {
@@ -1212,6 +1215,7 @@ pub fn scan(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::utf16le_to_string;
 
     #[test]
     fn extent_header_and_run_decoding() {

@@ -8,14 +8,14 @@
 use std::collections::HashMap;
 
 use crate::candidate::{
-    Candidate, Confidence, ConfidenceLabel, DataLocation, EntryState, RecoveryMethod, Segment,
+    Candidate, Confidence, ConfidenceLabel, DataLocation, EntryState, RecoveryMethod,
 };
 use crate::error::{Error, Result};
 use crate::fs::{
     read_at_volume, CandidateSink, FsInfo, FsKind, FsScanOptions, FsSummary, VolumeRef,
 };
 use crate::source::ReadOnlySource;
-use crate::util::{u16_be, u32_be, u64_be};
+use crate::util::{u16_be, u32_be, u64_be, u8_at};
 
 const XFS_MAGIC: &[u8] = b"XFSB";
 const XFS_SB_SECTOR: u64 = 0;
@@ -258,11 +258,14 @@ pub fn scan(
     options: &FsScanOptions,
     sink: &mut dyn CandidateSink,
 ) -> Result<FsSummary> {
-    let Some(sb) = XfsSuperblock::parse(src, volume) else {
-        return Ok(FsSummary {
-            warnings: vec!["failed to parse XFS superblock".into()],
-            ..Default::default()
-        });
+    let sb = match XfsSuperblock::parse(src, volume) {
+        Ok(sb) => sb,
+        Err(_) => {
+            return Ok(FsSummary {
+                warnings: vec!["failed to parse XFS superblock".into()],
+                ..Default::default()
+            });
+        }
     };
 
     let mut summary = FsSummary::new(FsKind::Xfs, None);
@@ -271,7 +274,6 @@ pub fn scan(
 
     let blocksize = sb.blocksize as u64;
     let inodesize = sb.inodesize as usize;
-    let inopblock = sb.inopblock as usize;
     let agcount = sb.agcount as u64;
     let agblocks = sb.agblocks as u64;
     let volume_offset = volume.offset;
@@ -302,7 +304,6 @@ pub fn scan(
             inode_btree_offset,
             blocksize,
             inodesize,
-            inopblock,
             &sb,
             sink,
             options,
@@ -315,13 +316,13 @@ pub fn scan(
     Ok(summary)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scan_xfs_inode_btree(
     src: &dyn ReadOnlySource,
     volume: &VolumeRef,
     btree_offset: u64,
     blocksize: u64,
     inodesize: usize,
-    inopblock: usize,
     sb: &XfsSuperblock,
     sink: &mut dyn CandidateSink,
     options: &FsScanOptions,
@@ -345,7 +346,7 @@ fn scan_xfs_inode_btree(
 
     if hdr.level == 0 {
         // Leaf level - inode records
-        let records_per_block = (blocksize as usize - 56) / inodesize;
+        let _records_per_block = (blocksize as usize - 56) / inodesize;
         for i in 0..hdr.count as usize {
             if options.is_cancelled() {
                 summary.truncated = true;
@@ -397,7 +398,6 @@ fn scan_xfs_inode_btree(
                         child_ptr * blocksize,
                         blocksize,
                         inodesize,
-                        inopblock,
                         sb,
                         sink,
                         options,
@@ -420,19 +420,20 @@ fn build_xfs_path(path_map: &HashMap<u64, String>, ino: u64) -> String {
         .unwrap_or_else(|| format!("/{}", ino))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_xfs_candidate(
     sink: &mut dyn CandidateSink,
     summary: &mut FsSummary,
     name: &str,
     path: &str,
     inode: &XfsInodeCore,
-    volume_offset: u64,
-    blocksize: u64,
+    _volume_offset: u64,
+    _blocksize: u64,
     ino: u64,
     is_deleted: bool,
 ) -> Result<()> {
-    let mut extents = Vec::new();
-    let mut total_size = inode.size;
+    let extents = Vec::new();
+    let total_size = inode.size;
 
     // Simplified extent handling
     if inode.format == 1 && inode.naextents > 0 {

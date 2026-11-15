@@ -680,7 +680,7 @@ fn validate_jpeg(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Val
             saw_sof = true;
         }
         if marker == 0xDA {
-            let mut scan = pos + 2 + len;
+            let scan = pos + 2 + len;
             let (mpos, m) = next_jpeg_marker(src, scan, limit)?;
             if m == 0xD9 {
                 return if saw_sof {
@@ -860,9 +860,7 @@ fn validate_pdf(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
     if end - start > MAX_PDF {
         return None;
     }
-    if find_from(src, start, end, b" obj").is_none() {
-        return None;
-    }
+    find_from(src, start, end, b" obj")?;
     let has_cross_reference = find_from(src, start, end, b"xref").is_some()
         || find_from(src, start, end, b"startxref").is_some()
         || find_from(src, start, end, b"trailer").is_some();
@@ -1279,7 +1277,7 @@ fn validate_sqlite(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<V
     } else {
         raw_page as u64
     };
-    if page_size < 512 || page_size > 65536 || !page_size.is_power_of_two() {
+    if !(512..=65536).contains(&page_size) || !page_size.is_power_of_two() {
         return None;
     }
     let write_version = h[18];
@@ -1329,12 +1327,10 @@ fn validate_riff(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Val
             b"fmt " => saw_fmt = true,
             b"data" => saw_data = true,
             b"VP8 " | b"VP8L" | b"VP8X" => saw_codec = true,
-            b"LIST" => {
-                if csize >= 4 {
-                    let list_type = read_bounded(src, pos + 8, 4, end)?;
-                    if &list_type == b"hdrl" {
-                        saw_fmt = true;
-                    }
+            b"LIST" if csize >= 4 => {
+                let list_type = read_bounded(src, pos + 8, 4, end)?;
+                if &list_type == b"hdrl" {
+                    saw_fmt = true;
                 }
             }
             _ => {}
@@ -1690,10 +1686,8 @@ fn validate_7z(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Valid
     if next_size > 256 * 1024 * 1024 {
         return None;
     }
-    if next_size > 0 {
-        if crc_range(src, next_start, next_size, limit)? != next_crc {
-            return None;
-        }
+    if next_size > 0 && crc_range(src, next_start, next_size, limit)? != next_crc {
+        return None;
     }
     Some(Validated::new(end - start, 96).note("7z start-header CRC and next-header CRC validated"))
 }
@@ -1755,7 +1749,7 @@ fn validate_pe(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Valid
         return None;
     }
     let lfanew = u32_le(&dos, 0x3C)? as u64;
-    if lfanew < 64 || lfanew > 0x1000 {
+    if !(64..=0x1000).contains(&lfanew) {
         return None;
     }
     let pe_off = start.checked_add(lfanew)?;
@@ -2025,7 +2019,7 @@ fn validate_mkv(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
     None
 }
 
-fn read_ebml_id(src: &dyn ReadOnlySource, pos: u64, limit: u64) -> Option<(Vec<u8>, usize)> {
+fn read_ebml_id(src: &dyn ReadOnlySource, pos: u64, limit: u64) -> Option<(Vec<u8>, u64)> {
     let first = read_bounded(src, pos, 1, limit)?[0];
     let len = if first & 0x80 != 0 {
         1
@@ -2040,7 +2034,7 @@ fn read_ebml_id(src: &dyn ReadOnlySource, pos: u64, limit: u64) -> Option<(Vec<u
     Some((id.to_vec(), len))
 }
 
-fn read_ebml_size(src: &dyn ReadOnlySource, pos: u64, limit: u64) -> Option<(u64, usize)> {
+fn read_ebml_size(src: &dyn ReadOnlySource, pos: u64, limit: u64) -> Option<(u64, u64)> {
     let first = read_bounded(src, pos, 1, limit)?[0];
     let len = if first & 0x80 != 0 {
         1
@@ -2091,12 +2085,12 @@ fn validate_lnk(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
         return None;
     }
     let flags = u32_le(&h, 20)?;
-    let file_attrs = u32_le(&h, 24)?;
+    let _file_attrs = u32_le(&h, 24)?;
     let _ = u64_le(&h, 28)?;
     let _ = u64_le(&h, 36)?;
     let _ = u64_le(&h, 44)?;
-    let file_size = u32_le(&h, 52)?;
-    let icon_index = u32_le(&h, 56)?;
+    let _file_size = u32_le(&h, 52)?;
+    let _icon_index = u32_le(&h, 56)?;
     let _ = u32_le(&h, 60)?;
     let _ = u32_le(&h, 64)?;
     let _ = u32_le(&h, 68)?;
@@ -2116,7 +2110,7 @@ fn validate_evtx(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Val
         return None;
     }
     let major = u16_le(&h, 8)?;
-    let minor = u16_le(&h, 10)?;
+    let _minor = u16_le(&h, 10)?;
     if major > 4 {
         return None;
     }
@@ -2183,7 +2177,7 @@ fn validate_tar(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
         if size > 8 * 1024 * 1024 * 1024 {
             return None;
         }
-        let blocks = (size + 511) / 512;
+        let blocks = size.div_ceil(512);
         pos += 512 + blocks * 512;
         headers += 1;
         if headers > 10000 {
@@ -2233,8 +2227,8 @@ fn validate_xz(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Valid
         if pos - start > MAX_XZ {
             return None;
         }
-        let crc = u32_le(&read_bounded(src, pos, 4, limit)?, 0)?;
-        let flags = u16_le(&read_bounded(src, pos + 4, 2, limit)?, 0)?;
+        let _crc = u32_le(&read_bounded(src, pos, 4, limit)?, 0)?;
+        let _flags = u16_le(&read_bounded(src, pos + 4, 2, limit)?, 0)?;
         let size = u32_le(&read_bounded(src, pos + 6, 4, limit)?, 0)?;
         if size == 0 {
             break;
@@ -2266,7 +2260,7 @@ fn validate_zstd(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Val
         return None;
     }
     let fhd = frame_header[4];
-    let single_segment = fhd & 0x20 != 0;
+    let _single_segment = fhd & 0x20 != 0;
     let _content_checksum = fhd & 0x04 != 0;
     let _dictionary_id = fhd & 0x03;
     Some(Validated::new(18, 90).note("ZSTD frame header validated"))

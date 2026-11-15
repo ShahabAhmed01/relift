@@ -95,8 +95,7 @@ impl Fat32Builder {
     }
 
     fn alloc(&mut self, data_len: usize) -> Vec<u32> {
-        let needed = ((data_len.max(1) as u64 + FAT32_CLUSTER_SIZE as u64 - 1)
-            / FAT32_CLUSTER_SIZE as u64) as u32;
+        let needed = (data_len.max(1) as u64).div_ceil(FAT32_CLUSTER_SIZE as u64) as u32;
         let mut clusters = Vec::with_capacity(needed as usize);
         for _ in 0..needed {
             let c = self.next_cluster;
@@ -172,9 +171,10 @@ impl Fat32Builder {
         );
         root_entries.extend(docs_set);
 
-        let mut dir_entries: Vec<[u8; 32]> = Vec::new();
-        dir_entries.push(dirent(b".          ", 0x10, docs_cluster, 0));
-        dir_entries.push(dirent(b"..         ", 0x10, 0, 0));
+        let _dir_entries: Vec<[u8; 32]> = vec![
+            dirent(b".          ", 0x10, docs_cluster, 0),
+            dirent(b"..         ", 0x10, 0, 0),
+        ];
 
         let mut deleted_name = String::new();
         let mut live_name = String::new();
@@ -629,8 +629,9 @@ impl ExfatBuilder {
 
         let entries = std::mem::take(&mut self.entries);
         for (idx, (path, data, deleted, no_fat_chain)) in entries.into_iter().enumerate() {
-            let needed = ((data.len() as u64).max(1) + EXFAT_CLUSTER_SIZE as u64 - 1)
-                / EXFAT_CLUSTER_SIZE as u64;
+            let needed = (data.len() as u64)
+                .max(1)
+                .div_ceil(EXFAT_CLUSTER_SIZE as u64);
             let clusters = self.alloc(needed as u32);
             for (i, c) in clusters.iter().enumerate() {
                 if no_fat_chain {
@@ -720,6 +721,8 @@ fn exfat_set_checksum(entries: &[[u8; 32]]) -> u16 {
     sum
 }
 
+// Fixture helper mirroring the exFAT directory-entry fields one-to-one.
+#[allow(clippy::too_many_arguments)]
 fn exfat_push_set(
     out: &mut Vec<[u8; 32]>,
     name: &str,

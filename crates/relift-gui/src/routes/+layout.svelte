@@ -1,8 +1,6 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
-  import { page } from '$app/state';
-  import { invoke } from '@tauri-apps/api/core';
 
   // Theme management
   let theme = $state<'light' | 'dark'>('dark');

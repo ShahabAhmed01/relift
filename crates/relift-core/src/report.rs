@@ -7,14 +7,14 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 
-use crate::candidate::{Candidate, DataLocation};
+use crate::candidate::DataLocation;
 use crate::error::{Error, Result};
 use crate::session::{load_header, now_iso, CandidateReader, SessionHeader};
-use crate::util::{human_bytes, human_duration};
+use crate::util::human_bytes;
 use crate::VERSION;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -324,11 +324,11 @@ fn write_html(
             listed
         )?;
     }
-    write!(
+    writeln!(
         w,
         "</section><footer>Generated offline by Relift {}. This report describes recovered \
          evidence; it does not claim that every deleted file was recoverable.</footer>\
-         </body></html>\n",
+         </body></html>",
         esc(VERSION)
     )?;
     Ok(())
@@ -437,7 +437,7 @@ footer{margin-top:3rem;color:#5d6875;font-size:.85rem}";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::candidate::{Confidence, RecoveryMethod};
+    use crate::candidate::{Candidate, Confidence, RecoveryMethod};
     use crate::fs::CandidateSink;
     use crate::session::{Session, SessionOptions, SessionStatus};
     use crate::source::{SourceIdentity, SourceKind};

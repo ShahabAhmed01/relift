@@ -1,68 +1,51 @@
-# cargo-deny configuration
+# cargo-deny configuration (schema version 2).
 # Run with: cargo deny check
 
-[licenses]
-# Allowlist for licenses. GPL-3.0-or-later is our license.
-# We must not link GPL code into our MIT/Apache crates, but our crates are all GPL.
-allow = [
-    "GPL-3.0-or-later",
-    "MIT",
-    "Apache-2.0",
-    "BSD-3-Clause",
-    "BSD-2-Clause",
-    "ISC",
-    "Zlib",
-    "Unlicense",
-    "Apache-2.0 WITH LLVM-exception",
-    "MPL-2.0",
-    "BSD-3-Clause-Clear",
+[advisories]
+version = 2
+yanked = "warn"
+ignore = [
+    # `proc-macro-error` is pulled in transitively by `glib-macros` in the
+    # Linux GTK stack (Tauri). It is unmaintained, not vulnerable; the advisory
+    # has no fixed release and no runtime exposure in Relift itself.
+    "RUSTSEC-2024-0370",
 ]
 
-# Deny copyleft licenses in non-copyleft crates (we're all GPL so this is fine)
-# But we should still be aware of dependencies with stronger copyleft
-copyleft = "allow"
-
-[licenses.allow]
-# Explicitly allow these licenses even if they'd be denied by copyleft rule
-"GPL-3.0-or-later" = { reason = "Project license" }
-"GPL-2.0-or-later" = { reason = "TestDisk/PhotoRec reference (not linked)" }
+[licenses]
+version = 2
+# Permissive licenses, plus the project's own GPL-3.0-or-later.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+    "GPL-3.0-or-later",
+]
+confidence-threshold = 0.8
+exceptions = [
+    { allow = ["GPL-3.0-or-later"], crate = "relift-core" },
+    { allow = ["GPL-3.0-or-later"], crate = "relift-cli" },
+    { allow = ["GPL-3.0-or-later"], crate = "relift-gui" },
+    { allow = ["GPL-3.0-or-later"], crate = "relift-testkit" },
+    { allow = ["GPL-3.0-or-later"], crate = "relift-bench" },
+]
 
 [bans]
-# Deny specific crates/versions
-multiple_versions = "warn"
+multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
 
-# Deny known problematic crates
-deny = [
-    { name = "openssl", version = "<0.10", reason = "Security vulnerabilities" },
-    { name = "rustls", version = "<0.21", reason = "Security vulnerabilities" },
-]
-
-[advisories]
-# Vulnerability checking (RUSTSEC)
-db = "https://github.com/RustSec/advisory-db.git"
-db_path = "~/.cargo/advisory-db"
-fetch = true
-# Ignore specific advisories if they're false positives or not applicable
-ignore = [
-    # Add advisory IDs here if needed
-]
-
 [sources]
-# Source allowlist (crates.io only for now)
-allow_unknown = false
-allow = [
-    "crates.io",
-    "git+https://github.com",
-]
-
-[crate-versions]
-# Version requirements for direct dependencies
-# Use "latest" for active maintenance, or pin for stability
-"*" = "latest"
-
-[output]
-format = "json"
-# Also print human-readable summary
-print = true
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

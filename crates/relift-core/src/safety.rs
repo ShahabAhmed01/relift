@@ -12,7 +12,6 @@
 //!    removed, and the final path is confined to the destination root.
 
 use std::fs;
-use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -275,18 +274,10 @@ mod windows_disks {
     }
 
     #[repr(C)]
+    #[derive(Default)]
     struct VolumeDiskExtents {
         number_of_disk_extents: u32,
         extents: [DiskExtent; 8],
-    }
-
-    impl Default for VolumeDiskExtents {
-        fn default() -> Self {
-            Self {
-                number_of_disk_extents: 0,
-                extents: [DiskExtent::default(); 8],
-            }
-        }
     }
 
     #[link(name = "kernel32")]
@@ -316,7 +307,6 @@ mod windows_disks {
             volume_path_name: *mut u16,
             buffer_length: u32,
         ) -> i32;
-        fn GetLastError() -> u32;
     }
 
     fn wide(path: &str) -> Vec<u16> {
