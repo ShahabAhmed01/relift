@@ -1,6 +1,3 @@
-# TEMPLATE - DO NOT SUBMIT until first release assets exist.
-# Placeholder checksums and ProductCode GUIDs must be replaced after tagging
-# v0.1.0 and publishing release artifacts.
 # winget manifest for Relift
 # Submit to microsoft/winget-pkgs
 
@@ -32,18 +29,9 @@ CopyrightUrl: https://github.com/ShahabAhmed01/relift/blob/main/LICENSE
 Installers:
   - Architecture: x64
     InstallerType: msi
-    InstallerUrl: https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-x86_64.msi
-    InstallerSha256: PLACEHOLDER_SHA256
-    ProductCode: "{PLACEHOLDER_PRODUCT_CODE}"
-    Scope: machine
-    InstallerSwitches:
-      Silent: /quiet /norestart
-      SilentWithProgress: /passive /norestart
-  - Architecture: arm64
-    InstallerType: msi
-    InstallerUrl: https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-aarch64.msi
-    InstallerSha256: PLACEHOLDER_SHA256
-    ProductCode: "{PLACEHOLDER_PRODUCT_CODE}"
+    InstallerUrl: https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/Relift_0.1.0_x64_en-US.msi
+    InstallerSha256: 615b0f0c5e72d03ee1cf916861e90baea74cd070b968b81b8e87f3ff9ed399ae
+    ProductCode: "{bc7f1c07-82bd-4e29-a214-54181c76c96f}"
     Scope: machine
     InstallerSwitches:
       Silent: /quiet /norestart

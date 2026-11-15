@@ -1,11 +1,8 @@
-# TEMPLATE - DO NOT SUBMIT until first release assets exist.
-# Placeholder checksums and versions must be replaced after tagging v0.1.0
-# and publishing release artifacts.
 class Relift < Formula
   desc "Free, open-source data recovery for Windows, macOS, and Linux"
   homepage "https://github.com/ShahabAhmed01/relift"
   url "https://github.com/ShahabAhmed01/relift/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "PLACEHOLDER_SHA256"
+  sha256 "4c42958edd1aeae0321494877be5d57e55e0252a36ae38c10d5e39f633df500a"
   license "GPL-3.0-or-later"
   head "https://github.com/ShahabAhmed01/relift.git", branch: "main"
 

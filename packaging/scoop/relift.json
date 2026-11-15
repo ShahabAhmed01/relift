@@ -1,26 +1,13 @@
 {
-  // TEMPLATE - DO NOT SUBMIT until first release assets exist.
-  // Placeholder checksums and versions must be replaced after tagging v0.1.0
-  // and publishing release artifacts.
   "version": "0.1.0",
   "description": "Free, open-source data recovery for Windows, macOS, and Linux. Recovers deleted files from HDDs, SSDs, USB drives, SD cards, and disk images.",
   "homepage": "https://github.com/ShahabAhmed01/relift",
   "license": "GPL-3.0-or-later",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-x86_64-pc-windows-gnu.zip",
-      "hash": "PLACEHOLDER_SHA256",
-      "extract_dir": "relift-x86_64-pc-windows-gnu"
-    },
-    "32bit": {
-      "url": "https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-i686-pc-windows-gnu.zip",
-      "hash": "PLACEHOLDER_SHA256",
-      "extract_dir": "relift-i686-pc-windows-gnu"
-    },
-    "arm64": {
-      "url": "https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-aarch64-pc-windows-gnu.zip",
-      "hash": "PLACEHOLDER_SHA256",
-      "extract_dir": "relift-aarch64-pc-windows-gnu"
+      "url": "https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-windows-x86_64.zip",
+      "hash": "b35b9f72581ca90e5932689d2753e7d24a4bff9b3cffe8fd75945b1bbb0d78bd",
+      "extract_dir": "relift-windows-x86_64"
     }
   },
   "bin": "relift.exe",
@@ -30,13 +17,7 @@
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/ShahabAhmed01/relift/releases/download/v$version/relift-x86_64-pc-windows-gnu.zip"
-      },
-      "32bit": {
-        "url": "https://github.com/ShahabAhmed01/relift/releases/download/v$version/relift-i686-pc-windows-gnu.zip"
-      },
-      "arm64": {
-        "url": "https://github.com/ShahabAhmed01/relift/releases/download/v$version/relift-aarch64-pc-windows-gnu.zip"
+        "url": "https://github.com/ShahabAhmed01/relift/releases/download/v$version/relift-windows-x86_64.zip"
       }
     }
   }

@@ -1,6 +1,3 @@
-# TEMPLATE - DO NOT SUBMIT until first release assets exist.
-# Placeholder checksum must be replaced after tagging v0.1.0 and publishing
-# release artifacts.
 # Maintainer: Shahab Ahmed <shahab@example.com>
 pkgname=relift
 pkgver=0.1.0
@@ -12,7 +9,7 @@ license=('GPL-3.0-or-later')
 depends=('gcc-libs' 'glibc')
 makedepends=('rust' 'cargo')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/ShahabAhmed01/relift/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('PLACEHOLDER_SHA256')
+sha256sums=('4c42958edd1aeae0321494877be5d57e55e0252a36ae38c10d5e39f633df500a')
 
 build() {
   cd "${pkgname}-${pkgver}"

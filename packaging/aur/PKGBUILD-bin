@@ -1,6 +1,3 @@
-# TEMPLATE - DO NOT SUBMIT until first release assets exist.
-# Placeholder checksums must be replaced after tagging v0.1.0 and publishing
-# release artifacts.
 # Maintainer: Shahab Ahmed <shahab@example.com>
 pkgname=relift-bin
 pkgver=0.1.0
@@ -12,10 +9,10 @@ license=('GPL-3.0-or-later')
 provides=('relift')
 conflicts=('relift')
 depends=('gcc-libs' 'glibc')
-source_x86_64=("https://github.com/ShahabAhmed01/relift/releases/download/v${pkgver}/relift-x86_64-unknown-linux-gnu.tar.gz")
-source_aarch64=("https://github.com/ShahabAhmed01/relift/releases/download/v${pkgver}/relift-aarch64-unknown-linux-gnu.tar.gz")
-sha256sums_x86_64=('PLACEHOLDER_SHA256_X86_64')
-sha256sums_aarch64=('PLACEHOLDER_SHA256_AARCH64')
+source_x86_64=("https://github.com/ShahabAhmed01/relift/releases/download/v${pkgver}/relift-linux-x86_64.tar.gz")
+source_aarch64=("https://github.com/ShahabAhmed01/relift/releases/download/v${pkgver}/relift-linux-aarch64.tar.gz")
+sha256sums_x86_64=('61b2df5b38dbdc9c97ecf353b26e2d44693eabbd2f0422bd06e51b95d78dd5a1')
+sha256sums_aarch64=('11b17d4367947c34083b1416f8702837262a85684d1880251530eb746a8ff9c9')
 
 package() {
   install -Dm755 "relift" "${pkgdir}/usr/bin/relift"
