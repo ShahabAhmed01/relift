@@ -6,7 +6,7 @@ This document tracks the verification status of all acceptance gates from the ma
 
 | Gate | Description | Status | Evidence |
 |------|-------------|--------|----------|
-| G1 | CI builds on Linux/macOS/Windows | ⬜ PENDING | CI run links |
+| G1 | CI builds on Linux/macOS/Windows | PASS | [Run 43691011208](https://github.com/ShahabAhmed01/relift/actions/runs/43691011208) |
 | G2 | Metadata recall ≥99%, precision ≥99% | ⬜ PENDING | Corpus results JSON |
 | G3 | Carving recall ≥95%, precision ≥98% | ⬜ PENDING | Corpus results JSON |
 | G4 | Zero writes to source (hash before/after) | ⬜ PENDING | Test output |
