@@ -82,14 +82,15 @@ jobs:
         with:
           projectPath: crates/relift-gui
           tagName: ${{ github.ref_name }}
-          releaseName: "Relift ${{ github.ref_name }}"
+          releaseName: "Relift ${{ github.ref_name }} Preview"
           releaseBody: |
-            Read-only deleted-file recovery for disk images and drives.
+            Relift ${{ github.ref_name }} is an early preview of deleted-file recovery for disk images and drives.
 
-            Downloads include unsigned CLI archives and desktop installers.
-            Verify checksums published with each asset before running.
+            The release includes unsigned CLI archives and desktop installers. SHA256SUMS is generated from the uploaded assets and attached after all builds finish. Hashes help detect download corruption; they do not authenticate the publisher.
+
+            Validation is limited to cross-platform CI and deterministic synthetic images. No real physical drive or representative real-world recovery corpus has been validated. Review the support matrix and verification record before use. Never recover onto the source device.
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') || contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
   cli:
@@ -162,8 +163,41 @@ jobs:
             -DestinationPath "dist/${{ matrix.archive }}"
 
       - name: Upload CLI archive to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
           files: dist/${{ matrix.archive }}
+
+  checksums:
+    name: Verify assets and publish checksums
+    needs: cli
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir dist
+
+      - name: Check asset set and create SHA-256 manifest
+        working-directory: dist
+        shell: bash
+        run: |
+          asset_count=$(find . -maxdepth 1 -type f ! -name SHA256SUMS | wc -l)
+          test "$asset_count" -eq 12
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+            | LC_ALL=C sort -z \
+            | xargs -0 sha256sum > SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq 12
+
+      - name: Upload SHA-256 manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" dist/SHA256SUMS \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
