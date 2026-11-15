@@ -98,6 +98,9 @@ cargo test -p relift-core carve 2>&1 | tail -20
   (optimized workspace build, including CLI and Tauri GUI).
 - `cargo +1.90 clippy --workspace --all-targets --offline -- -D warnings`:
   passed after replacing the CLI's explicit closure drops with scoped borrows.
+- `RUSTDOCFLAGS='-D warnings' cargo +1.90 doc --workspace --no-deps --offline`:
+  passed after correcting the CLI option documentation's literal angle-bracket
+  placeholders and scoping the Linux-only safety helper.
 - `cargo deny check`: advisory, ban, license, and source checks passed. It
   reported existing duplicate transitive crate versions and unused license
   allowances as warnings; neither blocked the check.

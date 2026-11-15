@@ -204,7 +204,7 @@ struct ReportArgs {
     #[arg(long, default_value = "json", value_name = "FORMAT")]
     format: String,
 
-    /// Output file. Defaults to <session>/report.<format>.
+    /// Output file. Defaults to `<session>/report.<format>`.
     #[arg(long, value_name = "FILE")]
     out: Option<PathBuf>,
 

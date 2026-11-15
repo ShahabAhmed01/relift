@@ -744,7 +744,7 @@ fn raw_destination_is_separate(source_path: &str, dest: &Path) -> Result<()> {
     )))
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn same_disk_error(source_path: &str, dest: &Path) -> Error {
     Error::UnsafeDestination(format!(
         "destination {} is on the same physical disk as evidence device {source_path}",
