@@ -6,7 +6,7 @@ This record separates local checks from product-release evidence. A successful s
 
 | Gate | Requirement | Status | Evidence or remaining work |
 |---|---|---|---|
-| G1 | Linux, macOS, and Windows CI | PENDING | The last completed CI run predates the current frontend migration; record the new GitHub Actions run after push |
+| G1 | Linux, macOS, and Windows CI | PASS | [GitHub Actions run 43697970455](https://github.com/ShahabAhmed01/relift/actions/runs/43697970455): frontend, dependency/license, documentation, and Rust jobs passed across Linux, macOS, and Windows on stable and Rust 1.90 |
 | G2 | Metadata recall and precision targets | PENDING | No representative labeled filesystem corpus |
 | G3 | Carving recall and precision targets | PENDING | No representative labeled file corpus |
 | G4 | No source writes | PARTIAL | Read-only source abstraction and synthetic image hash checks; no physical-device before/after test |
@@ -47,7 +47,7 @@ The full npm development dependency audit reports one low-severity advisory in t
 
 ## CI evidence
 
-The last completed cross-platform run before the current changes is [run 43691011208](https://github.com/ShahabAhmed01/relift/actions/runs/43691011208). It passed its configured Rust and dependency checks. The current revision adds a GUI frontend CI job and updates the release workflow to Node.js 22; G1 remains pending until those changes pass on GitHub Actions.
+The current revision passed [GitHub Actions run 43697970455](https://github.com/ShahabAhmed01/relift/actions/runs/43697970455). Frontend, dependency/license, documentation, and all configured Rust jobs passed, including Linux, macOS, and Windows with stable and Rust 1.90. The benchmark job was skipped because this push did not request benchmark execution.
 
 ## Recovery evidence and limits
 

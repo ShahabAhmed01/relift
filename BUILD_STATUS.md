@@ -18,7 +18,7 @@ Toolchains: Rust 1.100.0 MSVC, Rust 1.90.0 MSVC, Node.js 26.13.0.
 | Windows Tauri packages | PASS: MSI and NSIS installers built locally |
 | Full development dependency audit | One low-severity transitive deepmerge advisory remains; no upstream patched version is available |
 
-The local Windows packages are unsigned and are not a published release. The current GitHub v0.1.0 release is a draft. The latest completed cross-platform CI run predates these changes; a fresh run will be recorded after this revision is pushed.
+The current revision passed [GitHub Actions run 43697970455](https://github.com/ShahabAhmed01/relift/actions/runs/43697970455), including frontend, dependency/license, documentation, and Linux/macOS/Windows Rust jobs on stable and Rust 1.90. The benchmark job was skipped because this push did not request benchmark execution. The local Windows packages are unsigned and are not a published release. The current GitHub v0.1.0 release is a draft.
 
 ## Workspace
 
