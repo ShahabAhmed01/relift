@@ -67,6 +67,8 @@ FILES=(
     "IMPLEMENTATION_PLAN.md"
     "build.sh"
     "build.bat"
+    "verify_structure.bat"
+    "verify_structure.ps1"
     "llms.txt"
     "llms-full.txt"
     "BUILD_STATUS.md"
@@ -129,7 +131,7 @@ FILES=(
     "crates/relift-testkit/Cargo.toml"
     "crates/relift-testkit/src/lib.rs"
     "crates/relift-gui/package.json"
-    "crates/relift-gui/svelte.config.js"
+    "crates/relift-gui/package-lock.json"
     "crates/relift-gui/vite.config.ts"
     "crates/relift-gui/tsconfig.json"
     "crates/relift-gui/src/app.css"
@@ -189,6 +191,8 @@ done
 echo
 if [ $MISSING -eq 0 ]; then
     echo "=== All required files present! ==="
+    exit 0
 else
     echo "=== $MISSING files missing ==="
+    exit 1
 fi

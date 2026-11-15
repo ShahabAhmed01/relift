@@ -1,28 +1,36 @@
-# ADR-0005: Desktop GUI/TUI decision deferred
+# ADR-0005: Desktop GUI selection
 
-## Status
-
-Accepted (documented fallback candidate).
+- **Status:** Superseded
+- **Original decision date:** 2026-11-14
+- **Superseded:** 2026-11-15
 
 ## Context
 
-The product targets CLI first-class and scriptable, with GUI/TUI "where
-justified." Tauri 2 was considered but requires a WebView2/MSVC-verified path
-that is not available in this environment (Windows 11, non-admin, GNU Rust only,
-no MSVC).
+The initial architecture deferred GUI and TUI work until the shared core and
+CLI were established. The master prompt proposed several incompatible desktop
+frameworks and frontend stacks.
 
-## Decision
+## Current decision
 
-Defer the desktop GUI framework decision. The documented fallback candidate is a
-Rust-native GUI. Record this in an ADR before implementing any GUI/TUI. CLI
-remains the primary interface; GUI/TUI is optional and shares the same engine.
+The repository now contains a Tauri 2 desktop application with a Svelte 5 and
+TypeScript frontend in `crates/relift-gui`. It uses the shared `relift-core`
+library through typed Tauri commands. CI builds the workspace on Windows,
+macOS, and Linux; the release workflow defines platform GUI bundles.
+
+The CLI remains the full scriptable interface. The GUI does not currently
+expose every CLI capability: imaging and report export are CLI-only, and
+in-progress pause/resume is not implemented. No TUI is selected or shipped.
+
+## Rationale
+
+Tauri and Svelte are already integrated and avoid introducing a second recovery
+engine. Keeping the TUI deferred avoids duplicating workflows without a
+demonstrated user need.
 
 ## Consequences
 
-- No GUI/TUI code is written yet.
-- Any future GUI must run on the GNU toolchain without MSVC/admin.
-- Tauri 2 remains a candidate only after a WebView2/MSVC path is verified.
-
-## Related
-
-- `docs/decisions/CONFLICT_REGISTER.md`
+- Keep recovery logic in `relift-core`; frontend code must call shared APIs.
+- Describe GUI-only and CLI-only capabilities accurately in the support matrix.
+- Do not expose pause/resume controls until the backend can pause and resume a
+  scan safely.
+- Validate GUI behavior and performance separately from Rust workspace CI.

@@ -8,24 +8,23 @@ Relift scans disk images and raw devices without writing to them, records what i
 
 - **Name:** Relift (binary `relift`)
 - **License:** GPL-3.0-or-later
-- **Stack:** Rust 1.90+ (MSVC toolchain recommended on Windows)
+- **Stack:** Rust 1.90+; the Windows release target uses MSVC
 - **Crates:** `relift-core`, `relift-cli`, `relift-testkit`, `relift-gui`, `relift-bench`
 
 ## Features
 
 - **Read-only-by-construction:** `ReadOnlySource` exposes no write method; the engine cannot modify the source device.
-- **Real byte-level recovery, fixture-validated with SHA-256 comparison.**
+- **Byte-for-byte recovery verified against synthetic fixtures with SHA-256.**
 - **Filesystem metadata recovery:** FAT12/16/32, exFAT, NTFS, ext2/3/4 (fixture-validated); HFS+, APFS, Btrfs and XFS parsers are implemented but only lightly exercised (experimental).
-- **Signature carving with structural validators:** JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, PDF, ZIP/DOCX/XLSX/PPTX, OLE, 7z, RAR4, gzip, bzip2, xz, zstd, tar, MP4/MOV/MKV/AVI/WEBM, MP3, WAV, FLAC, OGG, SQLite, PE/ELF, PST/OST, LNK, EVTX, and more (25+ formats).
+- **Signature carving:** structurally validated formats listed in [`docs/support-matrix.md`](docs/support-matrix.md); unvalidated formats such as OLE, RAR5, and ZIP64 are not emitted.
 - **Sparse-file segment preservation:** holes and unwritten extents keep byte offsets.
 - **Destination safety:** output proven separate from evidence before any write.
 - **SHA-256 verification** of every recovered file (on by default).
-- **Session-based workflow:** scan → session → recover → report (JSON/HTML/CSV).
-- **Pause/resume** scans and recover across restarts.
-- **`devices` and `doctor`** self-tests for permissions and drive health.
+- **Session-based workflow:** scan → session → recover → report (JSON/HTML/CSV). Completed scan results persist in the session; restarting an interrupted scan from a checkpoint is not implemented.
+- **`devices` and `doctor`** report device accessibility and run local self-tests; they do not diagnose SMART health or TRIM status.
 - **No telemetry;** default offline.
-- **GUI (Tauri 2 + Svelte 5):** four-screen flow, live results, preview, safe destination picker.
-- **CLI:** full feature parity, JSON output, shell completions, man page.
+- **GUI (Tauri 2 + Svelte 5):** source selection, scan progress, result filtering and preview, and recovery to a selected destination. Imaging and report export remain CLI-only.
+- **CLI:** scriptable commands, JSON output, and shell completions. See [`docs/CLI.md`](docs/CLI.md) for the implemented command set.
 
 ## Quick start
 
@@ -71,40 +70,22 @@ See `docs/CLI.md` for the full command reference.
 
 ## GUI
 
-Relift includes a native desktop GUI built with Tauri 2 and Svelte 5. Four screens, one primary action each:
+Relift includes a desktop GUI built with Tauri 2 and Svelte 5:
 
-1. **Source picker** — drives and images with health verdicts
-2. **Scan** — live progress, streaming results, pause/resume
-3. **Results** — filterable table, preview pane, safe destination picker
-4. **Recover** — progress, verification, summary report
+1. **Source picker** — visible devices and raw images with access status
+2. **Scan** — live progress and a stop action that keeps partial results
+3. **Results and recovery** — filterable table, candidate metadata, destination selection, recovery summary
 
-The release workflow builds unsigned desktop bundles (Windows NSIS/MSI, macOS DMG, Linux AppImage/DEB). No signing or notarization credentials are configured in this repository, so verify downloaded artifacts against the checksums published with each release.
+The release workflow builds draft desktop bundles for Windows, macOS, and Linux. No stable release has been published. The artifacts are unsigned; this workflow does not create a signature, notarization, or checksum manifest.
 
 ## Comparison
 
-| Feature | Relift | PhotoRec | TestDisk | Recuva | Disk Drill (free) | EaseUS (free) | R-Studio |
-|---------|--------|----------|----------|--------|-------------------|---------------|----------|
-| License | GPL-3.0 | GPL-2.0 | GPL-2.0 | Proprietary | Freemium | Freemium | Proprietary |
-| Price | Free | Free | Free | Free* | 500 MB limit | 2 GB limit | $$$ |
-| GUI | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ |
-| CLI / JSON | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| NTFS $MFT undelete | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| FAT/exFAT undelete | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| ext4 undelete | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | Partial |
-| APFS/HFS+ undelete | Partial | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Btrfs/XFS undelete | Partial | ✗ | ✗ | ✗ | ✗ | ✗ | Partial |
-| Validating carving | ✓ | Partial | ✗ | Partial | Partial | Partial | ✓ |
-| Fragmented file recovery | ✓ | ✗ | ✗ | Partial | Partial | Partial | ✓ |
-| Read-only guarantee | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| Pause/resume | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| SHA-256 verification | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Disk imaging | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| RAID/LVM | Planned | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| Cross-platform | Win/Mac/Linux | Win/Mac/Linux | Win/Mac/Linux | Win | Win/Mac | Win/Mac | Win/Mac/Linux |
-
-*Recuva free version has no official updates since 2016.
-
-**Where competitors win:** PhotoRec has broader raw format coverage (300+ signatures); TestDisk repairs partition tables; R-Studio has the most complete RAID reconstruction. Relift focuses on validated recovery with honest confidence scoring.
+No reproducible, head-to-head recovery or performance comparison has been run.
+Relift's filesystem and format claims are limited to the evidence in the
+[support matrix](docs/support-matrix.md) and [verification record](docs/VERIFICATION.md).
+Choose a tool based on its tested support for your filesystem and recovery case;
+Relift is not a replacement for partition repair, RAID reconstruction, or a
+certified forensic suite.
 
 ## Benchmarks
 
@@ -145,11 +126,11 @@ Requires Rust 1.90+ via rustup. On Windows the MSVC toolchain is recommended (`r
 cargo build --release --workspace
 ```
 
-The CLI binary is `target/release/relift.exe` (Windows) or `target/release/relift` (Unix). The GUI is a Tauri application; build it through the Tauri CLI so the frontend is embedded:
+The CLI binary is `target/release/relift.exe` (Windows) or `target/release/relift` (Unix). The GUI is a Tauri application that requires Node.js 22.17 or newer; build it through the Tauri CLI so the frontend is embedded:
 
 ```sh
 cd crates/relift-gui
-npm install
+npm ci
 npm run tauri build
 ```
 
@@ -160,7 +141,7 @@ cargo test -p relift-core
 cargo test --workspace --all-targets
 ```
 
-The current suite is 51 tests: 43 core unit tests, 6 end-to-end tests (scan → recover → SHA-256 verify for FAT32, exFAT, NTFS and ext4; destination separation; output confinement), and 2 CLI integration tests. Property-based tests use `proptest`. A `cargo-fuzz` harness is planned but not yet included.
+The current suite has 74 passing tests: 59 core unit tests, 6 end-to-end recovery tests, 2 fixture tests, 2 CLI unit tests, 3 CLI process-level contract tests, and 2 GUI DTO contract tests. These use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes. No `cargo-fuzz` harness is checked in yet.
 
 ## Honesty policy
 
@@ -174,7 +155,8 @@ See `docs/limitations.md` and `docs/GAP_REPORT.md` for details. Notable gaps:
 - ext4: inline data >60 bytes, encryption, bigalloc, journal replay not implemented.
 - Carving: FLAC, RAR5, ZIP64, OLE compound files not validated.
 - No real NTFS/ext4 volumes available locally; only synthetic fixtures tested.
-- No signing certificates/notarization credentials; releases are honest/unsigned.
+- The current GitHub release is a draft; no stable release has been published.
+- No signing certificates/notarization credentials; release artifacts are unsigned.
 - macOS raw-device destination safety intentionally fails closed; macOS raw paths untested.
 - Desktop GUI requires WebView2 on Windows.
 
@@ -192,4 +174,4 @@ See `SECURITY.md`. Threat model, vulnerability disclosure, signed-release verifi
 
 ## Acknowledgements
 
-Built with: `serde`, `serde_json`, `clap`, `memchr`, `crc32fast`, `flate2`, `sha2`, `thiserror`, `anyhow`, `chrono`, `tauri`, `svelte`, `tailwindcss`, `lucide-svelte`, `criterion`, `proptest`, `insta`.
+Built with Rust crates including `serde`, `serde_json`, `clap`, `memchr`, `crc32fast`, `flate2`, `sha2`, `thiserror`, `anyhow`, `chrono`, `tauri`, and `criterion`; the GUI uses Svelte 5 and TypeScript.

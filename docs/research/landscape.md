@@ -1,63 +1,46 @@
-# Research landscape
+# Research Landscape
 
-Relift is a read-only deleted-file recovery tool for disk images and drives.
-This document records what was researched before architecture decisions were
-finalized, per the project's "research before architecture" requirement.
+**Updated:** 2026-11-15
+**Status:** Initial desk research only. This is not a complete competitor study,
+filesystem-specification review, or hands-on comparison.
 
-## Name availability (verified)
+## Existing recovery tools
 
-| Name | crates.io | npm | PyPI | DFIR/data-recovery collision | Decision |
-|------|-----------|-----|------|------------------------------|----------|
-| Relift | free | free | free | none found | **Selected** |
-| Unlost | — | — | — | tryunlost.com | Rejected |
-| Vestige | — | — | — | DFIR tooling | Rejected |
-| Exhume | — | — | — | academic ExtFS recovery | Rejected |
-| Remanence | — | — | — | DFIR workbench | Rejected |
-| Slackspace | — | — | — | forensics firm | Rejected |
-| Phoenix | — | — | — | generic | Rejected |
-| ApexRecover | — | — | — | generic | Rejected |
-| Palimpsest | — | — | — | generic | Rejected |
+- [PhotoRec file formats](https://www.cgsecurity.org/wiki/File_Formats_Recovered_By_PhotoRec): CGSecurity describes PhotoRec as a carving tool that searches for known headers and lists more than 480 extensions across about 300 file families. This is the project's own format listing, not a third-party benchmark. The breadth is one reason Relift does not claim feature-count parity.
+- [TestDisk](https://www.cgsecurity.org/wiki/testDisk): CGSecurity documents partition-table and boot-sector repair as well as undelete/copy operations for FAT, exFAT, NTFS, and ext filesystems. Those repair workflows are outside Relift's read-only recovery scope.
+- [Tauri frontend configuration](https://v2.tauri.app/start/frontend/): Tauri documents support for multiple frontend frameworks. Relift uses the existing Svelte 5 frontend rather than combining frameworks.
 
-## Existing open-source recovery tools (reference, not forking)
+No competing tool was run against a shared labeled recovery corpus. No
+head-to-head accuracy, speed, or safety comparison is available. See
+[`comparison.md`](../comparison.md) for the comparison policy.
 
-- **PhotoRec/TestDisk (CGSecurity):** Carving-focused, supports many filesystems,
-  GPL. CLI-first. Reference for what "real byte-level recovery" looks like, but
-  not a codebase Relift reuses.
-- **scalpel (forensics):** Configurable signature carving. Reference for carving
-  policy, not reused.
-- **extundelete / undelete (ext):** ext-specific, largely unmaintained.
-- **ntfsundeird / ntfs-3g tools:** NTFS-specific.
+## Current project architecture
 
-Relift differentiates by: read-only-by-construction, SHA-256-verified synthetic
-fixtures, one shared engine for CLI/TUI/GUI, sparse-file segment preservation,
-and an honest support matrix that never claims unsupported filesystems.
+The implementation uses a Rust workspace with `relift-core`, `relift-cli`,
+`relift-gui`, `relift-testkit`, and `relift-bench`. The CLI and Tauri/Svelte
+GUI call the shared core. The selected license is GPL-3.0-or-later. Rust 1.90
+is the declared minimum. See the [conflict register](../decisions/CONFLICT_REGISTER.md)
+and architecture decision records for the repository's decisions.
 
-## Stack research
+## Filesystem implementation scope
 
-- Rust chosen for memory safety without a GC, strong FFI-free raw device access
-  on Windows/Linux/macOS, and a single compiled binary.
-- GNU toolchain selected over MSVC because it needs no admin install and no
-  Visual Studio; verified compile/link/run at Rust 1.100.0.
-- clap for CLI, serde/serde_json for sessions/reports, sha2 for verification,
-  thiserror/anyhow for error handling.
+The current parser modules are FAT, exFAT, NTFS, ext, HFS+, APFS, Btrfs, and
+XFS. The first four groups have deterministic synthetic fixture tests; HFS+,
+APFS, Btrfs, and XFS remain experimental. The implementation and its gaps are
+documented in [`support-matrix.md`](../support-matrix.md) and
+[`GAP_REPORT.md`](../GAP_REPORT.md).
 
-## Filesystem research (first recovery targets)
+This repository does not yet contain a sourced specification review for every
+parser. In particular, APFS, HFS+, Btrfs, XFS, partitioning, encryption, RAID,
+and platform raw-device behavior need further primary-source research before
+their implementation can be described as production-validated.
 
-| Filesystem | On-disk structures used by Relift |
-|------------|-----------------------------------|
-| FAT12/16/32 | BPB, FAT chain, 8.3 + LFN dir entries, deleted entry (0xE5) |
-| exFAT | boot sector, FAT, entry-set checksums, stream extension, name entries |
-| NTFS | boot sector, MFT records, $STANDARD_INFORMATION, $FILE_NAME, $DATA, runlists |
-| ext2/3/4 | superblock, group descriptors, inode table, extent trees, indirect blocks |
+## Evidence and limits
 
-Carving validators: JPEG, PNG, PDF, ZIP, GIF, BMP, TIFF, MP4, SQLite, RIFF,
-MP3, Ogg, gzip, 7z, RAR4, PE, ELF.
-
-## Honesty policy
-
-- Unsupported filesystems are identified and reported, never silently claimed as
-  recoverable.
-- Only structurally validated carves are emitted.
-- No simulated/mock results; every recovery is validated by synthetic fixtures
-  with SHA-256 hash comparison.
-- Default offline; no telemetry; no network client.
+- Synthetic tests compare recovered bytes with fixture ground truth where
+  applicable.
+- No real-volume recovery study or labeled precision/recall corpus exists.
+- The Criterion suite is an internal synthetic smoke benchmark; no public
+  hardware performance comparison has been published.
+- The current GitHub release is a draft. Package-manager submissions, signing,
+  notarization, docs-site deployment, and launch publication remain incomplete.

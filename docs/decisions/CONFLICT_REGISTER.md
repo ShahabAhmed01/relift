@@ -1,72 +1,55 @@
 # Conflict Register
 
-This document reconciles the many conflicting names, stacks, licenses, and
-design goals that appeared in the user's original master prompt. It is the
-single source of truth for project identity. When this register and another
-document disagree, the register wins.
+This register records the governing choices made from the mutually exclusive
+options in the master prompt. The existing Relift repository and the user's
+current safety instructions take precedence over aspirational alternatives.
 
-## Canonical identity
+## Canonical decisions
 
-| Field | Decision | Rejected alternatives |
-|-------|----------|----------------------|
-| Name | **Relift** | `Unlost` (tryunlost.com), `Vestige` (DFIR tooling), `Exhume` (academic ExtFS recovery), `Remanence` (DFIR workbench), `Slackspace` (forensics firm), `Phoenix`, `ApexRecover`, `Palimpsest` |
-| Binary | `relift` | — |
-| License | **GPL-3.0-or-later** | — |
-| Language | **Rust 1.100.0** (GNU toolchain) | — |
-| Crates | `relift-core`, `relift-cli`, `relift-testkit` | — |
+| Topic | Selected decision | Deferred or rejected alternatives | Evidence / revisit condition |
+|---|---|---|---|
+| Product name | Relift; binary `relift` | Vestige, Unlost, Phoenix, Exhume, ApexRecover and other names from prompt variants | Existing repository identity and GitHub URL; revisit only if the owner requests a rename |
+| Core implementation | Rust workspace; minimum Rust 1.90 | Parallel C/C++ recovery engines | `Cargo.toml`, shared `relift-core` API |
+| Windows toolchain | MSVC target for release artifacts | GNU-only distribution | `.github/workflows/release.yml` builds `x86_64-pc-windows-msvc`; CI compiles workspace on Windows |
+| Desktop UI | Tauri 2 + Svelte 5 | Electron, Slint, other frontend stacks | `crates/relift-gui`; built by the release workflow |
+| CLI | Native `relift-cli` using `relift-core` | Shell wrapper around another recovery tool | `crates/relift-cli`; CLI contract tests |
+| TUI | Deferred; no TUI is shipped | Adding a second interface without a supported workflow | No TUI crate or command exists; revisit after a concrete user need and maintainer capacity are established |
+| License | GPL-3.0-or-later | Conflicting MIT/Apache-only options in source prompt variants | Existing `LICENSE` and workspace package metadata |
+| Source I/O | Open sources read-only; write only through explicit destination writers | In-place repair or source mutation | `ReadOnlySource`, imaging/recovery modules, destination safety tests |
+| Recovery evidence | Mark fixture-validated and experimental support separately; publish only measured results | Claims of broad accuracy, superiority, or real-media validation without evidence | `docs/support-matrix.md`, `docs/GAP_REPORT.md`, `docs/VERIFICATION.md` |
+| Sessions | Directory with JSON header and JSONL records | SQLite database and crash-resume claims | `crates/relift-core/src/session.rs`; no SQLite dependency |
+| Network and telemetry | No telemetry or automatic update checks; recovery is local | Required accounts, cloud scanning, silent telemetry | No network client in the core/CLI; no update command is implemented |
+| Release status | Draft release only; unsigned artifacts | Claiming a published or signed release | Current GitHub release is a draft; no signing credentials are configured |
 
-`Relift` was verified free on crates.io, npm, and PyPI; no data-recovery or
-DFIR collision was found. The license text is stored at `LICENSE`.
+## Filesystem and format status
 
-## Stack reconciliation
+| Capability | Selected status | Evidence and limitation |
+|---|---|---|
+| FAT12/16/32, exFAT, NTFS, ext2/3/4 | Implemented and deterministic-fixture tested | Fixture/end-to-end evidence; no real-volume accuracy corpus |
+| HFS+, APFS, Btrfs, XFS | Parser exists; experimental | No deterministic fixture or end-to-end recovery evidence yet |
+| Other filesystems | Detection only or unsupported | See `docs/support-matrix.md` and `docs/GAP_REPORT.md` |
+| Carving | Emit only formats with structural validators | Validated formats and unimplemented formats are listed in `docs/support-matrix.md` |
+| Container images | Raw images only | Convert E01/AFF4/VHD/VMDK/QCOW2/DMG to raw before scanning |
+| In-progress resume | Not implemented | A completed session is reusable; there is no `scan --resume` checkpoint workflow |
 
-The prompt mentioned Node, Python, and several GUI frameworks. The verified,
-canonical stack is:
+## Decision records
 
-- Rust 1.100.0 `x86_64-pc-windows-gnu`, installed via rustup (no MSVC/admin).
-- Dependencies: `serde`, `serde_json`, `sha2`, `memchr`, `crc32fast`, `flate2`,
-  `thiserror`, `clap`, `anyhow`.
-- Windows raw devices: `GENERIC_READ` + `FILE_FLAG_OVERLAPPED`.
-- Telemetry: none. Default offline.
+| ADR | Status |
+|---|---|
+| ADR-0001 — Canonical name and stack | Accepted; details in this register |
+| ADR-0002 — Read-only invariant | Accepted |
+| ADR-0003 — Sparse-segment model | Accepted |
+| ADR-0004 — Validated carving policy | Accepted |
+| ADR-0005 — GUI/TUI decision deferred | Superseded by the implemented Tauri 2 + Svelte 5 GUI; TUI remains deferred |
+| ADR-0006 — Exit-code grammar | Accepted; see `docs/CLI.md` |
 
-Node and Python are not part of the product. Any future GUI/TUI remains Rust
-(native fallback or Tauri once a WebView2 path is verified).
+## Remaining reconciliation work
 
-## Design decisions recorded as ADRs
-
-| ADR | Title | Status |
-|-----|-------|--------|
-| ADR-0001 | Canonical name and stack | Accepted |
-| ADR-0002 | Read-only invariant | Accepted |
-| ADR-0003 | Sparse-file segment model | Accepted |
-| ADR-0004 | Carving policy (structurally validated only) | Accepted |
-| ADR-0005 | Desktop GUI/TUI decision deferred | Accepted (documented fallback) |
-| ADR-0006 | Exit-code grammar | Accepted (see docs/CLI.md) |
-
-## Filesystem support decisions
-
-| Target | Status | Notes |
-|--------|--------|-------|
-| FAT12/16/32 | Implemented + fixture-tested | Metadata + carving |
-| exFAT | Implemented + fixture-tested | Metadata + carving |
-| NTFS | Implemented + fixture-tested | MFT records, resident/non-resident/sparse |
-| ext2/3/4 | Implemented + fixture-tested (ext4) | Extents + indirect blocks |
-| HFS+/APFS | Identified, not implemented | Reported honestly |
-| ReiserFS, XFS, Btrfs | Identified, not implemented | Reported honestly |
-
-## Support matrix honesty
-
-Unsupported filesystems are identified and reported, never silently claimed as
-recoverable. Documented gaps: ext4 journal/$UsnJrnl, OLE, RAR5, ZIP64, FLAC
-carving, ext4 inline data beyond the inode body, encryption, bigalloc, journal
-replay, NTFS `$ATTRIBUTE_LIST`, named ADS.
-
-## Open gaps (intentional)
-
-- No real NTFS/ext4 volumes available locally; only synthetic fixtures.
-- No signing certificates/notarization credentials; releases are honest/unsigned
-  unless credentials are provided.
-- macOS raw-device destination safety intentionally fails closed; macOS raw paths
-  untested.
-- Desktop GUI framework decision deferred (Tauri 2 needs a WebView2/MSVC-verified
-  path not available here).
+- Master-prompt variants request more filesystems, formats, interfaces,
+  performance targets, packaging channels, SEO work, and launch materials than
+  the verified product currently provides. These are not silently treated as
+  shipped; see the requirements table in `docs/VERIFICATION.md` and the gap
+  report.
+- Requirements that depend on physical media, representative labeled corpora,
+  signing credentials, third-party registry approvals, or human publication
+  remain pending until that evidence or access exists.

@@ -18,7 +18,6 @@ use tauri::{AppHandle, Emitter, State, Window};
 // ===== Tauri Commands =====
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct DeviceInfoDto {
     pub path: String,
     pub kind: String,
@@ -28,12 +27,9 @@ pub struct DeviceInfoDto {
     pub size_human: String,
     pub accessible: bool,
     pub note: Option<String>,
-    pub health: String,
-    pub is_system_drive: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct ScanOptionsDto {
     pub source: String,
     pub session_dir: String,
@@ -44,7 +40,6 @@ pub struct ScanOptionsDto {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct RecoverOptionsDto {
     pub session_dir: String,
     pub dest: String,
@@ -54,7 +49,6 @@ pub struct RecoverOptionsDto {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct ImageOptionsDto {
     pub source: String,
     pub dest: String,
@@ -62,7 +56,6 @@ pub struct ImageOptionsDto {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct ScanProgressDto {
     pub phase: String,
     pub done: u64,
@@ -71,7 +64,6 @@ pub struct ScanProgressDto {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct RecoveryProgressDto {
     pub index: u64,
     pub total: u64,
@@ -79,7 +71,6 @@ pub struct RecoveryProgressDto {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct SessionSummaryDto {
     pub session_dir: String,
     pub source_path: String,
@@ -96,7 +87,6 @@ pub struct SessionSummaryDto {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct FilesystemSummaryDto {
     pub volume_index: u32,
     pub offset: u64,
@@ -110,7 +100,6 @@ pub struct FilesystemSummaryDto {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct RecoverySummaryDto {
     pub destination: String,
     pub considered: u64,
@@ -125,7 +114,6 @@ pub struct RecoverySummaryDto {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct CandidateDto {
     pub id: u64,
     pub name: String,
@@ -156,20 +144,6 @@ pub async fn list_devices_cmd() -> Result<Vec<DeviceInfoDto>, String> {
             .size
             .map(relift_core::util::human_bytes)
             .unwrap_or_else(|| "unknown".to_string());
-        let health = if !device.accessible {
-            "locked".to_string()
-        } else if device.note.as_deref().unwrap_or("").contains("TRIM") {
-            "trim_warning".to_string()
-        } else if device.note.as_deref().unwrap_or("").contains("SMART")
-            || device.note.as_deref().unwrap_or("").contains("read error")
-        {
-            "degraded".to_string()
-        } else {
-            "healthy".to_string()
-        };
-        let is_system = device.path.contains("C:")
-            || device.path.contains("/dev/sda")
-            || device.path.contains("/dev/nvme0n1");
         devices.push(DeviceInfoDto {
             path: device.path,
             kind: format!("{:?}", device.kind).to_lowercase(),
@@ -179,8 +153,6 @@ pub async fn list_devices_cmd() -> Result<Vec<DeviceInfoDto>, String> {
             size_human,
             accessible: device.accessible,
             note: device.note,
-            health,
-            is_system_drive: is_system,
         });
     }
     Ok(devices)
@@ -461,4 +433,45 @@ pub async fn select_directory(window: Window) -> Result<Option<String>, String> 
 pub async fn get_sessions_dir() -> Result<String, String> {
     let base = std::env::temp_dir();
     Ok(base.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod dto_contract_tests {
+    use super::{DeviceInfoDto, ScanOptionsDto};
+
+    #[test]
+    fn scan_options_deserialize_snake_case_fields() {
+        let options: ScanOptionsDto = serde_json::from_value(serde_json::json!({
+            "source": "image.dd",
+            "session_dir": "session",
+            "include_live": false,
+            "carve": true,
+            "volume_indices": [0],
+            "max_candidates": 10
+        }))
+        .unwrap();
+
+        assert_eq!(options.session_dir, "session");
+        assert!(options.carve);
+    }
+
+    #[test]
+    fn device_info_serializes_only_supported_fields_in_snake_case() {
+        let device = DeviceInfoDto {
+            path: "image.dd".to_string(),
+            kind: "file".to_string(),
+            label: None,
+            filesystem: None,
+            size: Some(1024),
+            size_human: "1 KiB".to_string(),
+            accessible: true,
+            note: None,
+        };
+        let value = serde_json::to_value(device).unwrap();
+
+        assert_eq!(value["size_human"], "1 KiB");
+        assert!(value.get("sizeHuman").is_none());
+        assert!(value.get("health").is_none());
+        assert!(value.get("is_system_drive").is_none());
+    }
 }

@@ -13,7 +13,7 @@
     HardDrive,
     FileText,
     Loader2
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
 
   // Types
   interface RecoverySummary {
@@ -29,15 +29,25 @@
     warnings: string[];
   }
 
+  interface RecoveryProgress {
+    index: number;
+    total: number;
+    percent: number;
+  }
+
   // State
-  let summary: RecoverySummary | null = $state(null);
+  let summary = $state<RecoverySummary | null>(null);
   let recovering = $state(false);
-  let progress = $state({ index: 0, total: 0, percent: 0 });
+  let progress = $state<RecoveryProgress>({ index: 0, total: 0, percent: 0 });
   let results: Array<{name: string; status: string; path?: string; note?: string}> = $state([]);
 
   // Computed
-  let hasFailures = $derived(summary && (summary.failed > 0 || summary.partial > 0));
-  let successRate = $derived(summary ? Math.round((summary.succeeded / summary.attempted) * 100) : 0);
+  let hasFailures = $derived(summary !== null && (summary.failed > 0 || summary.partial > 0));
+  let successRate = $derived(
+    summary && summary.attempted > 0
+      ? Math.round((summary.succeeded / summary.attempted) * 100)
+      : 0
+  );
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
@@ -62,7 +72,7 @@
         throw new Error('No destination selected');
       }
       
-      const unlisten = await listen('recover-progress', (event) => {
+      const unlisten = await listen<RecoveryProgress>('recover-progress', (event) => {
         progress = event.payload;
       });
       
@@ -207,9 +217,10 @@
 
         <div class="space-y-4">
           <div>
-            <label class="label">Destination folder</label>
+            <label class="label" for="recovery-destination">Destination folder</label>
             <div class="flex gap-2">
               <input
+                id="recovery-destination"
                 type="text"
                 placeholder="Click Browse to select destination…"
                 readonly

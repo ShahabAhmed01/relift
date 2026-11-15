@@ -29,6 +29,8 @@ deliberate, and tracked.
 
 ## Carving gaps
 
+- FLAC: metadata block framing alone did not establish audio-frame boundaries;
+  the incomplete validator was removed and FLAC is not emitted.
 - RAR5: no validator; not carved.
 - ZIP64: no validator; not carved.
 - OLE compound files (legacy DOC/XLS/PPT): not carved.
@@ -58,6 +60,10 @@ deliberate, and tracked.
 
 ## Validation gaps
 
+- `npm audit` (2026-11-15) reports one low-severity prototype-poisoning advisory
+  in the transitive, development-only `deepmerge` dependency of
+  `@sveltejs/vite-plugin-svelte`. The upstream advisory lists no patched version;
+  the affected package is not part of the built desktop runtime.
 - Recovery and imaging now walk canonical destination paths from the volume
   root with no-follow directory opens, retain directory handles, and create
   output relative to those handles. This blocks traversal through symlinked or
@@ -72,8 +78,9 @@ deliberate, and tracked.
 - No real NTFS/ext4 volumes available locally. All validation so far is against
   deterministic synthetic fixtures (FAT32, exFAT, NTFS, ext4) with SHA-256 byte
   comparison.
-- macOS cross-compilation and runtime testing were not available in this
-  environment; the Apple Rust target could not be downloaded here.
+- Cross-platform CI builds and runs the synthetic test suite on macOS. This
+  Windows development host cannot exercise macOS raw-device behavior, and no
+  raw physical media has been validated on any platform.
 - Public test images or real-volume validation still needed before claiming
   real-media recovery.
 - No `cargo-fuzz` harness is checked in yet; parser fuzzing is a release gate.

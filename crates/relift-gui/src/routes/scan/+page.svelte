@@ -4,21 +4,13 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { 
-    Pause, 
+    ArrowLeft,
     StopCircle, 
-    RotateCcw, 
-    HardDrive, 
-    Database, 
-    Search, 
-    Filter, 
     ChevronRight,
     AlertTriangle,
-    CheckCircle,
     XCircle,
     Loader2
-  } from 'lucide-svelte';
-  
-  import { Table } from 'lucide-svelte';
+  } from '@lucide/svelte';
 
   // Types
   interface ScanProgress {
@@ -43,6 +35,15 @@
     warnings: string[];
   }
 
+  interface ScanRequest {
+    source: string;
+    session_dir: string;
+    include_live: boolean;
+    carve: boolean;
+    volume_indices: number[];
+    max_candidates: number;
+  }
+
   interface FilesystemSummary {
     volume_index: number;
     offset: number;
@@ -58,20 +59,19 @@
   // State
   let session: SessionSummary | null = $state(null);
   let progress = $state<ScanProgress>({ phase: 'probe', done: 0, total: 0, percent: 0 });
-  let scanning = $state(true);
-  let paused = $state(false);
+  let scanning = $state(false);
+  let stopping = $state(false);
+  let scanError = $state('');
   let candidatesFound = $state(0);
   let startTime = $state<number>(Date.now());
   let elapsed = $state(0);
   let eta = $state(0);
   let throughput = $state(0);
   let unlistenProgress: (() => void) | null = null;
-  let phaseStartTime = $state<number>(Date.now());
+  let scanTask: Promise<void> | null = null;
 
   // Computed
   let progressPercent = $derived(progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0);
-  let canPause = $derived(scanning && !paused);
-  let canResume = $derived(scanning && paused);
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
@@ -96,22 +96,35 @@
   }
 
   async function loadSession() {
-    const stored = sessionStorage.getItem('relift_session');
+    const stored = sessionStorage.getItem('relift_scan_request');
     if (stored) {
-      session = JSON.parse(stored);
-      startScan();
+      const request = JSON.parse(stored) as ScanRequest;
+      sessionStorage.removeItem('relift_scan_request');
+      session = {
+        session_dir: request.session_dir,
+        source_path: request.source,
+        source_size: 0,
+        source_size_human: 'Unknown',
+        status: 'scanning',
+        filesystems: [],
+        candidates: 0,
+        deleted: 0,
+        live: 0,
+        with_content: 0,
+        metadata_only: 0,
+        warnings: []
+      };
+      sessionStorage.setItem('relift_session', JSON.stringify(session));
+      await startScan(request);
     } else {
       goto('/');
     }
   }
 
-  async function startScan() {
-    if (!session) return;
-    
+  async function startScan(request: ScanRequest) {
     scanning = true;
-    paused = false;
+    scanError = '';
     startTime = Date.now();
-    phaseStartTime = Date.now();
     
     try {
       unlistenProgress = await listen<ScanProgress>('scan-progress', (event) => {
@@ -121,6 +134,24 @@
     } catch (e) {
       console.error('Failed to listen for progress:', e);
     }
+
+    scanTask = invoke<SessionSummary>('scan_cmd', { options: request })
+      .then((summary) => {
+        session = summary;
+        candidatesFound = summary.candidates;
+        sessionStorage.setItem('relift_session', JSON.stringify(summary));
+      })
+      .catch((error) => {
+        scanError = String(error);
+      })
+      .finally(() => {
+        scanning = false;
+        stopping = false;
+        unlistenProgress?.();
+        unlistenProgress = null;
+      });
+
+    await scanTask;
   }
 
   function updateMetrics() {
@@ -135,26 +166,27 @@
       }
     }
     
-    candidatesFound = session?.candidates || 0;
   }
 
-  async function togglePause() {
-    if (paused) {
-      // Resume - not implemented in backend yet
-      paused = false;
-    } else {
-      paused = true;
-      await invoke('cancel_scan_cmd');
+  async function refreshCandidateCount() {
+    if (!session?.session_dir) return;
+    try {
+      const candidates = await invoke<unknown[]>('list_candidates_cmd', {
+        sessionDir: session.session_dir
+      });
+      candidatesFound = candidates.length;
+    } catch {
+      // The session candidate file may not exist until the first result is written.
     }
   }
 
   async function stopScan() {
-    if (confirm('Stop scan and keep current results?')) {
-      scanning = false;
-      await invoke('cancel_scan_cmd');
-      // Navigate to results with partial data
-      goto('/results');
-    }
+    if (!scanning || stopping || !confirm('Stop scan and keep current results?')) return;
+
+    stopping = true;
+    await invoke('cancel_scan_cmd');
+    await scanTask;
+    goto('/results');
   }
 
   function getPhaseLabel(phase: string): string {
@@ -167,16 +199,15 @@
     return labels[phase] || phase;
   }
 
-  onMount(async () => {
-    await loadSession();
-    
-    // Update timer
+  onMount(() => {
     const interval = setInterval(() => {
-      if (scanning && !paused) {
+      if (scanning) {
         updateMetrics();
+        void refreshCandidateCount();
       }
     }, 1000);
-    
+
+    void loadSession();
     return () => clearInterval(interval);
   });
 
@@ -191,8 +222,8 @@
   <!-- Header -->
   <header class="border-b border-border px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <button class="btn-ghost p-2" onclick={() => goto('/')} aria-label="Back">
-        <RotateCcw class="w-5 h-5" />
+        <button class="btn-ghost p-2" onclick={() => scanning ? void stopScan() : goto('/')} aria-label="Back" disabled={stopping}>
+        <ArrowLeft class="w-5 h-5" />
       </button>
       <div>
         <h1 class="text-lg font-semibold text-text">Scanning</h1>
@@ -262,16 +293,17 @@
     <!-- Live Results Preview (if any) -->
     {#if candidatesFound > 0}
       <section class="card p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-base font-medium text-text">Results found so far</h2>
-          <button class="btn-secondary text-sm" onclick={() => goto('/results')}>
-            <Search class="w-4 h-4" />
-            View all results
-          </button>
-        </div>
+        <h2 class="text-base font-medium text-text mb-3">Candidates saved so far</h2>
         <p class="text-sm text-text-muted">
-          Results are streaming in. You can preview and recover files before the scan completes.
+          Review candidates after the scan completes or after stopping it.
         </p>
+      </section>
+    {/if}
+
+    {#if scanError}
+      <section class="card p-4 border-error/50 bg-error-muted/30" role="alert">
+        <h2 class="text-sm font-medium text-error mb-2">Scan failed</h2>
+        <p class="text-sm text-text-muted break-words">{scanError}</p>
       </section>
     {/if}
 
@@ -297,26 +329,15 @@
     <div class="sticky bottom-0 bg-bg/80 backdrop-blur-sm border-t border-border px-4 py-4 flex items-center justify-end gap-3">
       <button
         class="btn-secondary"
-        onclick={togglePause}
-        disabled={!scanning}
-      >
-        {#if paused}
-          <RotateCcw class="w-4 h-4" /> Resume
-        {:else}
-          <Pause class="w-4 h-4" /> Pause
-        {/if}
-      </button>
-      <button
-        class="btn-secondary"
         onclick={stopScan}
-        disabled={!scanning}
+        disabled={!scanning || stopping}
       >
-        <StopCircle class="w-4 h-4" /> Stop & keep results
+        <StopCircle class="w-4 h-4" /> {stopping ? 'Stopping…' : 'Stop and keep results'}
       </button>
-      {#if !scanning && progressPercent === 100}
+      {#if !scanning && session}
         <a href="/results" class="btn-primary">
           <ChevronRight class="w-4 h-4" />
-          View results
+          View saved results
         </a>
       {/if}
     </div>

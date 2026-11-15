@@ -32,5 +32,5 @@
     FileText,
     CheckCheck,
     Minus
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
 </script>

@@ -1,213 +1,87 @@
 # Threat Model
 
-## Scope
+## Scope and assumptions
 
-Relift is a **read-only data recovery tool** for disk images and raw block devices. It operates on storage media that may contain:
-- Malicious filesystem structures (crafted NTFS/FAT/ext4/APFS)
-- Hostile file contents (exploits, malware, zip bombs, billion-laughs XML)
-- Corrupted or intentionally damaged data
+Relift reads disk images and raw devices that may contain corrupt or hostile
+metadata. It writes recovered files or images only under a user-selected
+destination. The source, session, command-line paths, and file contents are
+untrusted inputs. Relift is not a certified forensic tool and does not defend
+against a compromised operating system or a local process that controls the
+destination volume.
 
-The threat model assumes the **source media is untrusted**. The tool must not crash, hang, allocate unbounded memory, or execute code when processing adversarial input.
+## Assets
 
-## Assets to protect
+1. **Source integrity:** scanning and imaging must not write to the source.
+2. **Destination confinement:** recovered paths must remain inside the chosen
+   destination and must not overwrite an existing file unexpectedly.
+3. **Recovered-data integrity:** report successful output verification and
+   distinguish partial or failed recovery.
+4. **User privacy:** do not send device data, file contents, or telemetry over
+   the network.
+5. **Process stability:** reject malformed offsets and structures safely and
+   avoid unbounded result accumulation where the session writer can stream data.
 
-1. **Source device integrity** — Relift must never write to the source device.
-2. **Destination integrity** — Recovered files must not escape the chosen output directory.
-3. **System stability** — No crashes, hangs, or resource exhaustion from malformed input.
-4. **User data privacy** — No telemetry, no network calls, no data exfiltration.
-5. **Forensic soundness** — Recovery process must be auditable and reproducible.
+## Controls implemented
 
-## Threat actors
+### Source and destination
 
-| Actor | Capability | Motivation |
-|-------|------------|------------|
-| Malicious disk image creator | Controls every byte of image | Exploit parser bugs, cause DoS, escape output dir |
-| Compromised storage device | Returns crafted data on read | Same as above |
-| Local attacker | Can run Relift with crafted args | Privilege escalation, data theft |
-| Remote attacker | N/A (no network) | N/A |
+- The core scanner accepts a `ReadOnlySource` with no write operation.
+- Imaging and recovery use explicit destination writers. Destination paths are
+  opened component-by-component, without following links, and retained as
+  handles while output is created. Output files use collision-safe creation.
+- Source identity is recorded in the session; recovery refuses a source whose
+  size or fingerprint differs from the recorded source.
+- Platform-specific physical-device checks reject known same-device recovery
+  destinations. When backing cannot be proven, supported paths fail closed.
+- Recovered output is SHA-256 checked by default. The user can disable the
+  post-write read-back check with `--no-verify`.
 
-## Attack surfaces
+### Parser and output handling
 
-### 1. Filesystem parsers (NTFS, FAT, exFAT, ext4, APFS, HFS+, Btrfs, XFS)
+- Parsers use bounded reads and checked range validation at input boundaries.
+- Signature carving emits a candidate only when its format validator accepts
+  the structure.
+- Filesystem and carve limitations are recorded in the support matrix and gap
+  report; a signature match alone is not represented as validated recovery.
+- Candidate records stream to JSONL session files rather than being retained as
+  one in-memory result set. `--max-candidates` limits the number of candidates.
+- Recovered names are sanitized and destination traversal is rejected. See
+  [`GAP_REPORT.md`](GAP_REPORT.md) for platform-specific output behavior.
 
-**Threats:**
-- Integer overflow in offset/length calculations
-- Out-of-bounds reads/writes via corrupted metadata
-- Infinite loops in B-tree/directory traversal
-- Unbounded recursion in attribute/record parsing
-- Allocation exhaustion via huge metadata structures (e.g., 1M fake MFT records)
+### Privacy and dependencies
 
-**Mitigations:**
-- All arithmetic uses `checked_add`, `checked_mul`, `saturating_sub`
-- Explicit bounds check before every `read_at`: `offset + len <= source.len()`
-- Hard caps: max 1M MFT records, 1M directory entries, 256 B-tree depth
-- Iteration limits with `options.cancelled` token checked every 1000 iterations
-- `nom` parser combinators with `take_while` bounds
-- No `unwrap()` on parsed data; all errors propagated as `Error::Corrupt`
+- The core and CLI contain no network client or telemetry.
+- The `doctor` command reports network/telemetry status but also attempts a
+  read-only open and 512-byte read from a platform-specific raw-device path.
+- `cargo deny check` runs in CI for dependency advisories, licenses, bans, and
+  source configuration.
 
-### 2. File carvers (25+ format validators)
+## Remaining threats and evidence gaps
 
-**Threats:**
-- Zip bombs (nested ZIP, compression ratio 1000:1)
-- Billion-laughs XML in OOXML (DOCX/XLSX/PPTX)
-- Malformed JPEG with huge segment lengths
-- PNG with 2^31 chunk sizes
-- MP4 with deep box nesting
-- SQLite with corrupted freelist causing infinite loop
+- Synthetic tests do not prove safety against every malformed image or real
+  device behavior. No comprehensive fuzz harness or 24-hour fuzz campaign is
+  checked in.
+- The Linux device-ancestry tests are synthetic; there has been no same-device
+  refusal test against mounted physical disks.
+- Raw-device behavior and physical destination checks are not validated on
+  actual media. macOS raw-device access is untested and destination checks fail
+  closed.
+- Resource behavior on multi-terabyte images and very large candidate sets has
+  not been profiled. There is no `--max-mem` or `--timeout` option.
+- An interrupted scan cannot resume from a checkpoint. A process crash may
+  leave partial destination output; failed-output cleanup differs by platform.
+- A local process with write access to the destination can alter output or
+  cause denial of service.
+- No signed release artifacts or notarized GUI bundles exist. The current
+  release is a draft with unsigned assets.
 
-**Mitigations:**
-- Every validator has hard `MAX_<FORMAT>` size limit (see `carve.rs`)
-- Per-structure allocation caps (e.g., max 1M ZIP entries, 1M PNG chunks)
-- CRC32/checksum validation before trusting lengths
-- Deflate stream decode with output limit (`MAX_GZIP_OUT = 512 MB`)
-- XML not parsed; DOCX/XLSX/PPTX validated by ZIP structure + content-type presence only
-- Recursion depth limits on box/tree walking (max 1000)
+## Forensic limits
 
-### 3. Imaging engine
+Relift is a recovery utility, not an evidence-acquisition or chain-of-custody
+system. Session fingerprints sample the source rather than hashing every byte;
+session files are not tamper-evident. No case-management mode, DFXML export, or
+source-range hashing is implemented. For forensic use, follow organizational
+procedures, use an appropriate write blocker, and independently acquire and
+hash evidence with validated tools.
 
-**Threats:**
-- Infinite retry loops on bad sectors
-- Unbounded memory for error map
-- Map file corruption leading to resume on wrong device
-
-**Mitigations:**
-- Bounded retries (configurable, default 3)
-- Exponential backoff with max delay
-- Error map stored in SQLite (bounded, indexed)
-- Source identity (serial + size + partition offset) verified on resume
-
-### 4. Recovery writer
-
-**Threats:**
-- Path traversal in recovered filenames (`../../etc/passwd`)
-- Absolute paths (`/etc/shadow`, `C:\Windows\System32`)
-- Symlink/junction/reparse point attacks
-- ADS colons in filenames (`file.txt:malware.exe`)
-- Reserved Windows names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`...)
-- Overlong paths (>260 chars on Windows without `\\?\`)
-
-**Mitigations:**
-- Recovered paths are rebuilt from sanitized relative components. Traversal
-  components are dropped, colons and other path syntax are replaced, reserved
-  Windows names are escaped, components are limited to 100 bytes, and at most
-  12 directory levels are kept.
-- The canonical destination is opened one directory component at a time from
-  the filesystem root, refusing symlinks and reparse points. Every output
-  parent is opened relative to a retained directory handle, and final files use
-  `create_new`. This prevents traversal through a destination ancestor that is
-  replaced after validation. Nested output paths are flattened when their
-  combined path would exceed the writer's 230-character threshold.
-- Destination verified on a different physical disk. Linux resolves partitions,
-  device-mapper/RAID dependencies, and NVMe namespaces through sysfs; mappings
-  that cannot be proven are refused. Windows uses volume disk extents.
-- Output files are flushed and synced after writing, then re-read from the same
-  open handle for hash verification by default. Linux and macOS use atomic
-  no-replace renames to finalize images or quarantine failed outputs. Windows
-  uses a no-overwrite image move while retaining destination directory handles;
-  failed recovery outputs are removed relative to their open parent handle.
-- Recovery output is written directly to its final name, so a process crash or
-  write failure can leave incomplete bytes until cleanup. A local process with
-  write access to the destination can modify output data or cause denial of
-  service; it remains important to keep the destination directory under the
-  user's control.
-- Recovered files are created without an execute bit on Unix.
-
-### 5. CLI / GUI input handling
-
-**Threats:**
-- Command injection via crafted arguments
-- Malicious session directory paths
-- JSON injection in `--json` output
-
-**Mitigations:**
-- `clap` validates all CLI arguments; no shell invocation
-- Paths resolved with `canonicalize()` where possible
-- JSON output uses `serde_json::to_writer` (safe)
-- GUI: Tauri IPC uses typed commands; no `eval` or dynamic code
-
-### 6. Resource exhaustion
-
-**Threats:**
-- 100 TB image → unbounded memory
-- Millions of candidates → RAM exhaustion
-- Deeply nested archives → stack overflow
-- Malformed filesystem with 1B directory entries → CPU hang
-
-**Mitigations:**
-- `--max-mem` flag (default 256 MB) caps RSS via streaming + SQLite spill
-- `--max-candidates` (default 1M) stops scan
-- `--timeout` flag stops after duration
-- Iteration guards on all loops
-- `rayon` thread pool bounded by `num_cpus()`
-
-### 7. Supply chain
-
-**Threats:**
-- Compromised dependency (typosquatting, malicious publish)
-- License incompatibility (GPL in MIT project)
-- Known vulnerability in transitive dependency
-
-**Mitigations:**
-- `cargo-deny` with license allowlist (no GPL in linked code)
-- `cargo-audit` (RUSTSEC) in CI
-- Dependabot weekly updates
-- Pinned GitHub Actions by SHA
-- Minimal dependencies; each justified in `docs/dependencies.md`
-
-### 8. Privacy / Telemetry
-
-**Threats:**
-- Hidden analytics, crash reporting, update checks
-- File contents uploaded
-- Device serial numbers logged
-
-**Mitigations:**
-- **Zero network calls** in `relift-core` and `relift-cli` (enforced by test with network denied)
-- `relift self-update` is opt-in, off by default, verifies minisign signature
-- Logs redact serial numbers and user paths by default (`--verbose` opts in)
-- No crash reporter, no analytics SDK
-
-## Security testing
-
-### Fuzzing
-- `cargo-fuzz` targets for every parser and validator
-- Nightly CI: 5 min per target, corpus minimized
-- Regression corpus committed
-
-### Property testing
-- `proptest` for round-trip encode/decode of on-disk structures
-- Random byte streams fed to parsers; must not panic
-
-### Static analysis
-- `cargo clippy -D warnings` (pedantic, with justified allows)
-- `cargo audit` for known vulnerabilities
-- `cargo deny` for license/advisory/ban checks
-
-### Penetration testing (pre-release)
-- Corpus of 1000+ malicious images (from DFIR community, generated)
-- Run full scan pipeline; assert no crashes, no writes to source
-- Verify destination confinement with path traversal attempts
-
-## Incident response
-
-If a vulnerability is found:
-
-1. **Report privately** via GitHub Security Advisory
-2. **Acknowledge within 48 hours**
-3. **Fix within 7 days** for critical (RCE, source write), 30 days for moderate
-4. **Coordinated disclosure** with CVE if applicable
-5. **Release patched version** with signed artifacts
-6. **Update `CHANGELOG.md`** with security note
-
-## Forensic soundness
-
-Relift is **not a certified forensic tool**. It is designed for data recovery, not evidence acquisition. For forensic use:
-
-- Use hardware write blocker
-- Image first (`relift image --verify`)
-- Run Relift on the image, not the original
-- Enable `--forensic` flag (SHA-256 of source ranges, DFXML export)
-- Document tool version, command line, environment
-- Verify recovered files independently
-
-The read-only invariant and session persistence support chain of custody, but Relift does not meet NIST SP 800-86 or ISO 27037 certification requirements.
+See [`VERIFICATION.md`](VERIFICATION.md) for test results and release gates.

@@ -23,7 +23,8 @@ cargo build --release --workspace
 
 # GUI (Tauri)
 cd crates/relift-gui
-npm install
+# Node.js 22.17 or newer
+npm ci
 npm run tauri build
 ```
 

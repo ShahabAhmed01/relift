@@ -46,7 +46,6 @@ const MAX_AVIF: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_DOCX: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_XLSX: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_PPTX: u64 = 2 * 1024 * 1024 * 1024;
-const MAX_FLAC: u64 = 1024 * 1024 * 1024;
 const MAX_MKV: u64 = 64 * 1024 * 1024 * 1024;
 const MAX_PST: u64 = 64 * 1024 * 1024 * 1024;
 const MAX_LNK: u64 = 1024 * 1024;
@@ -284,12 +283,6 @@ const MARKERS: &[Marker] = &[
         adjust: 0,
     },
     Marker {
-        format: "flac",
-        ext: "flac",
-        magic: b"fLaC",
-        adjust: 0,
-    },
-    Marker {
         format: "mkv",
         ext: "mkv",
         magic: b"\x1A\x45\xDF\xA3",
@@ -516,7 +509,6 @@ fn marker_max(format: &str) -> u64 {
         "docx" => MAX_DOCX,
         "xlsx" => MAX_XLSX,
         "pptx" => MAX_PPTX,
-        "flac" => MAX_FLAC,
         "mkv" => MAX_MKV,
         "pst" => MAX_PST,
         "lnk" => MAX_LNK,
@@ -612,7 +604,6 @@ fn validate(
         "docx" => validate_docx(src, start, limit),
         "xlsx" => validate_xlsx(src, start, limit),
         "pptx" => validate_pptx(src, start, limit),
-        "flac" => validate_flac(src, start, limit),
         "mkv" => validate_mkv(src, start, limit),
         "pst" => validate_pst(src, start, limit),
         "lnk" => validate_lnk(src, start, limit),
@@ -1943,43 +1934,6 @@ fn validate_pptx(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Val
     } else {
         None
     }
-}
-
-fn validate_flac(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
-    let head = read_bounded(src, start, 4, limit)?;
-    if head != b"fLaC" {
-        return None;
-    }
-    let mut pos = start + 4;
-    let mut blocks = 0u32;
-    while pos + 4 <= limit {
-        if pos - start > MAX_FLAC {
-            return None;
-        }
-        let block_head = read_bounded(src, pos, 4, limit)?;
-        let last = block_head[0] & 0x80 != 0;
-        let block_type = block_head[0] & 0x7F;
-        let block_size = u32_be(&[0, block_head[1], block_head[2], block_head[3]], 0)? as u64;
-        if block_type > 126 {
-            return None;
-        }
-        pos += 4;
-        if pos + block_size > limit {
-            return None;
-        }
-        pos += block_size;
-        blocks += 1;
-        if last {
-            return Some(
-                Validated::new(pos - start, 96)
-                    .note(format!("FLAC: {} metadata blocks validated", blocks)),
-            );
-        }
-        if blocks > 1000 {
-            return None;
-        }
-    }
-    None
 }
 
 fn validate_mkv(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {

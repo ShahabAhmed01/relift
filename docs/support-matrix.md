@@ -30,10 +30,10 @@ means there is code plus at least a deterministic fixture or end-to-end test.
 
 | Platform | Build status | Runtime status | Notes |
 |----------|--------------|----------------|-------|
-| Windows 10/11 x64 (MSVC) | Built and tested locally | Exercised on synthetic fixtures | Raw devices require elevation |
+| Windows x64 (MSVC) | Built locally and in CI | Synthetic fixtures run locally and in CI | Raw devices require elevation |
 | Windows ARM64 | Untested | Untested | No prebuilt artifact yet |
-| macOS Intel / Apple Silicon | CI build target | Not exercised | Raw-device destination safety fails closed |
-| Linux x86_64 | CI build target | Not exercised locally | Raw devices may require root |
+| macOS CI runner | Built and tested in CI | Synthetic fixtures run in CI; no raw-device validation | Raw-device destination safety fails closed |
+| Linux x86_64 | Built and tested in CI | Synthetic fixtures run in CI; no physical-device validation | Raw devices may require root |
 | Linux ARM64 | Cross-build target | Not exercised | CLI archive built by the release workflow |
 | Linux musl | Not built | Not built | Planned |
 
@@ -61,14 +61,16 @@ Every emitted carve must pass a structural validator. The current validators are
 | Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF |
 | Documents | PDF, DOCX, XLSX, PPTX |
 | Archives | ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, tar |
-| Video | MP4/MOV, MKV (WebM) |
-| Audio | MP3, WAV/RIFF, FLAC, Ogg |
+| Video | MP4/ISO-BMFF, MKV |
+| Audio | MP3, WAV/RIFF, Ogg |
 | Databases | SQLite |
 | System | PST/OST, LNK, EVTX |
 | Executables | PE (EXE/DLL), ELF |
 
-**Not implemented as validated carvers:** RAR5, ZIP64, OLE compound files
-(legacy DOC/XLS/PPT), MPEG-TS, ISO 9660.
+**Not emitted:** FLAC (the current parser did not establish audio-frame
+boundaries), RAR5, ZIP64, OLE compound files (legacy DOC/XLS/PPT), MPEG-TS,
+ISO 9660, and formats without a registered validator. MOV and WebM are not
+separately classified from their container families.
 
 ## Feature matrix
 
@@ -77,14 +79,15 @@ Every emitted carve must pass a structural validator. The current validators are
 | Device enumeration | ✓ | ✓ | `relift devices` |
 | Quick scan (metadata) | ✓ | ✓ | `--mode quick` |
 | Deep scan (carve) | ✓ | ✓ | `--mode deep` / `--carve` |
-| Pause/resume scan | ✓ | Partial | Session-based; GUI exposes stop |
+| Keep partial results after stopping a scan | ✓ | ✓ | Scan cancellation preserves candidates already written to the session |
+| Resume an interrupted scan from a checkpoint | ✗ | ✗ | Not implemented |
 | Live file listing | ✓ | ✓ | `--live` |
 | Filter by extension/confidence | ✓ | ✓ | Filter expressions |
 | Preview (text/hex/metadata) | ✗ | ✓ | Results pane |
 | SHA-256 verification | ✓ | ✓ | Default on |
 | Destination safety | ✓ | ✓ | Blocks the same physical device |
 | Disk imaging | ✓ | ✗ | CLI only |
-| ddrescue-style map/resume | ✓ | ✗ | CLI only |
+| Imaging map file and multi-pass resume | ✗ | ✗ | Not implemented; `relift image` performs a single copy pass |
 | JSON output | ✓ | ✗ | `--json` |
 | JSON/CSV/HTML/Markdown reports | ✓ | ✗ | `relift report` |
 | Shell completions | ✓ | ✗ | `relift completions` |

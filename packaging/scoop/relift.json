@@ -5,8 +5,8 @@
   "license": "GPL-3.0-or-later",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/relift-windows-x86_64.zip",
-      "hash": "b35b9f72581ca90e5932689d2753e7d24a4bff9b3cffe8fd75945b1bbb0d78bd",
+      "url": "REPLACE_WITH_PUBLISHED_RELEASE_ASSET_URL",
+      "hash": "REPLACE_WITH_VERIFIED_SHA256",
       "extract_dir": "relift-windows-x86_64"
     }
   },
@@ -17,7 +17,7 @@
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/ShahabAhmed01/relift/releases/download/v$version/relift-windows-x86_64.zip"
+        "url": "REPLACE_WITH_PUBLISHED_RELEASE_ASSET_URL"
       }
     }
   }

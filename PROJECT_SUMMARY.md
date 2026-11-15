@@ -1,96 +1,40 @@
-# Relift — Implementation Summary
+# Relift project summary
 
-Relift is a GPL-3.0-or-later, read-only data-recovery tool written in Rust, with
-a CLI and a Tauri 2 / Svelte 5 desktop GUI. This document summarizes what is in
-the repository and what has actually been verified.
+Relift is a Rust command-line and Tauri desktop application for scanning raw disk images and devices for recoverable files. Source access uses a read-only abstraction. Recovery writes to a destination that must pass device-separation checks.
 
 ## Workspace
 
-| Crate | Role |
-|-------|------|
-| `crates/relift-core` | Recovery engine: read-only source, filesystem parsers, validated carving, imaging, sessions, recovery, reporting, safety |
-| `crates/relift-cli` | `relift` binary: scan, recover, image, devices, list, report, doctor, completions |
-| `crates/relift-testkit` | Deterministic FAT32, exFAT, NTFS and ext4 image generators |
-| `crates/relift-gui` | SvelteKit frontend (static adapter) |
-| `crates/relift-gui/src-tauri` | Tauri 2 backend and desktop bundles |
-| `crates/relift-bench` | Criterion benchmark harness |
+| Crate | Purpose |
+|---|---|
+| relift-core | Scanning, filesystem metadata parsing, signature carving, imaging, recovery, reports and destination safety |
+| relift-cli | CLI commands and machine-readable output |
+| relift-testkit | Deterministic synthetic FAT32, exFAT, NTFS and ext4 fixtures |
+| relift-gui | SvelteKit frontend |
+| relift-gui/src-tauri | Tauri commands and desktop packaging |
+| relift-bench | Criterion benchmark harness |
 
-`docs/` contains the CLI reference, architecture notes, support matrix, threat
-model, limitations, gap report, verification plan, ADRs and benchmark
-methodology. `AGENTS.md` documents the machine-readable/agent workflow.
+## Supported scope
 
-## Implemented
+The current support and verification boundaries are maintained in docs/support-matrix.md and docs/VERIFICATION.md. FAT, exFAT, NTFS and ext2/3/4 have synthetic fixture coverage. HFS+, APFS, Btrfs and XFS parsers are experimental. Signature carving emits only candidates accepted by registered validators. FLAC, RAR5, ZIP64 and OLE are not emitted.
 
-### Engine (`relift-core`)
-- `ReadOnlySource` trait with no write methods; `FileSource` opens read-only and
-  `RawDeviceSource` uses an OS read-only handle.
-- Filesystem metadata recovery for FAT12/16/32, exFAT, NTFS, ext2/3/4
-  (fixture-validated) and HFS+, APFS, Btrfs, XFS (experimental parsers).
-- Validating signature carving: JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF,
-  PDF, ZIP/DOCX/XLSX/PPTX, 7z, RAR4, gzip, bzip2, xz, zstd, tar, MP4/MOV, MKV,
-  MP3, WAV/RIFF, FLAC, Ogg, SQLite, PST, LNK, EVTX, PE, ELF.
-- Sparse-file and multi-segment data locations; holes stay holes.
-- Raw imaging with `.partial` file, SHA-256 manifest, map file for resume.
-- SQLite (WAL) session store; scan and recovery state survives restarts.
-- Destination safety: refuses destinations on the same physical device.
-- SHA-256 verification of recovered files (default on) and `.partial`
-  quarantine on write/hash failure.
-- JSON/CSV/HTML/Markdown reports.
-- Confidence labels (Verified/Likely/Partial/Unverified) with reasons.
+Only raw images are supported. Imaging is a single copy pass; there is no map-file resume. Sessions use JSON and JSONL files; interrupted scans do not resume from checkpoints. The GUI supports source selection, scan progress, result filtering and recovery; imaging and report export remain CLI-only.
 
-### CLI (`relift`)
-- Commands for scanning, recovery, imaging, device listing, session inspection,
-  reporting, self-tests, shell completions and man-page generation.
-- `--json` output with a stable schema and documented exit codes (0–5).
-- Filter expressions, dry-run, minimum confidence, resume.
+## Verification
 
-### GUI (`crates/relift-gui`)
-- Tauri 2 backend in `src-tauri` with commands for devices, scan, candidates,
-  recovery, imaging and doctor checks.
-- SvelteKit + Svelte 5 runes frontend with Tailwind CSS 4.
-- Source → Scan → Results → Recover flow, progress events, preview pane,
-  filters, destination picker and cancellation.
+The current Rust workspace has 74 tests. On 2026-11-15, tests passed on stable and Rust 1.90.0. The Svelte and TypeScript checks and production build passed. A local Windows Tauri build generated MSI and NSIS installer packages.
 
-## Verified
-
-- `cargo build --release --workspace` succeeds.
-- `cargo test --workspace --all-targets`: 51 tests pass (43 core unit tests,
-  6 end-to-end fixture tests, 2 CLI integration tests).
-- `cargo clippy --workspace --all-targets -- -D warnings` is clean.
-- `cargo fmt --all -- --check` is clean.
-- `cargo +1.90 check --workspace --all-targets` passes (MSRV 1.90).
-- Frontend production build succeeds and Tauri generates ICO/ICNS/PNG icons.
-- CI covers Linux, Windows and macOS on stable plus MSRV, with Linux GUI system
-  dependencies installed and `cargo-deny` checks.
-
-## Not yet complete
-
-Tracked in `docs/GAP_REPORT.md`:
-
-- Real-volume validation (current evidence is synthetic fixtures only).
-- Fixtures/end-to-end tests for HFS+, APFS, Btrfs and XFS.
-- `cargo-fuzz` harness and coverage measurement.
-- E01/AFF4/VHD/VMDK/QCOW2/DMG image readers.
-- RAR5, ZIP64, OLE, MPEG-TS and ISO 9660 carvers.
-- Code signing, notarization and package-manager submissions.
-- TUI and GUI pause/resume, report export.
+All recovery accuracy evidence is synthetic. No physical drive or representative real-media corpus has been validated. Open release gates are listed in docs/GAP_REPORT.md.
 
 ## Build
 
-```sh
-cargo build --release --workspace
-cargo test --workspace --all-targets
-cargo clippy --workspace --all-targets -- -D warnings
-```
+    cargo build --release --workspace
+    cargo test --workspace --all-targets
 
-GUI:
+For the GUI, install Node.js 22.17 or newer, then run:
 
-```sh
-cd crates/relift-gui
-npm install
-npm run tauri build
-```
+    cd crates/relift-gui
+    npm ci
+    npm run check
+    npm run tauri build
 
-## License
-
-GPL-3.0-or-later. See `LICENSE`.
+See README.md and the docs directory for the full references.

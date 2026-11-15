@@ -1,6 +1,9 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
+  import type { LayoutProps } from './$types';
+
+  let { children }: LayoutProps = $props();
 
   // Theme management
   let theme = $state<'light' | 'dark'>('dark');
@@ -19,4 +22,4 @@
   }
 </script>
 
-<slot />
+{@render children()}

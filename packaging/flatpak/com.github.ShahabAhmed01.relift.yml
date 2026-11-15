@@ -1,4 +1,4 @@
-flatpak-builder --install --user --force-clean build-dir packaging/flatpak/com.github.ShahabAhmed01.relift.yml
+# TEMPLATE ONLY. Validate runtime version, permissions, and source build before submission.
 
 app-id: com.github.ShahabAhmed01.relift
 runtime: org.freedesktop.Platform

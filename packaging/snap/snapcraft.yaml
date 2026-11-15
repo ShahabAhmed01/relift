@@ -1,24 +1,14 @@
+# TEMPLATE ONLY. Validate confinement, source revision, and store policy before submission.
 name: relift
 version: '0.1.0'
 summary: Free, open-source data recovery for Windows, macOS, and Linux
 description: |
-  Relift recovers deleted files from HDDs, SSDs, USB drives, SD cards, and disk images.
-  It uses filesystem metadata (NTFS $MFT, FAT directories, ext4 inodes, APFS B-trees)
-  to restore original names and paths, and falls back to validating signature carving
-  for formatted or corrupted volumes.
-  
-  Features:
-  - Read-only guarantee on source devices
-  - Filesystem metadata undelete (NTFS, FAT, exFAT, ext4, APFS, HFS+, Btrfs, XFS)
-  - Validating file carving (25+ formats)
-  - Disk imaging (ddrescue-style)
-  - Session-based workflow with pause/resume
-  - SHA-256 verification
-  - CLI + GUI
-  
-  Free, open-source (GPL-3.0-or-later), no telemetry, no upsells.
+  Relift scans raw disk images and devices using filesystem metadata and
+  structurally validated file signatures. Recovery output must use a separate
+  destination. See the repository support matrix for tested and experimental
+  filesystems and formats.
 
-grade: stable
+grade: devel
 confinement: classic
 base: core22
 

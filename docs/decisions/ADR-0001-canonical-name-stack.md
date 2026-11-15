@@ -2,39 +2,34 @@
 
 ## Status
 
-Accepted.
+Accepted; maintained in [`CONFLICT_REGISTER.md`](CONFLICT_REGISTER.md).
 
 ## Context
 
-The user's original master prompt contained many conflicting names
-(`Unlost`, `Vestige`, `Exhume`, `Remanence`, `Slackspace`, `Phoenix`,
-`ApexRecover`, `Palimpsest`), stacks (Rust, Node, Python), and licenses. Building
-multiple products or keeping several names would fragment effort and violate the
-"one canonical name and stack" requirement.
+The source prompt contains several proposed product names, languages, GUI
+frameworks, and licenses. This repository already has a public identity and
+working architecture; replacing it with a second product or incompatible stack
+would discard existing work.
 
 ## Decision
 
-- **Name:** `Relift` — verified free on crates.io, npm, PyPI; no data-recovery or
-  DFIR collision found. Rejected: `Unlost` (tryunlost.com), `Vestige` (DFIR
-  tooling), `Exhume` (academic ExtFS recovery), `Remanence` (DFIR workbench),
-  `Slackspace` (forensics firm), `Phoenix`, `ApexRecover`, `Palimpsest`.
-- **License:** GPL-3.0-or-later — keeps the recovery engine and derivatives free.
-  License text fetched to `LICENSE`.
-- **Stack:** Rust 1.100.0 GNU toolchain via rustup; no MSVC/admin needed.
-  Verified compile/link/run on Windows 11.
-- **Workspace layout:** `crates/relift-core`, `crates/relift-cli` (binary
-  `relift`), `crates/relift-testkit`.
-- **Dependencies:** `serde`, `serde_json`, `sha2`, `memchr`, `crc32fast`,
-  `flate2`, `thiserror`, `clap`, `anyhow`.
+- Keep the product name **Relift** and binary name `relift`.
+- Keep the existing **GPL-3.0-or-later** license.
+- Use the shared Rust workspace, with **Rust 1.90** as the minimum declared
+  version.
+- Keep `relift-core` as the shared engine and `relift-cli` as the full
+  scriptable interface.
+- Keep the implemented **Tauri 2 + Svelte 5** desktop application. Node is a
+  build-time dependency for the frontend; Python is not part of the product.
+- Build the Windows release target for MSVC. CI and the release workflow are
+  authoritative for platform build coverage.
+- Defer a TUI until a concrete user need justifies another interface.
 
 ## Consequences
 
-- One product, one name, one license. All conflicts are recorded here rather than
-  building multiple products.
-- Windows uses the GNU toolchain; MSVC is not required and not supported as the
-  primary path.
-- Node and Python are not part of the product.
-
-## Related
-
-- `docs/decisions/CONFLICT_REGISTER.md`
+- Alternatives are recorded with their disposition in the conflict register;
+  they are not parallel product requirements.
+- The support matrix distinguishes fixture-validated behavior from experimental
+  parsers and unimplemented work.
+- Product identity or license changes require an explicit decision record and
+  compatibility review.

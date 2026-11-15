@@ -36,7 +36,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at conduct@relift.rs. All complaints will be reviewed and investigated promptly and fairly.
+Report conduct concerns privately to the project owner through the contact options on the GitHub profile. Do not post private or sensitive details in a public issue. Security vulnerabilities must follow SECURITY.md. No response-time guarantee is currently offered.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

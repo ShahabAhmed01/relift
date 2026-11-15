@@ -1,187 +1,98 @@
 # Troubleshooting
 
-## Quick diagnosis
+Use the command reference in [`CLI.md`](CLI.md) for available flags. Relift does
+not implement `--resume`, `--max-mem`, `--threads`, `--rate-limit`, image map
+files, or a forensic mode.
 
-Run `relift doctor` first. It checks:
-- Raw device access permissions
-- Full Disk Access (macOS)
-- TRIM status on SSDs
-- SMART health
-- Hashing/carving/parsing unit tests
+## Device access
 
-```bash
-relift doctor
-# For JSON output:
-relift doctor --json
+- Raw-device access may require Administrator on Windows or elevated
+  permissions on Linux and macOS.
+- Prefer a raw image when possible. Only raw image files are supported; convert
+  E01/AFF4/VHD/VMDK/QCOW2/DMG containers before scanning.
+- `relift devices` lists devices visible to the operating system.
+- `relift doctor` runs local self-tests and also attempts a read-only open and
+  a 512-byte read from a platform-specific raw-device path. Confirm with the
+  device owner before running it on a system with physical media attached.
+
+## Scan problems
+
+### The scan finds no candidates
+
+Run a quick metadata scan first. If it finds nothing and the filesystem or
+source is suitable, a deep scan also runs the supported signature validators:
+
+```sh
+relift scan image.dd --session ./session --mode quick
+relift scan image.dd --session ./deep-session --mode deep
 ```
 
-## Common issues
+Deleted content may already have been overwritten or erased by SSD TRIM. A
+full overwrite cannot be reversed. Encrypted volumes are not decrypted by
+Relift.
 
-### "No devices detected" / "Device not accessible"
+### The session directory is not empty
 
-**Windows:**
-- Run terminal as **Administrator**
-- Check `relift doctor` → "Raw device access: FAIL" means elevation needed
-- Antivirus may block raw disk access; add exception for `relift.exe`
+Use a new or empty directory for `--session`. A scan does not overwrite an
+existing session's files.
 
-**Linux:**
-- Run with `sudo` or add user to `disk` group: `sudo usermod -aG disk $USER`
-- Check `lsblk` — device must exist
-- Some USB bridges hide devices; try `ls /dev/sd*` and `ls /dev/nvme*`
+### The scan is interrupted
 
-**macOS:**
-- Grant **Full Disk Access** to Terminal / Relift:
-  1. System Settings → Privacy & Security → Full Disk Access
-  2. Add Terminal.app (or Relift.app)
-  3. Restart terminal
-- Use `/dev/rdiskX` (raw) not `/dev/diskX` (buffered)
+Candidates already written to the session are retained. A later scan cannot
+resume from the previous scan's checkpoint; start a new scan in a new session.
+The GUI's stop action cancels scanning and keeps the results already recorded.
 
-### "Destination unsafe" / "Refusing to write to source device"
+### The source changes before recovery
 
-**Cause:** Recovery destination is on the same physical drive as the source.
+Relift compares source size and fingerprint with the session. If they differ,
+re-scan the current image into a new session. The `--source` option can select
+the intended source path, but does not bypass the identity check.
 
-**Solution:**
-- Choose a folder on a **different physical drive**
-- Verify with `relift devices` — check serial numbers differ
-- External USB drive, second internal drive, or network share (not recommended)
+## Recovery problems
 
-### Scan stuck / very slow
+### The destination is rejected
 
-**Symptoms:** Progress bar stops, throughput drops to < 1 MB/s.
+Choose a directory on a different physical volume. Some virtual, stacked, or
+multi-device destinations are refused when Relift cannot prove their physical
+backing. Use an ordinary local volume or a raw image as the source.
 
-**Causes & fixes:**
-| Cause | Fix |
-|-------|-----|
-| Failing drive (bad sectors) | **Stop. Image first:** `relift image /dev/sdX --dest /mnt/backup/drive.img --map /mnt/backup/drive.map --passes 3 --rate-limit 10MB/s` |
-| SMR drive | Use `--rate-limit 50MB/s`; single-threaded sequential read |
-| USB 2.0 / slow bridge | Expected; wait or use faster connection |
-| Encrypted volume | Relift detects high entropy; carving skipped. Use metadata scan with credentials. |
-| Huge image on slow disk | Scan from NVMe, not HDD/USB |
+Run recovery with `--dry-run` first. Confirm the destination is a separate
+physical volume before writing.
 
-### "No files found" / "0 candidates"
+### A recovered file is partial or will not open
 
-**Checklist:**
-1. **Run `relift doctor`** — verify drive readable
-2. **Try quick scan first** — `relift scan /dev/sdX --session ./s --mode quick`
-3. **If quick scan finds nothing, try deep** — `--mode deep --carve`
-3. **SSD with TRIM** — Deleted data likely erased by controller. Metadata (names) may survive; content usually not. See `relift doctor` → "TRIM: active".
-4. **Full format / overwrite** — Data gone. See `docs/limitations.md`.
-4. **Encrypted volume** — `relift doctor` shows "Encryption: detected". Need credentials.
-5. **Wrong volume** — `relift devices` shows partitions; scan the right one (`--volume 2`)
+Content can be incomplete if the original file was fragmented, overwritten,
+truncated, or only partially validated. Confidence labels describe the
+available recovery evidence; they are not probabilities or guarantees that an
+application can open the file. SHA-256 verification checks that output bytes
+were written consistently, not that they match an unavailable original.
 
-### "Recovered files won't open" / "Corrupted"
+### Recovery stops with an error
 
-**Causes:**
-| Issue | Explanation |
-|-------|-------------|
-| Partial / truncated | Confidence was "Partial" or "Unverified". Check report. |
-| Fragmented | File split across non-contiguous clusters. Carving may miss pieces. |
-| Overwritten | Clusters reused by new data. Original content gone. |
-| Encrypted | FileVault/BitLocker/LUKS without key. Relift detects and warns. |
-| Wrong format | Carved as `.jpg` but actually `.png`. Try hex preview. |
+Inspect the JSON or human-readable recovery summary and run
+`relift report <SESSION> --format json`. Linux and macOS may retain a failed
+output under a collision-safe `.partial` name; Windows removes failed output.
 
-**Solutions:**
-- Check confidence in report — only recover "Verified" / "Likely"
-- Use `--min-confidence verified` to filter
-- For fragmented videos: provide reference file from same camera (future feature)
-- Verify SHA-256 matches report
+## Imaging problems
 
-### Permission denied / "Access denied"
+`relift image` creates a new raw image and refuses to overwrite an existing
+destination. It performs a single-pass copy; it does not retry bad sectors or
+resume from a map file. For a failing or physically damaged drive, stop using
+it and consider professional recovery or a dedicated imaging tool designed
+for read errors.
 
-**Windows:**
-- Run as Administrator
-- Check antivirus exclusions
-- Volume may be locked by OS: `chkdsk /x X:` (warn: may modify FS)
+## GUI problems
 
-**Linux/macOS:**
-- `sudo relift scan ...`
-- Or add user to `disk` group: `sudo usermod -aG disk $USER && newgrp disk`
+The GUI requires the platform's Tauri webview runtime and the native build
+dependencies listed by Tauri. On Windows, install WebView2 if it is missing.
+On Linux, install WebKitGTK and the system dependencies required by the
+distribution. Release bundles are unsigned and may produce operating-system
+warnings.
 
-### GUI won't start
+## Still stuck?
 
-**Windows:**
-- Install **WebView2 Runtime** (Windows 10 1809+ includes it)
-- `relift doctor` → "WebView2: PASS/FAIL"
-
-**Linux:**
-- Install WebKitGTK: `sudo apt install libwebkit2gtk-4.1-0` (Ubuntu/Debian)
-- Wayland: set `GDK_BACKEND=x11` if issues
-
-**macOS:**
-- Allow in Security & Privacy → General → "Allow anyway"
-- `xattr -d com.apple.quarantine /Applications/Relift.app`
-
-### "relift: command not found"
-
-**Installation:**
-```bash
-# Cargo
-cargo install relift-cli
-
-# Binary download
-curl -sSL https://relift.rs/install.sh | sh
-
-# Package managers
-brew install relift          # macOS
-winget install relift.vestige # Windows
-scoop install relift         # Windows
-```
-
-### Session resume fails
-
-**Error:** "Source mismatch" / "Session source != actual source"
-
-**Causes:**
-- Different drive plugged in (same `/dev/sdX` but different serial)
-- Image file moved/renamed
-- Partition layout changed
-
-**Fix:** Use `--source` to point to correct source:
-```bash
-relift recover ./session --dest ./out --source /correct/path.img
-```
-
-### Out of memory / OOM killed
-
-**Symptoms:** Process killed, `dmesg` shows "Out of memory"
-
-**Fixes:**
-- Lower memory limit: `relift scan --max-mem 128MB ...`
-- Reduce threads: `--threads 2`
-- Scan smaller volumes separately: `--volume 1`
-- Ensure swap enabled
-
-### False positives / junk files
-
-**Symptoms:** Thousands of tiny "recovered" files, mostly garbage.
-
-**Causes:**
-- Carving on encrypted/high-entropy volume
-- Carving on formatted volume without metadata
-
-**Fixes:**
-- Use `--min-confidence verified` to filter
-- Run quick scan first (metadata) before deep carve
-- Relift's validators reject most false positives; remaining are usually partial fragments
-
-### "relift doctor" shows FAIL
-
-| Check | Fix |
-|-------|-----|
-| Raw device access | Run as admin/root; check Full Disk Access (macOS) |
-| TRIM active | Normal for SSDs; carving unlikely to work |
-| SMART warning | Drive failing; image first |
-| WebView2 missing | Install WebView2 Runtime (Windows) |
-| Hash test | Should pass; if not, report bug |
-
-## Getting help
-
-1. Run `relift doctor --json` and include output
-2. Check `docs/GAP_REPORT.md` and `docs/limitations.md`
-3. Search [GitHub Issues](https://github.com/ShahabAhmed01/relift/issues)
-4. Open a **Bug report** with:
-   - `relift doctor` output
-   - OS, filesystem, source type
-   - Scan mode used
-   - Session directory (if small) or scan log
-5. For false positives/negatives: use **Recovery failure** template with ground truth if possible
+Check [`GAP_REPORT.md`](GAP_REPORT.md), [`limitations.md`](limitations.md), and
+the current [GitHub issues](https://github.com/ShahabAhmed01/relift/issues).
+Include Relift version, OS, filesystem, source type (image or device), command,
+and relevant warning/error output. Do not attach images or recovered files that
+contain private data.

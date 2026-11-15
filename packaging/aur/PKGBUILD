@@ -1,4 +1,5 @@
-# Maintainer: Shahab Ahmed <shahab@example.com>
+# TEMPLATE ONLY. Add a real maintainer identity and verified source checksum before submission.
+# Maintainer: REPLACE_WITH_REAL_MAINTAINER_EMAIL
 pkgname=relift
 pkgver=0.1.0
 pkgrel=1
@@ -9,7 +10,7 @@ license=('GPL-3.0-or-later')
 depends=('gcc-libs' 'glibc')
 makedepends=('rust' 'cargo')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/ShahabAhmed01/relift/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('4c42958edd1aeae0321494877be5d57e55e0252a36ae38c10d5e39f633df500a')
+sha256sums=('REPLACE_WITH_VERIFIED_SHA256')
 
 build() {
   cd "${pkgname}-${pkgver}"

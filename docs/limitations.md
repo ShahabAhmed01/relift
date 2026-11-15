@@ -96,13 +96,17 @@ are not carved. See the constants in `crates/relift-core/src/carve.rs`.
 
 ### Verification
 - SHA-256 is computed by default; `--no-verify` disables the re-read check.
-- If a write or hash check fails, output is renamed `.partial`; it is never
-  presented as a complete recovery.
+- Failed-output handling differs by platform: Windows removes a failed output;
+  Linux and macOS retain a collision-safe `.partial` file when possible.
 - Sparse holes are written as zeroes and included in the hash.
 
 ### Sessions
-- SQLite WAL plus a flushed header makes sessions resumable after interruption.
-- Resume refuses a source whose identity (size/serial/path) no longer matches.
+- Sessions are directories with `session.json`, `candidates.jsonl`, and
+  `recovered.jsonl`; they do not use SQLite.
+- Completed sessions can be listed, recovered, and reported later. Resuming an
+  interrupted scan from a checkpoint is not implemented.
+- Recovery refuses a source whose size or fingerprint no longer matches the
+  identity recorded in the session.
 
 ## Performance
 

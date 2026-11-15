@@ -1,23 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
   import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { 
     HardDrive, 
     Usb, 
     Database, 
-    AlertTriangle, 
-    CheckCircle, 
     Info, 
     ChevronRight,
     Settings,
-    Sun,
-    Moon,
-    HelpCircle,
-    ExternalLink
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
 
   // Types
   interface DeviceInfo {
@@ -29,35 +22,6 @@
     size_human: string;
     accessible: boolean;
     note?: string;
-    health: string;
-    is_system_drive: boolean;
-  }
-
-  interface SessionSummary {
-    session_dir: string;
-    source_path: string;
-    source_size: number;
-    source_size_human: string;
-    status: string;
-    filesystems: FilesystemSummary[];
-    candidates: number;
-    deleted: number;
-    live: number;
-    with_content: number;
-    metadata_only: number;
-    warnings: string[];
-  }
-
-  interface FilesystemSummary {
-    volume_index: number;
-    offset: number;
-    length: number;
-    label?: string;
-    kind?: string;
-    candidates: number;
-    deleted: number;
-    live: number;
-    warnings: string[];
   }
 
   // State
@@ -66,43 +30,12 @@
   let selectedImage: string | null = $state(null);
   let loading = $state(false);
   let showAdvanced = $state(false);
-  let scanMode = $state<'quick' | 'deep' | 'formatted' | 'lost'>('quick');
+  let scanMode = $state<'quick' | 'deep'>('quick');
   let includeLive = $state(false);
-  let threadCount = $state<number>(navigator.hardwareConcurrency || 4);
   let showImagePicker = $state(false);
 
   // Computed
   let scanDisabled = $derived(!selectedDevice && !selectedImage);
-  let primaryButtonText = $derived(selectedDevice?.health === 'degraded' ? 'Create image first (recommended)' : 'Scan for deleted files');
-  let primaryButtonVariant = $derived(selectedDevice?.health === 'degraded' ? 'secondary' : 'primary');
-
-  // Health badge helpers
-  function getHealthIcon(health: string) {
-    switch (health) {
-      case 'healthy': return CheckCircle;
-      case 'degraded': return AlertTriangle;
-      case 'trim_warning': return Info;
-      default: return AlertTriangle;
-    }
-  }
-
-  function getHealthClass(health: string) {
-    switch (health) {
-      case 'healthy': return 'badge-success';
-      case 'degraded': return 'badge-error';
-      case 'trim_warning': return 'badge-warning';
-      default: return 'badge-unverified';
-    }
-  }
-
-  function getHealthLabel(health: string) {
-    switch (health) {
-      case 'healthy': return 'Healthy';
-      case 'degraded': return 'Degraded';
-      case 'trim_warning': return 'TRIM active';
-      default: return 'Unknown';
-    }
-  }
 
   function getKindIcon(kind: string) {
     if (kind.includes('usb') || kind.includes('removable')) return Usb;
@@ -124,13 +57,14 @@
       const path = await open({
         multiple: false,
         filters: [
-          { name: 'Disk Images', extensions: ['img', 'dd', 'raw', 'e01', 'vhd', 'vhdx', 'vmdk', 'qcow2'] },
+          { name: 'Raw Disk Images', extensions: ['img', 'dd', 'raw'] },
           { name: 'All Files', extensions: ['*'] }
         ]
       });
       if (path) {
         selectedImage = Array.isArray(path) ? path[0] : path;
         selectedDevice = null;
+        showImagePicker = true;
       }
     } catch (e) {
       console.error('Image selection failed:', e);
@@ -144,20 +78,16 @@
     try {
       const source = selectedImage || selectedDevice!.path;
       const sessionDir = await getSessionDir(source);
-      
-      const summary = await invoke<SessionSummary>('scan_cmd', {
-        options: {
-          source,
-          session_dir: sessionDir,
-          include_live: includeLive,
-          carve: scanMode !== 'quick',
-          volume_indices: [],
-          max_candidates: 1000000
-        }
-      });
-      
-      // Store session info and navigate to scan page
-      sessionStorage.setItem('relift_session', JSON.stringify(summary));
+
+      sessionStorage.setItem('relift_scan_request', JSON.stringify({
+        source,
+        session_dir: sessionDir,
+        include_live: includeLive,
+        carve: scanMode === 'deep',
+        volume_indices: [],
+        max_candidates: 1000000
+      }));
+      sessionStorage.removeItem('relift_session');
       goto('/scan');
     } catch (e) {
       console.error('Scan failed:', e);
@@ -199,12 +129,6 @@
       </div>
     </div>
     <div class="flex items-center gap-2">
-      <button class="btn-ghost p-2" title="Help" aria-label="Help">
-        <HelpCircle class="w-5 h-5" />
-      </button>
-      <button class="btn-ghost p-2" onclick={toggleTheme} aria-label="Toggle theme">
-        {#if theme === 'dark'}<Sun class="w-5 h-5" />{:else}<Moon class="w-5 h-5" />{/if}
-      </button>
       <button class="btn-ghost p-2" onclick={() => showAdvanced = !showAdvanced} aria-label="Advanced options">
         <Settings class="w-5 h-5" />
       </button>
@@ -219,9 +143,9 @@
       <div class="text-sm text-text">
         <strong>Important:</strong> Stop using the drive immediately. Do not write anything to it. 
         Recover files to a <strong>different physical drive</strong>. 
-        <a href="#" class="underline hover:text-accent" onclick={(e) => { e.preventDefault(); alert('Detailed safety guide coming soon'); }}>
-          Why this matters
-        </a>
+        Continued use can overwrite deleted data. If the drive is failing, stop
+        and consider professional recovery or create an image with a separate
+        destination before scanning.
       </div>
     </div>
 
@@ -246,6 +170,7 @@
 
       <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));">
         {#each devices as device}
+          {@const DeviceIcon = getKindIcon(device.kind)}
           <button
             class="card card-elevated p-4 text-left transition-all duration-120 flex flex-col"
             class:ring-2={selectedDevice?.path === device.path}
@@ -257,15 +182,12 @@
           >
             <div class="flex items-start gap-3 mb-3">
               <div class="w-10 h-10 rounded-lg bg-surface border border-border flex items-center justify-center flex-shrink-0">
-                <svelte:component this={getKindIcon(device.kind)} class="w-5 h-5 text-text-muted" />
+                <DeviceIcon class="w-5 h-5 text-text-muted" />
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="font-medium text-text truncate">{device.path}</span>
                   <span class="badge badge-unverified">{device.kind.toUpperCase()}</span>
-                  {#if device.is_system_drive}
-                    <span class="badge badge-warning">System</span>
-                  {/if}
                 </div>
                 <div class="flex items-center gap-2 text-xs text-text-muted mt-1 flex-wrap">
                   {#if device.label}
@@ -280,9 +202,8 @@
             </div>
 
             <div class="flex items-center justify-between pt-3 border-t border-border">
-              <span class={getHealthClass(device.health)}>
-                <svelte:component this={getHealthIcon(device.health)} class="w-3 h-3" />
-                {getHealthLabel(device.health)}
+              <span class={device.accessible ? 'badge badge-success' : 'badge badge-warning'}>
+                {device.accessible ? 'Accessible' : 'Unavailable'}
               </span>
               {#if device.note}
                 <span class="text-xs text-text-muted truncate max-w-[150px]" title={device.note}>{device.note}</span>
@@ -291,7 +212,7 @@
 
             {#if !device.accessible}
               <div class="mt-3 p-2 rounded bg-error-muted text-error text-xs">
-                Cannot access: requires administrator/root privileges
+                The operating system did not allow access; elevated privileges may be required.
               </div>
             {/if}
           </button>
@@ -316,24 +237,18 @@
         </h3>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label class="label">Scan mode</label>
-            <select bind:value={scanMode} class="input">
+            <label class="label" for="scan-mode">Scan mode</label>
+            <select id="scan-mode" bind:value={scanMode} class="input">
               <option value="quick">Quick (metadata only)</option>
               <option value="deep">Deep (metadata + carving)</option>
-              <option value="formatted">Formatted partition</option>
-              <option value="lost">Lost partition</option>
             </select>
           </div>
           <div>
-            <label class="label">Include live files</label>
+            <label class="label" for="include-live">Include live files</label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" bind:checked={includeLive} class="w-4 h-4 accent-accent" />
+              <input id="include-live" type="checkbox" bind:checked={includeLive} class="w-4 h-4 accent-accent" />
               <span class="text-sm text-text">List non-deleted files</span>
             </label>
-          </div>
-          <div>
-            <label class="label">Worker threads</label>
-            <input type="number" bind:value={threadCount} min="1" max="64" class="input" />
           </div>
         </div>
       </section>
@@ -342,9 +257,7 @@
     <!-- Primary Action -->
     <div class="sticky bottom-0 bg-bg/80 backdrop-blur-sm border-t border-border px-4 py-4 flex justify-end">
       <button
-        class="btn w-full sm:w-auto min-w-[200px]"
-        class:btn-primary={primaryButtonVariant === 'primary'}
-        class:btn-secondary={primaryButtonVariant === 'secondary'}
+        class="btn btn-primary w-full sm:w-auto min-w-[200px]"
         onclick={startScan}
         disabled={scanDisabled || loading}
       >
@@ -355,7 +268,7 @@
           </svg>
           Scanning…
         {:else}
-          {primaryButtonText}
+          Scan for deleted files
         {/if}
       </button>
     </div>

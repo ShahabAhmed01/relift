@@ -1,5 +1,5 @@
-# winget manifest for Relift
-# Submit to microsoft/winget-pkgs
+# TEMPLATE ONLY. Verify the publisher, asset URL, checksum, and installer
+# behavior against a published stable release before submission.
 
 PackageIdentifier: relift.vestige
 PackageName: Relift
@@ -30,9 +30,8 @@ CopyrightUrl: https://github.com/ShahabAhmed01/relift/blob/main/LICENSE
 Installers:
   - Architecture: x64
     InstallerType: msi
-    InstallerUrl: https://github.com/ShahabAhmed01/relift/releases/download/v0.1.0/Relift_0.1.0_x64_en-US.msi
-    InstallerSha256: 615b0f0c5e72d03ee1cf916861e90baea74cd070b968b81b8e87f3ff9ed399ae
-    ProductCode: "{bc7f1c07-82bd-4e29-a214-54181c76c96f}"
+    InstallerUrl: REPLACE_WITH_PUBLISHED_MSI_URL
+    InstallerSha256: REPLACE_WITH_VERIFIED_SHA256
     Scope: machine
     InstallerSwitches:
       Silent: /quiet /norestart

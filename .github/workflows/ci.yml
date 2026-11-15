@@ -18,6 +18,36 @@ permissions:
   contents: read
 
 jobs:
+  gui:
+    name: GUI frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/relift-gui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: crates/relift-gui
+        run: npm ci
+
+      - name: Check Svelte and TypeScript
+        working-directory: crates/relift-gui
+        run: npm run check
+
+      - name: Build desktop frontend
+        working-directory: crates/relift-gui
+        run: npm run build
+
+      - name: Audit production dependencies
+        working-directory: crates/relift-gui
+        run: npm audit --omit=dev --audit-level=low
+
   test:
     name: Test (${{ matrix.os }}, ${{ matrix.rust }})
     runs-on: ${{ matrix.os }}

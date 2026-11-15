@@ -10,6 +10,7 @@
     ChevronDown,
     Check, 
     CheckCheck,
+    CheckCircle,
     Minus,
     FileText,
     Image,
@@ -18,14 +19,13 @@
     Archive,
     Database,
     HardDrive,
-    Folder,
     Eye,
     Download,
     MoreHorizontal,
     RotateCcw,
     X,
     Loader2
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
 
   // Types
   interface Candidate {
@@ -62,6 +62,12 @@
     warnings: string[];
   }
 
+  interface RecoveryProgress {
+    index: number;
+    total: number;
+    percent: number;
+  }
+
   // State
   let candidates = $state<Candidate[]>([]);
   let selectedIds = $state<Set<number>>(new Set());
@@ -70,12 +76,11 @@
   let selectedConfidence = $state<string>('all');
   let sortColumn = $state<string>('name');
   let sortDirection = $state<'asc' | 'desc'>('asc');
-  let viewMode = $state<'table' | 'tree'>('table');
   let showPreview = $state(false);
   let previewCandidate: Candidate | null = $state(null);
   let destination = $state('');
   let recovering = $state(false);
-  let recoveryProgress = $state({ index: 0, total: 0, percent: 0 });
+  let recoveryProgress = $state<RecoveryProgress>({ index: 0, total: 0, percent: 0 });
   let recoverySummary: RecoverySummary | null = $state(null);
   let loading = $state(true);
 
@@ -248,7 +253,7 @@
       const sessionDir = sessionStorage.getItem('relift_session');
       if (sessionDir) {
         const session = JSON.parse(sessionDir);
-        const result = await invoke<Candidate[]>('list_candidates_cmd', { session_dir: session.session_dir });
+        const result = await invoke<Candidate[]>('list_candidates_cmd', { sessionDir: session.session_dir });
         candidates = result;
       }
     } catch (e) {
@@ -284,7 +289,7 @@
     recoverySummary = null;
     
     try {
-      const unlisten = await listen('recover-progress', (event) => {
+      const unlisten = await listen<RecoveryProgress>('recover-progress', (event) => {
         recoveryProgress = event.payload;
       });
       
@@ -328,7 +333,7 @@
   <!-- Header -->
   <header class="border-b border-border px-4 py-3 flex items-center justify-between sticky top-0 z-40 bg-bg/95 backdrop-blur-sm">
     <div class="flex items-center gap-3">
-      <button class="btn-ghost p-2" onclick={() => goto('/scan')} aria-label="Back">
+      <button class="btn-ghost p-2" onclick={() => goto('/')} aria-label="Back">
         <RotateCcw class="w-5 h-5" />
       </button>
       <div>
@@ -352,10 +357,11 @@
       <!-- Filter Bar -->
       <div class="p-3 border-b border-border space-y-3">
         <div>
-          <label class="label">Search</label>
+          <label class="label" for="candidate-search">Search</label>
           <div class="relative">
             <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-subtle" />
             <input
+              id="candidate-search"
               type="text"
               bind:value={searchQuery}
               placeholder="Search name, path, format…"
@@ -365,8 +371,8 @@
         </div>
         
         <div>
-          <label class="label">Type</label>
-          <select bind:value={selectedType} class="input">
+          <label class="label" for="candidate-type">Type</label>
+          <select id="candidate-type" bind:value={selectedType} class="input">
             {#each typeCategories as cat}
               <option value={cat.value}>{cat.label}</option>
             {/each}
@@ -374,10 +380,10 @@
         </div>
         
         <div>
-          <label class="label">Confidence</label>
-          <select bind:value={selectedConfidence} class="input">
+          <label class="label" for="candidate-confidence">Confidence</label>
+          <select id="candidate-confidence" bind:value={selectedConfidence} class="input">
             {#each confidenceLevels as conf}
-              <option value={cat.value}>{cat.label}</option>
+              <option value={conf.value}>{conf.label}</option>
             {/each}
           </select>
         </div>
@@ -392,13 +398,6 @@
         </div>
       </div>
 
-      <!-- Folder Tree (placeholder) -->
-      <div class="flex-1 overflow-auto p-3 border-b border-border">
-        <h3 class="text-xs font-medium text-text-muted px-2 mb-2">Folders</h3>
-        <div class="text-sm text-text-muted text-center py-8">
-          Tree view coming soon
-        </div>
-      </div>
     </aside>
 
     <!-- Main Area: Results Table + Preview -->
@@ -418,29 +417,6 @@
           </label>
         </div>
         <div class="flex-1"></div>
-        <div class="flex items-center gap-2">
-          <label class="text-xs text-text-muted">View:</label>
-          <div class="flex border border-border rounded-md overflow-hidden">
-            <button
-              class="btn-ghost px-2 py-1"
-              class:bg-accent-muted={viewMode === 'table'}
-              class:text-accent={viewMode === 'table'}
-              onclick={() => viewMode = 'table'}
-              aria-label="Table view"
-            >
-              <Table class="w-4 h-4" />
-            </button>
-            <button
-              class="btn-ghost px-2 py-1"
-              class:bg-accent-muted={viewMode === 'tree'}
-              class:text-accent={viewMode === 'tree'}
-              onclick={() => viewMode = 'tree'}
-              aria-label="Tree view"
-            >
-              <Folder class="w-4 h-4" />
-            </button>
-          </div>
-        </div>
       </div>
 
       <!-- Results Table -->
@@ -470,7 +446,7 @@
                   />
                 </th>
                 <th class="w-10"></th>
-                <th onclick={() => handleSort('name')} class="cursor-pointer select-none flex items-center gap-1">
+        <th onclick={() => handleSort('name')} class="cursor-pointer select-none flex items-center gap-1">
                   Name {sortColumn === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th onclick={() => handleSort('path')} class="cursor-pointer select-none flex items-center gap-1 hidden sm:table-cell">
@@ -493,6 +469,7 @@
             </thead>
             <tbody>
               {#each filteredCandidates as candidate}
+                {@const CandidateIcon = getFileIcon(candidate.format)}
                 <tr class={candidate.complete ? '' : 'opacity-60'} class:selected={selectedIds.has(candidate.id)}>
                   <td>
                     <input
@@ -503,7 +480,7 @@
                     />
                   </td>
                   <td>
-                    <svelte:component this={getFileIcon(candidate.format)} class="w-4 h-4 text-text-muted" />
+                    <CandidateIcon class="w-4 h-4 text-text-muted" />
                   </td>
                   <td class="font-mono truncate max-w-[200px]" title={candidate.name}>
                     {candidate.name}
@@ -578,12 +555,13 @@
   </main>
 
   <!-- Preview Panel -->
-  {#if showPreview && previewCandidate}
+      {#if showPreview && previewCandidate}
+    {@const PreviewIcon = getFileIcon(previewCandidate.format)}
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <div class="bg-surface border border-border rounded-lg shadow-lg w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
         <div class="p-3 border-b border-border flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <svelte:component this={getFileIcon(previewCandidate.format)} class="w-6 h-6 text-accent" />
+            <PreviewIcon class="w-6 h-6 text-accent" />
             <div>
               <p class="font-medium text-text truncate max-w-[300px]">{previewCandidate.name}</p>
               <p class="text-xs text-text-muted">{previewCandidate.path}</p>
