@@ -9,12 +9,12 @@ This document tracks the verification status of all acceptance gates from the ma
 | G1 | CI builds on Linux/macOS/Windows | PASS | [Run 43691011208](https://github.com/ShahabAhmed01/relift/actions/runs/43691011208) |
 | G2 | Metadata recall ≥99%, precision ≥99% | ⬜ PENDING | Corpus results JSON |
 | G3 | Carving recall ≥95%, precision ≥98% | ⬜ PENDING | Corpus results JSON |
-| G4 | Zero writes to source (hash before/after) | ⬜ PENDING | Test output |
-| G5 | Destination-on-source refused | ⬜ PENDING | Test output |
-| G6 | Throughput targets met | ⬜ PENDING | Benchmark CSV |
+| G4 | Zero writes to source (hash before/after) | PARTIAL | Synthetic image scan hash check; raw-device check unavailable |
+| G5 | Destination-on-source refused | PARTIAL | Synthetic device ancestry tests; mounted raw-device check unavailable |
+| G6 | Throughput targets met | PARTIAL | Local synthetic Criterion smoke run; no published hardware baseline |
 | G7 | Quick scan 1TB NTFS < 90s | ⬜ PENDING | Benchmark CSV |
 | G8 | GUI cold start <500ms, 60fps at 500k rows | ⬜ PENDING | Perf measurement |
-| G9 | CLI JSON schema stable, exit codes tested | ⬜ PENDING | CLI test output |
+| G9 | CLI JSON schema stable, exit codes tested | PASS | `relift-cli` contract tests |
 | G10 | Resume after kill -9 works | ⬜ PENDING | Test output |
 | G11 | Fuzzing clean 24h | ⬜ PENDING | Fuzz logs |
 | G12 | Signed releases all platforms | ⬜ PENDING | Release assets + attestation |
@@ -37,32 +37,45 @@ This document tracks the verification status of all acceptance gates from the ma
 ```
 
 ### G2: Metadata Recovery Accuracy
-```bash
-cargo test -p relift-core -- --test-threads=1 2>&1 | tail -20
-# Expected: All 4 filesystem e2e tests pass with recall ≥99%, precision ≥99%
-# Evidence: [test output with recall/precision numbers]
-```
+
+The checked-in tests use synthetic fixtures and do not measure recall or
+precision over a representative labeled corpus. G2 remains pending until those
+metrics are collected.
 
 ### G3: Carving Accuracy
-```bash
-# Run carving tests on mixed corpus
-cargo test -p relift-core carve 2>&1 | tail -20
-# Expected: Carving recall ≥95%, precision ≥98% across 25+ formats
-# Evidence: [test output with per-format numbers]
-```
+
+Format-specific tests validate deterministic examples, but there is no mixed
+labeled corpus or per-format recall and precision report. G3 remains pending.
 
 ### G4: Read-Only Invariant
-```bash
-# Test: hash source before/after scan
-# Evidence: [test output showing identical hashes]
-```
+
+The CLI contract test hashes a deterministic 1 MiB image before and after a
+scan and confirms the bytes are unchanged. This verifies the image-file path;
+raw-device before/after hashing on physical media remains unavailable.
 
 ### G5: Destination Safety
-```bash
-# Test: attempt recovery to same physical device
-# Expected: Exit code 3 (EXIT_UNSAFE)
-# Evidence: [test output]
-```
+
+- Synthetic Linux sysfs tests cover partition ancestry, stacked devices,
+  multiple NVMe namespaces and fail-closed virtual devices. Raw-device writes
+  against mounted physical disks have not been exercised; G5 remains partial.
+
+### G6: Performance
+
+- `cargo +1.90 bench -p relift-bench --offline -- --measurement-time 1
+  --sample-size 10 --warm-up-time 1 --noplot`: completed all synthetic
+  signature, validator, metadata and probe benchmark groups on Windows.
+- This short local run confirms the harness executes. It does not establish
+  release performance targets or provide the full hardware and storage profile
+  required for a public comparison; G6 remains partial.
+
+### G9: CLI Contract
+
+- `cargo +1.90 test -p relift-cli --all-targets --offline`: passed (2 unit and
+  3 process-level contract tests).
+- Tests validate version, scan, list and dry-run recovery JSON fields; source
+  mismatch returns 4, usage error returns 2, and missing-source runtime error
+  returns 1. Unit tests cover all documented error and partial-result exit-code
+  mappings (0 through 5).
 
 #### Linux physical-disk ancestry hardening (2026-11-15)
 
@@ -78,7 +91,7 @@ cargo test -p relift-core carve 2>&1 | tail -20
 - `cargo clippy -p relift-core --all-targets --target x86_64-unknown-linux-gnu
   -- -D warnings`: passed.
 - This is compile-time and synthetic mapping evidence only. The Linux guard has
-  not been exercised against mounted raw devices; G5 remains pending.
+  not been exercised against mounted raw devices; G5 remains partial.
 
 #### Destination writer race hardening (2026-11-15)
 
@@ -90,7 +103,8 @@ cargo test -p relift-core carve 2>&1 | tail -20
   replacement, Windows ancestor rename prevention, collision-safe output
   creation/finalization, and preserving an existing image manifest.
 - `cargo +1.90 test --workspace --all-targets --offline`: passed on Windows
-  (59 core unit tests, 6 core end-to-end tests, and 2 fixture tests).
+  (59 core unit tests, 6 core end-to-end tests, 2 fixture tests, and 5 CLI
+  contract tests).
 - `cargo +stable check -p relift-core --all-targets --target
   x86_64-unknown-linux-gnu --offline`: passed. This compiles Linux-specific
   code but does not execute Linux tests.
@@ -101,11 +115,14 @@ cargo test -p relift-core carve 2>&1 | tail -20
 - `RUSTDOCFLAGS='-D warnings' cargo +1.90 doc --workspace --no-deps --offline`:
   passed after correcting the CLI option documentation's literal angle-bracket
   placeholders and scoping the Linux-only safety helper.
+- Full GitHub Actions run [43691011208](https://github.com/ShahabAhmed01/relift/actions/runs/43691011208)
+  passed stable and Rust 1.90 checks on Windows, Linux, and macOS, including
+  workspace tests, Clippy, docs, dependency checks, and release builds.
 - `cargo deny check`: advisory, ban, license, and source checks passed. It
   reported existing duplicate transitive crate versions and unused license
   allowances as warnings; neither blocked the check.
 - Linux runtime tests and physical-device destination checks remain unverified;
-  macOS target compilation also remains unverified. G5 remains pending.
+  macOS runtime device checks remain unverified. G5 remains partial.
 
 ### G6: Performance Benchmarks
 ```bash
@@ -128,10 +145,8 @@ cargo bench -p relift-bench 2>&1 | tail -30
 ```
 
 ### G9: CLI Contract
-```bash
-cargo test -p relift-cli 2>&1 | tail -20
-# Evidence: [test output showing JSON schema, exit codes, examples pass]
-```
+
+See the contract tests and results under [G9: CLI Contract](#g9-cli-contract).
 
 ### G10: Resume After Kill
 ```bash

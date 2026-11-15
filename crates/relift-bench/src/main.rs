@@ -224,10 +224,10 @@ fn create_test_jpeg(size: usize) -> Vec<u8> {
     data[2] = 0xFF;
     data[3] = 0xE0;
     data[4] = 0x00;
-    data[4] = 0x10;
-    data[6..16].copy_from_slice(b"JFIF\x00\x01\x01\x01\x00\x48\x00\x48\x00\x00");
+    data[5] = 0x10;
+    data[6..20].copy_from_slice(b"JFIF\x00\x01\x01\x01\x00\x48\x00\x48\x00\x00");
     // SOF0
-    let sof_offset = 16;
+    let sof_offset = 20;
     data[sof_offset] = 0xFF;
     data[sof_offset + 1] = 0xC0;
     data[sof_offset + 2] = 0x00;

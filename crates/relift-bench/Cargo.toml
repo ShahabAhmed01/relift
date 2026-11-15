@@ -7,6 +7,12 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Benchmarks for Relift recovery engine"
+autobins = false
+
+[[bench]]
+name = "relift-bench"
+path = "src/main.rs"
+harness = false
 
 [dependencies]
 relift-core = { path = "../relift-core" }

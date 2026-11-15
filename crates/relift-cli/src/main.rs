@@ -324,11 +324,7 @@ fn cmd_recover(args: RecoverArgs, json: bool) -> anyhow::Result<u8> {
     } else {
         print_recovery_summary(&summary);
     }
-    Ok(if summary.failed > 0 || summary.partial > 0 {
-        EXIT_PARTIAL
-    } else {
-        EXIT_OK
-    })
+    Ok(recovery_exit_code(summary.failed, summary.partial))
 }
 
 fn cmd_image(args: ImageArgs, json: bool) -> anyhow::Result<u8> {
@@ -784,6 +780,14 @@ fn exit_code_for(error: &anyhow::Error) -> u8 {
     EXIT_RUNTIME
 }
 
+fn recovery_exit_code(failed: u64, partial: u64) -> u8 {
+    if failed > 0 || partial > 0 {
+        EXIT_PARTIAL
+    } else {
+        EXIT_OK
+    }
+}
+
 struct Progress {
     enabled: bool,
     last_phase: &'static str,
@@ -824,5 +828,33 @@ impl Progress {
             eprintln!();
             self.printed = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_exit_codes_are_stable() {
+        let runtime = anyhow::Error::new(Error::Other("runtime".into()));
+        let unsafe_destination = anyhow::Error::new(Error::UnsafeDestination("unsafe".into()));
+        let mismatch = anyhow::Error::new(Error::SourceMismatch("mismatch".into()));
+        let session = anyhow::Error::new(Error::Session("session".into()));
+        let usage = Cli::try_parse_from(["relift", "not-a-command"]).unwrap_err();
+        let usage = anyhow::Error::new(usage);
+
+        assert_eq!(exit_code_for(&runtime), EXIT_RUNTIME);
+        assert_eq!(exit_code_for(&usage), EXIT_USAGE);
+        assert_eq!(exit_code_for(&unsafe_destination), EXIT_UNSAFE);
+        assert_eq!(exit_code_for(&mismatch), EXIT_MISMATCH);
+        assert_eq!(exit_code_for(&session), EXIT_MISMATCH);
+    }
+
+    #[test]
+    fn partial_recovery_exit_code_is_stable() {
+        assert_eq!(recovery_exit_code(0, 0), EXIT_OK);
+        assert_eq!(recovery_exit_code(1, 0), EXIT_PARTIAL);
+        assert_eq!(recovery_exit_code(0, 1), EXIT_PARTIAL);
     }
 }
