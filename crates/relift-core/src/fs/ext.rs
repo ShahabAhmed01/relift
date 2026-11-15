@@ -542,7 +542,7 @@ impl<'a> ExtScan<'a> {
             while at + 8 <= chunk.len() {
                 let inode = u32_le(chunk, at).unwrap_or(0);
                 let rec_len = u16_le(chunk, at + 4).unwrap_or(0) as usize;
-                if rec_len < 8 || rec_len % 4 != 0 || at + rec_len > chunk.len() {
+                if rec_len < 8 || !rec_len.is_multiple_of(4) || at + rec_len > chunk.len() {
                     break;
                 }
                 let (name_len, file_type) = if file_type_feature {
@@ -845,7 +845,8 @@ impl<'a> ExtScan<'a> {
         }
         let data = self.read_block(block)?;
         let mut table = Vec::with_capacity(data.len() / 4);
-        for chunk in data.chunks_exact(4) {
+        let (chunks, _) = data.as_chunks::<4>();
+        for chunk in chunks {
             table.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
         }
         if self.block_cache.len() > 64 {

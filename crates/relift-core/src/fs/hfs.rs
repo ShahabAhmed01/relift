@@ -171,10 +171,11 @@ impl CatalogKey {
             return None;
         }
         let name_bytes = &buf[offset + 8..offset + 8 + name_len];
+        let (chunks, _) = name_bytes.as_chunks::<2>();
         let name = String::from_utf16(
-            &name_bytes
-                .chunks_exact(2)
-                .map(|c| u16_be(c, 0).unwrap_or(0))
+            &chunks
+                .iter()
+                .map(|c| u16_be(&c[..], 0).unwrap_or(0))
                 .collect::<Vec<_>>(),
         )
         .ok()?;
@@ -212,10 +213,11 @@ impl ThreadRecord {
             return None;
         }
         let name_bytes = &buf[offset + 8..offset + 8 + name_len];
+        let (chunks, _) = name_bytes.as_chunks::<2>();
         let name = String::from_utf16(
-            &name_bytes
-                .chunks_exact(2)
-                .map(|c| u16_be(c, 0).unwrap_or(0))
+            &chunks
+                .iter()
+                .map(|c| u16_be(&c[..], 0).unwrap_or(0))
                 .collect::<Vec<_>>(),
         )
         .ok()?;

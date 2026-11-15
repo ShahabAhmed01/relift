@@ -340,7 +340,8 @@ fn parse_name(entries: &[&[u8]], name_length: usize) -> (String, bool) {
         if entry[0] & 0x7F != ENTRY_NAME {
             continue;
         }
-        for chunk in entry[2..32].chunks_exact(2) {
+        let (chunks, _) = entry[2..32].as_chunks::<2>();
+        for chunk in chunks {
             if units.len() >= name_length {
                 break;
             }

@@ -813,10 +813,12 @@ fn write_exfat_boot(bytes: &mut [u8]) {
             checksum = checksum.rotate_right(1).wrapping_add(*b as u32);
         }
     }
-    for chunk in bytes[11 * 512..12 * 512].chunks_exact_mut(4) {
+    let (chunks, _) = bytes[11 * 512..12 * 512].as_chunks_mut::<4>();
+    for chunk in chunks {
         chunk.copy_from_slice(&checksum.to_le_bytes());
     }
-    for chunk in bytes[(backup_off + 11 * 512)..(backup_off + 12 * 512)].chunks_exact_mut(4) {
+    let (chunks, _) = bytes[(backup_off + 11 * 512)..(backup_off + 12 * 512)].as_chunks_mut::<4>();
+    for chunk in chunks {
         chunk.copy_from_slice(&checksum.to_le_bytes());
     }
 }
@@ -926,7 +928,7 @@ fn ntfs_record_base(number: u64, in_use: bool, is_dir: bool, sequence: u16) -> V
 fn ntfs_finish_record(mut record: Vec<u8>) -> Vec<u8> {
     // End marker.
     record.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
-    while record.len() % 8 != 0 {
+    while !record.len().is_multiple_of(8) {
         record.push(0);
     }
     let used = record.len() as u32;
@@ -947,7 +949,7 @@ fn ntfs_finish_record(mut record: Vec<u8>) -> Vec<u8> {
 
 fn ntfs_push_attr(record: &mut Vec<u8>, attr: &[u8]) {
     record.extend_from_slice(attr);
-    while record.len() % 8 != 0 {
+    while !record.len().is_multiple_of(8) {
         record.push(0);
     }
 }
@@ -1079,7 +1081,7 @@ fn ntfs_nonresident_data(
     attr[48..56].copy_from_slice(&real_size.to_le_bytes());
     attr[56..64].copy_from_slice(&initialized_size.to_le_bytes());
     attr.extend_from_slice(&runlist);
-    while attr.len() % 8 != 0 {
+    while !attr.len().is_multiple_of(8) {
         attr.push(0);
     }
     let len = attr.len() as u32;
