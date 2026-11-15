@@ -265,9 +265,10 @@ fn cmd_scan(args: ScanArgs, json: bool) -> anyhow::Result<u8> {
     request.max_candidates = args.max_candidates.max(1);
 
     let mut printer = Progress::new(!json);
-    let mut progress = |p: ScanProgress| printer.update(p.phase, p.done, p.total);
-    let header = run_scan(src.as_ref(), &request, &mut progress)?;
-    drop(progress);
+    let header = {
+        let mut progress = |p: ScanProgress| printer.update(p.phase, p.done, p.total);
+        run_scan(src.as_ref(), &request, &mut progress)?
+    };
     printer.finish();
 
     if json {
@@ -310,11 +311,12 @@ fn cmd_recover(args: RecoverArgs, json: bool) -> anyhow::Result<u8> {
     options.dry_run = args.dry_run;
 
     let mut printer = Progress::new(!json);
-    let mut progress = |p: relift_core::recover::RecoveryProgress| {
-        printer.update("recover", p.index, p.total.max(1));
+    let summary = {
+        let mut progress = |p: relift_core::recover::RecoveryProgress| {
+            printer.update("recover", p.index, p.total.max(1));
+        };
+        run_recovery(&args.session, src.as_ref(), &options, &mut progress)?
     };
-    let summary = run_recovery(&args.session, src.as_ref(), &options, &mut progress)?;
-    drop(progress);
     printer.finish();
 
     if json {
@@ -333,13 +335,14 @@ fn cmd_image(args: ImageArgs, json: bool) -> anyhow::Result<u8> {
     let src = open_source(&args.source)
         .with_context(|| format!("could not open source {}", args.source.display()))?;
     let mut printer = Progress::new(!json);
-    let mut progress = |done: u64, total: u64| printer.update("image", done, total);
     let options = ImageOptions {
         verify: !args.no_verify,
         ..ImageOptions::default()
     };
-    let result = create_image(src.as_ref(), &args.dest, &options, &mut progress)?;
-    drop(progress);
+    let result = {
+        let mut progress = |done: u64, total: u64| printer.update("image", done, total);
+        create_image(src.as_ref(), &args.dest, &options, &mut progress)?
+    };
     printer.finish();
 
     if json {

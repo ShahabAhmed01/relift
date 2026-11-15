@@ -9,6 +9,8 @@ authors.workspace = true
 description = "Recovery engine for Relift: read-only sources, filesystem metadata recovery, validating carving"
 
 [dependencies]
+cap-fs-ext.workspace = true
+cap-std.workspace = true
 chrono.workspace = true
 crc32fast.workspace = true
 flate2.workspace = true
@@ -17,6 +19,12 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+rustix.workspace = true
 
 [dev-dependencies]
 relift-testkit = { path = "../relift-testkit" }

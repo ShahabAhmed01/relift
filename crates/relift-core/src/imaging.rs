@@ -6,8 +6,7 @@
 //! finished image is re-read and hashed, and a sidecar manifest records both the
 //! source identity and the image digest.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -15,8 +14,8 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::error::{Error, Result};
-use crate::hash::Hasher;
-use crate::safety;
+use crate::hash::{hash_reader, Hasher};
+use crate::safety::{self, DestinationDirectory};
 use crate::session::now_iso;
 use crate::source::{ReadOnlySource, SourceKind};
 use crate::VERSION;
@@ -72,30 +71,32 @@ pub fn create_image(
     progress: &mut dyn FnMut(u64, u64),
 ) -> Result<ImageResult> {
     let parent = dest.parent().unwrap_or_else(|| Path::new("."));
-    safety::validate_destination(&src.identity(), parent)?;
-    if dest.exists() {
-        return Err(Error::UnsafeDestination(format!(
-            "{} already exists; refusing to overwrite it",
+    let canonical_parent = safety::validate_destination(&src.identity(), parent)?;
+    let destination_root = DestinationDirectory::open(&canonical_parent)?;
+    let image_name = PathBuf::from(dest.file_name().ok_or_else(|| {
+        Error::UnsafeDestination(format!(
+            "image destination {} does not name a file",
             dest.display()
-        )));
+        ))
+    })?);
+    let partial_name = suffixed_name(&image_name, ".partial");
+    let manifest_name = suffixed_name(&image_name, ".relift.json");
+    for name in [&image_name, &partial_name, &manifest_name] {
+        if destination_root.entry_exists(name)? {
+            return Err(Error::UnsafeDestination(format!(
+                "{} already exists; refusing to overwrite it",
+                canonical_parent.join(name).display()
+            )));
+        }
     }
-    let partial = partial_path(dest);
-    if partial.exists() {
-        return Err(Error::UnsafeDestination(format!(
-            "{} already exists; remove it or choose another image name",
-            partial.display()
-        )));
-    }
+    let image_path = canonical_parent.join(&image_name);
+    let partial = canonical_parent.join(&partial_name);
     let started = std::time::Instant::now();
     let total = src.len();
-    let mut out = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&partial)
-        .map_err(|e| Error::Io {
-            offset: 0,
-            source: e,
-        })?;
+    let mut partial_output = destination_root.create_new_file(&partial_name)?;
+    let mut out = partial_output.file.take().ok_or_else(|| {
+        Error::Other("new partial image did not contain an open file handle".into())
+    })?;
     let mut hasher = Hasher::new();
     let mut buf = vec![0u8; COPY_BLOCK];
     let mut at = 0u64;
@@ -139,29 +140,12 @@ pub fn create_image(
         offset: at,
         source: e,
     })?;
-    drop(out);
     let digest = hasher.finish_hex();
 
     let mut verified = false;
     let mut verification = "not requested".to_string();
     if options.verify {
-        let mut f = File::open(&partial).map_err(|e| Error::Io {
-            offset: 0,
-            source: e,
-        })?;
-        let mut h = Hasher::new();
-        let mut vbuf = vec![0u8; COPY_BLOCK.max(1)];
-        loop {
-            let n = f.read(&mut vbuf).map_err(|e| Error::Io {
-                offset: 0,
-                source: e,
-            })?;
-            if n == 0 {
-                break;
-            }
-            h.update(&vbuf[..n]);
-        }
-        let check = h.finish_hex();
+        let check = hash_reader(&mut out)?;
         if check != digest {
             warnings.push(
                 "destination hash does not match the hash computed while copying; the image may \
@@ -180,14 +164,29 @@ pub fn create_image(
                 .to_string(),
         );
     }
-
-    fs::rename(&partial, dest).map_err(|e| {
-        Error::Other(format!(
-            "image copied but could not be renamed from {} to {}: {e}",
-            partial.display(),
-            dest.display()
-        ))
-    })?;
+    drop(out);
+    if options.verify && !verified {
+        return Err(Error::Other(format!(
+            "image verification failed; the unverified partial image remains at {}",
+            partial.display()
+        )));
+    }
+    if destination_root.entry_exists(&image_name)? {
+        return Err(Error::UnsafeDestination(format!(
+            "{} appeared while imaging; the partial image remains at {}",
+            image_path.display(),
+            partial.display()
+        )));
+    }
+    destination_root
+        .rename_file(&partial_name, &image_name)
+        .map_err(|error| {
+            Error::Other(format!(
+                "image copied but could not be finalized at {}: {error}; partial image remains at {}",
+                image_path.display(),
+                partial.display()
+            ))
+        })?;
 
     let manifest = ImageManifest {
         schema: crate::SCHEMA_VERSION,
@@ -195,29 +194,31 @@ pub fn create_image(
         tool_version: VERSION.to_string(),
         created: now_iso(),
         source: src.identity(),
-        image_path: dest.to_string_lossy().to_string(),
+        image_path: image_path.to_string_lossy().to_string(),
         bytes: at,
         sha256: digest.clone(),
         verified,
         verification,
         warnings: warnings.clone(),
     };
-    let manifest_path = manifest_path(dest);
+    let manifest_path = manifest_path(&image_path);
     let json = serde_json::to_vec_pretty(&manifest)?;
-    fs::write(&manifest_path, json).map_err(|e| Error::Io {
-        offset: 0,
-        source: e,
+    let mut manifest_output = destination_root.create_new_file(&manifest_name)?;
+    let mut manifest_file = manifest_output.file.take().ok_or_else(|| {
+        Error::Other("new image manifest did not contain an open file handle".into())
     })?;
-
-    if !warnings.is_empty() && options.verify && !verified {
-        return Err(Error::Other(format!(
-            "image written to {} but verification failed; see {}",
-            dest.display(),
-            manifest_path.display()
-        )));
+    let manifest_write = manifest_file
+        .write_all(&json)
+        .and_then(|()| manifest_file.flush())
+        .and_then(|()| manifest_file.sync_all());
+    drop(manifest_file);
+    if let Err(source) = manifest_write {
+        let _ = manifest_output.remove();
+        return Err(Error::Io { offset: 0, source });
     }
+
     Ok(ImageResult {
-        path: dest.to_path_buf(),
+        path: image_path,
         bytes: at,
         sha256: digest,
         verified,
@@ -226,16 +227,15 @@ pub fn create_image(
     })
 }
 
-fn partial_path(dest: &Path) -> PathBuf {
-    let mut s = dest.as_os_str().to_os_string();
-    s.push(".partial");
-    PathBuf::from(s)
+fn manifest_path(dest: &Path) -> PathBuf {
+    let name = dest.file_name().unwrap_or_default();
+    dest.with_file_name(suffixed_name(Path::new(name), ".relift.json"))
 }
 
-fn manifest_path(dest: &Path) -> PathBuf {
-    let mut s = dest.as_os_str().to_os_string();
-    s.push(".relift.json");
-    PathBuf::from(s)
+fn suffixed_name(name: &Path, suffix: &str) -> PathBuf {
+    let mut result = name.as_os_str().to_os_string();
+    result.push(suffix);
+    PathBuf::from(result)
 }
 
 /// Refuse to image a raw device onto a filesystem that might be on that same
@@ -255,6 +255,7 @@ pub fn check_raw_image_destination(
 mod tests {
     use super::*;
     use crate::source::FileSource;
+    use std::fs;
 
     #[test]
     fn image_roundtrip_and_manifest() {
@@ -274,6 +275,72 @@ mod tests {
         let manifest = fs::read_to_string(manifest_path(&dest)).unwrap();
         assert!(manifest.contains("sha256"));
         assert!(create_image(&src, &dest, &ImageOptions::default(), &mut progress).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn existing_manifest_is_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!(
+            "relift-image-manifest-collision-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let src_path = dir.join("source.img");
+        fs::write(&src_path, b"source bytes").unwrap();
+        let source = FileSource::open(&src_path).unwrap();
+        let destination = dir.join("copy.img");
+        let manifest = manifest_path(&destination);
+        fs::write(&manifest, b"keep this file").unwrap();
+        let mut progress = |_current: u64, _total: u64| {};
+
+        let result = create_image(
+            &source,
+            &destination,
+            &ImageOptions::default(),
+            &mut progress,
+        );
+
+        assert!(result.is_err());
+        assert!(!destination.exists());
+        assert_eq!(fs::read(&manifest).unwrap(), b"keep this file");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn final_image_name_collision_does_not_replace_existing_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "relift-image-final-collision-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let src_path = dir.join("source.img");
+        fs::write(&src_path, b"source bytes").unwrap();
+        let source = FileSource::open(&src_path).unwrap();
+        let root = DestinationDirectory::open(&dir.canonicalize().unwrap()).unwrap();
+        let partial_name = PathBuf::from("copy.img.partial");
+        let final_name = PathBuf::from("copy.img");
+        let mut partial = root.create_new_file(&partial_name).unwrap();
+        partial
+            .file
+            .as_mut()
+            .unwrap()
+            .write_all(b"new image")
+            .unwrap();
+        drop(partial);
+        fs::write(dir.join(&final_name), b"existing image").unwrap();
+        let mut progress = |_current: u64, _total: u64| {};
+
+        let result = create_image(
+            &source,
+            &dir.join(&final_name),
+            &ImageOptions::default(),
+            &mut progress,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(dir.join(&final_name)).unwrap(), b"existing image");
         let _ = fs::remove_dir_all(&dir);
     }
 }

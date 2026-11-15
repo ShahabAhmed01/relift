@@ -8,7 +8,7 @@
 //! still say the file was incomplete).
 
 use std::collections::HashSet;
-use std::fs::{self, File, OpenOptions};
+use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,8 +19,10 @@ use serde::Serialize;
 use crate::candidate::{Candidate, ConfidenceLabel, DataLocation};
 use crate::error::{Error, Result};
 use crate::filter::CandidateFilter;
-use crate::hash::{hash_file, Hasher};
-use crate::safety::{sanitize_filename, sanitize_relative, validate_destination};
+use crate::hash::{hash_reader, Hasher};
+use crate::safety::{
+    sanitize_filename, sanitize_relative, validate_destination, DestinationDirectory,
+};
 use crate::session::{
     append_json_line, load_header, now_iso, save_header_to, CandidateReader, RecoveryTotals,
     SessionStatus, RECOVERED_FILE,
@@ -137,6 +139,7 @@ pub fn run_recovery(
         )));
     }
     let dest = validate_destination(&header.source, &options.dest)?;
+    let destination_root = DestinationDirectory::open(&dest)?;
     let started = now_iso();
     if !options.dry_run {
         header.status = SessionStatus::Recovering;
@@ -245,7 +248,7 @@ pub fn run_recovery(
             };
             push_result(&mut summary, record);
         } else {
-            let outcome = recover_one(src, &dest, &candidate, options.verify);
+            let outcome = recover_one(src, &dest, &destination_root, &candidate, options.verify);
             match outcome {
                 Ok(record) => {
                     summary.bytes_written += record.bytes_written;
@@ -348,12 +351,17 @@ pub fn confidence_rank(label: ConfidenceLabel) -> u8 {
 
 fn recover_one(
     src: &dyn ReadOnlySource,
-    root: &Path,
+    root_path: &Path,
+    root: &DestinationDirectory,
     candidate: &Candidate,
     verify: bool,
 ) -> Result<RecoveredFile> {
     let rel = output_relative_path(candidate);
-    let (path, mut file) = create_output(root, &rel)?;
+    let mut output = create_output(root_path, root, &rel)?;
+    let path = output.path.clone();
+    let mut file = output.file.take().ok_or_else(|| {
+        Error::Other("new recovery output did not contain an open file handle".into())
+    })?;
     let mut hasher = Hasher::new();
     let mut written = 0u64;
     let mut complete = candidate.complete;
@@ -393,7 +401,6 @@ fn recover_one(
     }
     let hash = hasher.finish_hex();
     let flush = file.flush().and_then(|_| file.sync_all());
-    drop(file);
     if let Err(e) = flush {
         io_failed = true;
         complete = false;
@@ -403,7 +410,7 @@ fn recover_one(
     let mut verified = false;
     let mut output_path = Some(path.to_string_lossy().to_string());
     if !io_failed && verify {
-        match hash_file(&path) {
+        match hash_reader(&mut file) {
             Ok(actual) if actual == hash => verified = true,
             Ok(actual) => {
                 io_failed = true;
@@ -417,9 +424,10 @@ fn recover_one(
             }
         }
     }
+    drop(file);
     if io_failed {
         status = RecoveryStatus::Failed;
-        match quarantine(&path) {
+        match output.quarantine() {
             Some(partial) => {
                 output_path = Some(partial.to_string_lossy().to_string());
                 note = Some(format!(
@@ -429,11 +437,20 @@ fn recover_one(
                 ));
             }
             None => {
+                let removed = output.remove();
                 output_path = None;
-                note = Some(format!(
-                    "{}; incomplete output was removed",
-                    note.unwrap_or_else(|| "write failed".into())
-                ));
+                note = Some(if removed {
+                    format!(
+                        "{}; incomplete output was removed",
+                        note.unwrap_or_else(|| "write failed".into())
+                    )
+                } else {
+                    format!(
+                        "{}; incomplete output could not be quarantined or removed at {}",
+                        note.unwrap_or_else(|| "write failed".into()),
+                        path.display()
+                    )
+                });
             }
         }
     } else if !complete {
@@ -601,88 +618,37 @@ fn output_relative_path(candidate: &Candidate) -> PathBuf {
     rel
 }
 
-fn create_output(root: &Path, rel: &Path) -> Result<(PathBuf, File)> {
-    let rel = if root.as_os_str().len() + rel.as_os_str().len() > 230 {
-        // Windows legacy path limits: flatten rather than fail.
-        rel.file_name()
+fn create_output(
+    root_path: &Path,
+    root: &DestinationDirectory,
+    relative: &Path,
+) -> Result<crate::safety::DestinationFile> {
+    let relative = if root_path.as_os_str().len() + relative.as_os_str().len() > 230 {
+        relative
+            .file_name()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("recovered.bin"))
     } else {
-        rel.to_path_buf()
+        relative.to_path_buf()
     };
-    if let Some(parent) = rel.parent() {
-        create_confined_dirs(root, parent)?;
-    }
-    for n in 0..1000u32 {
-        let candidate = if n == 0 {
-            rel.clone()
+    for suffix in 0..1000u32 {
+        let candidate = if suffix == 0 {
+            relative.clone()
         } else {
-            numbered(&rel, n)
+            numbered(&relative, suffix)
         };
-        let path = root.join(&candidate);
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(f) => return Ok((path, f)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => {
-                return Err(Error::Io {
-                    offset: 0,
-                    source: e,
-                })
+        match root.create_new_file(&candidate) {
+            Ok(output) => return Ok(output),
+            Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::AlreadyExists => {
+                continue;
             }
+            Err(error) => return Err(error),
         }
     }
     Err(Error::Other(format!(
         "could not find a free output name for {}",
-        rel.display()
+        relative.display()
     )))
-}
-
-fn create_confined_dirs(root: &Path, rel_parent: &Path) -> Result<()> {
-    let mut cur = root.to_path_buf();
-    for comp in rel_parent.components() {
-        let next = cur.join(comp.as_os_str());
-        match fs::symlink_metadata(&next) {
-            Ok(meta) => {
-                if meta.file_type().is_symlink() {
-                    return Err(Error::UnsafeDestination(format!(
-                        "refusing to write through symlink {}",
-                        next.display()
-                    )));
-                }
-                if !meta.is_dir() {
-                    return Err(Error::UnsafeDestination(format!(
-                        "{} exists and is not a directory",
-                        next.display()
-                    )));
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                fs::create_dir(&next).map_err(|e| Error::Io {
-                    offset: 0,
-                    source: e,
-                })?;
-            }
-            Err(e) => {
-                return Err(Error::Io {
-                    offset: 0,
-                    source: e,
-                })
-            }
-        }
-        cur = next;
-    }
-    let canonical = fs::canonicalize(&cur).map_err(|e| Error::Io {
-        offset: 0,
-        source: e,
-    })?;
-    if !canonical.starts_with(root) {
-        return Err(Error::UnsafeDestination(format!(
-            "{} escapes the destination root {}",
-            canonical.display(),
-            root.display()
-        )));
-    }
-    Ok(())
 }
 
 fn numbered(rel: &Path, n: u32) -> PathBuf {
@@ -702,20 +668,6 @@ fn numbered(rel: &Path, n: u32) -> PathBuf {
     rel.with_file_name(new_name)
 }
 
-fn quarantine(path: &Path) -> Option<PathBuf> {
-    let mut s = path.as_os_str().to_os_string();
-    s.push(".partial");
-    let partial = PathBuf::from(s);
-    match fs::rename(path, &partial) {
-        Ok(()) => Some(partial),
-        Err(_) => {
-            // Never leave a partial file under a name that looks complete.
-            let _ = fs::remove_file(path);
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -723,6 +675,7 @@ mod tests {
     use crate::fs::CandidateSink;
     use crate::session::{load_candidates, Session, SessionOptions};
     use crate::source::{FileSource, SourceIdentity, SourceKind};
+    use std::fs;
 
     fn setup() -> (PathBuf, PathBuf) {
         use std::sync::atomic::{AtomicU64, Ordering};

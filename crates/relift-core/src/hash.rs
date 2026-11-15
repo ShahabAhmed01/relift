@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
@@ -53,10 +53,19 @@ pub fn hash_file(path: impl AsRef<Path>) -> Result<String> {
         offset: 0,
         source: e,
     })?;
+    hash_reader(&mut f)
+}
+
+/// Hash an already-open file handle from its beginning without reopening a
+/// destination path that could have changed since the file was created.
+pub fn hash_reader<R: Read + Seek>(reader: &mut R) -> Result<String> {
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|source| Error::Io { offset: 0, source })?;
     let mut h = Hasher::new();
     let mut buf = vec![0u8; 1 << 20];
     loop {
-        let n = f.read(&mut buf).map_err(|e| Error::Io {
+        let n = reader.read(&mut buf).map_err(|e| Error::Io {
             offset: 0,
             source: e,
         })?;

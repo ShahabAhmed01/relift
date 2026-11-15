@@ -80,6 +80,30 @@ cargo test -p relift-core carve 2>&1 | tail -20
 - This is compile-time and synthetic mapping evidence only. The Linux guard has
   not been exercised against mounted raw devices; G5 remains pending.
 
+#### Destination writer race hardening (2026-11-15)
+
+- Recovery and imaging now open destination paths component-by-component with
+  no-follow semantics and keep the directory handles anchored while writing.
+  Linux/macOS finalization uses no-replace rename; Windows uses a no-overwrite
+  move and keeps the destination ancestor handles open.
+- Regression coverage includes symlinked parent rejection, destination-root
+  replacement, Windows ancestor rename prevention, collision-safe output
+  creation/finalization, and preserving an existing image manifest.
+- `cargo +1.90 test --workspace --all-targets --offline`: passed on Windows
+  (59 core unit tests, 6 core end-to-end tests, and 2 fixture tests).
+- `cargo +stable check -p relift-core --all-targets --target
+  x86_64-unknown-linux-gnu --offline`: passed. This compiles Linux-specific
+  code but does not execute Linux tests.
+- `cargo +1.90 build --workspace --release --offline`: passed on Windows
+  (optimized workspace build, including CLI and Tauri GUI).
+- `cargo +1.90 clippy --workspace --all-targets --offline -- -D warnings`:
+  passed after replacing the CLI's explicit closure drops with scoped borrows.
+- `cargo deny check`: advisory, ban, license, and source checks passed. It
+  reported existing duplicate transitive crate versions and unused license
+  allowances as warnings; neither blocked the check.
+- Linux runtime tests and physical-device destination checks remain unverified;
+  macOS target compilation also remains unverified. G5 remains pending.
+
 ### G6: Performance Benchmarks
 ```bash
 cargo bench -p relift-bench 2>&1 | tail -30

@@ -58,12 +58,22 @@ deliberate, and tracked.
 
 ## Validation gaps
 
-- Recovery path checks are path-based; descriptor-relative no-follow writes are
-  not implemented, so concurrent mutation of the destination tree by another
-  local process is not prevented.
+- Recovery and imaging now walk canonical destination paths from the volume
+  root with no-follow directory opens, retain directory handles, and create
+  output relative to those handles. This blocks traversal through symlinked or
+  replaced destination ancestors after validation. Linux and macOS finalization
+  use no-replace rename; Windows uses a no-overwrite move while destination
+  directory handles remain open. A local process with write access can still
+  modify output data or cause denial of service, and recovery files are visible
+  under their final names while being written.
+- Windows removes failed recovery outputs relative to the open parent handle
+  instead of moving them to `.partial`; Linux and macOS retain failed outputs
+  under collision-safe `.partial` names when possible.
 - No real NTFS/ext4 volumes available locally. All validation so far is against
   deterministic synthetic fixtures (FAT32, exFAT, NTFS, ext4) with SHA-256 byte
   comparison.
+- macOS cross-compilation and runtime testing were not available in this
+  environment; the Apple Rust target could not be downloaded here.
 - Public test images or real-volume validation still needed before claiming
   real-media recovery.
 - No `cargo-fuzz` harness is checked in yet; parser fuzzing is a release gate.

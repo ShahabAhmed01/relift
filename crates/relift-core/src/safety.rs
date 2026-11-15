@@ -11,9 +11,14 @@
 //!    sanitized, reserved device names are escaped, traversal components are
 //!    removed, and the final path is confined to the destination root.
 
+use std::ffi::OsString;
 use std::fs;
+use std::fs::File;
 use std::path::{Component, Path, PathBuf};
 
+use cap_fs_ext::DirExt;
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, OpenOptions as CapabilityOpenOptions};
 #[cfg(any(target_os = "linux", test))]
 use std::collections::HashSet;
 
@@ -72,6 +77,354 @@ pub fn validate_destination(source: &SourceIdentity, dest: &Path) -> Result<Path
         }
     }
     Ok(canonical)
+}
+
+/// A handle to a validated output root. Child directories and files are opened
+/// relative to this handle so a changed symlink cannot redirect recovery writes.
+pub(crate) struct DestinationDirectory {
+    path: PathBuf,
+    handle: Dir,
+    // Keeping each path component open prevents Windows from moving or
+    // replacing an ancestor while path-based no-clobber finalization runs.
+    _ancestors: Vec<Dir>,
+}
+
+/// A newly created file whose parent directory remains anchored by an open
+/// handle for safe verification and cleanup.
+pub(crate) struct DestinationFile {
+    pub(crate) path: PathBuf,
+    pub(crate) file: Option<File>,
+    parent: Dir,
+    _parent_ancestors: Vec<Dir>,
+    name: OsString,
+}
+
+impl DestinationDirectory {
+    /// Open the already validated, canonical destination directory.
+    pub(crate) fn open(path: &Path) -> Result<Self> {
+        let (handle, ancestors) = open_canonical_directory(path)?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            handle,
+            _ancestors: ancestors,
+        })
+    }
+
+    /// Create a new file at a relative path without following any parent
+    /// symlink or overwriting an existing final entry.
+    pub(crate) fn create_new_file(&self, relative: &Path) -> Result<DestinationFile> {
+        if relative.is_absolute() {
+            return Err(Error::UnsafeDestination(
+                "output path must be relative to the destination directory".into(),
+            ));
+        }
+        for component in relative.components() {
+            if !matches!(component, Component::Normal(_)) {
+                return Err(Error::UnsafeDestination(format!(
+                    "output path contains a non-normal component: {}",
+                    relative.display()
+                )));
+            }
+        }
+        let name = relative
+            .file_name()
+            .ok_or_else(|| Error::UnsafeDestination("output path does not name a file".into()))?;
+        let parent_path = relative.parent().unwrap_or_else(|| Path::new(""));
+        let (parent, parent_ancestors) = self.open_or_create_parent(parent_path)?;
+        let mut options = CapabilityOpenOptions::new();
+        options.read(true).write(true).create_new(true);
+        let file = parent
+            .open_with(name, &options)
+            .map_err(|source| Error::Io { offset: 0, source })?
+            .into_std();
+        Ok(DestinationFile {
+            path: self.path.join(relative),
+            file: Some(file),
+            parent,
+            _parent_ancestors: parent_ancestors,
+            name: name.to_os_string(),
+        })
+    }
+
+    /// Check one file entry below the open destination root without following
+    /// a symbolic link.
+    pub(crate) fn entry_exists(&self, relative: &Path) -> Result<bool> {
+        validate_leaf_path(relative)?;
+        match self.handle.symlink_metadata(relative) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(source) => Err(Error::Io { offset: 0, source }),
+        }
+    }
+
+    /// Rename one entry below the open destination root.
+    pub(crate) fn rename_file(&self, from: &Path, to: &Path) -> Result<()> {
+        validate_leaf_path(from)?;
+        validate_leaf_path(to)?;
+        rename_new_entry(&self.handle, &self.path, from, to)
+    }
+
+    fn open_or_create_parent(&self, relative: &Path) -> Result<(Dir, Vec<Dir>)> {
+        let mut current = self
+            .handle
+            .try_clone()
+            .map_err(|source| Error::Io { offset: 0, source })?;
+        let mut ancestors = vec![current
+            .try_clone()
+            .map_err(|source| Error::Io { offset: 0, source })?];
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                return Err(Error::UnsafeDestination(format!(
+                    "output directory path contains a non-normal component: {}",
+                    relative.display()
+                )));
+            };
+            current = match current.open_dir_nofollow(name) {
+                Ok(directory) => directory,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    match current.create_dir(name) {
+                        Ok(()) => {}
+                        Err(create_error)
+                            if create_error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                        Err(source) => return Err(Error::Io { offset: 0, source }),
+                    }
+                    current.open_dir_nofollow(name).map_err(|source| {
+                        Error::UnsafeDestination(format!(
+                            "could not open output directory {} without following symlinks: {source}",
+                            name.to_string_lossy()
+                        ))
+                    })?
+                }
+                Err(source) => {
+                    return Err(Error::UnsafeDestination(format!(
+                        "could not open output directory {} without following symlinks: {source}",
+                        name.to_string_lossy()
+                    )))
+                }
+            };
+            ancestors.push(
+                current
+                    .try_clone()
+                    .map_err(|source| Error::Io { offset: 0, source })?,
+            );
+        }
+        Ok((current, ancestors))
+    }
+}
+
+/// Walk a canonical absolute path from its filesystem root, opening each
+/// component without following symlinks/reparse points. This anchors even the
+/// destination's ancestors, instead of following them in one ambient open.
+fn open_canonical_directory(path: &Path) -> Result<(Dir, Vec<Dir>)> {
+    #[cfg(unix)]
+    let (mut current, components, mut ancestors) = {
+        let root =
+            Dir::open_ambient_dir(Path::new("/"), ambient_authority()).map_err(|source| {
+                Error::UnsafeDestination(format!("could not open filesystem root: {source}"))
+            })?;
+        let components = path.components().skip(1).collect::<Vec<_>>();
+        let ancestors = vec![root
+            .try_clone()
+            .map_err(|source| Error::Io { offset: 0, source })?];
+        (root, components, ancestors)
+    };
+
+    #[cfg(windows)]
+    let (mut current, components, mut ancestors) = {
+        let mut path_components = path.components();
+        let prefix = path_components.next().ok_or_else(|| {
+            Error::UnsafeDestination(format!(
+                "destination path {} is not absolute",
+                path.display()
+            ))
+        })?;
+        let root_dir = path_components.next().ok_or_else(|| {
+            Error::UnsafeDestination(format!(
+                "destination path {} is not absolute",
+                path.display()
+            ))
+        })?;
+        if !matches!(prefix, Component::Prefix(_)) || !matches!(root_dir, Component::RootDir) {
+            return Err(Error::UnsafeDestination(format!(
+                "destination path {} is not an absolute Windows path",
+                path.display()
+            )));
+        }
+        let mut root_name = prefix.as_os_str().to_os_string();
+        root_name.push(root_dir.as_os_str());
+        let root_path = PathBuf::from(root_name);
+        let root = Dir::open_ambient_dir(&root_path, ambient_authority()).map_err(|source| {
+            Error::UnsafeDestination(format!(
+                "could not open destination volume root {}: {source}",
+                root_path.display()
+            ))
+        })?;
+        let ancestors = vec![root
+            .try_clone()
+            .map_err(|source| Error::Io { offset: 0, source })?];
+        (root, path_components.collect::<Vec<_>>(), ancestors)
+    };
+
+    #[cfg(not(any(unix, windows)))]
+    let (mut current, components, mut ancestors) = {
+        let root = Dir::open_ambient_dir(path, ambient_authority()).map_err(|source| {
+            Error::UnsafeDestination(format!(
+                "could not open destination directory {}: {source}",
+                path.display()
+            ))
+        })?;
+        let ancestors = vec![root
+            .try_clone()
+            .map_err(|source| Error::Io { offset: 0, source })?];
+        (root, Vec::new(), ancestors)
+    };
+
+    for component in components {
+        let Component::Normal(name) = component else {
+            return Err(Error::UnsafeDestination(format!(
+                "canonical destination path contains a non-normal component: {}",
+                path.display()
+            )));
+        };
+        current = current.open_dir_nofollow(name).map_err(|source| {
+            Error::UnsafeDestination(format!(
+                "could not open destination component {} without following symlinks: {source}",
+                name.to_string_lossy()
+            ))
+        })?;
+        ancestors.push(
+            current
+                .try_clone()
+                .map_err(|source| Error::Io { offset: 0, source })?,
+        );
+    }
+    Ok((current, ancestors))
+}
+
+/// Atomically rename a leaf entry without replacing an entry created after a
+/// preflight check. Linux and Apple provide native no-replace rename flags.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn rename_new_entry(dir: &Dir, _dir_path: &Path, from: &Path, to: &Path) -> Result<()> {
+    use std::os::fd::AsFd;
+
+    rustix::fs::renameat_with(
+        dir.as_fd(),
+        from,
+        dir.as_fd(),
+        to,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(|source| Error::Io {
+        offset: 0,
+        source: source.into(),
+    })
+}
+
+/// `MoveFileW` fails if the target already exists. The open destination handle
+/// prevents Windows from renaming the destination directory while this runs.
+#[cfg(windows)]
+fn rename_new_entry(_dir: &Dir, dir_path: &Path, from: &Path, to: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let from_path = dir_path.join(from);
+    let to_path = dir_path.join(to);
+    let from_wide = from_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let to_wide = to_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // SAFETY: both strings are NUL-terminated UTF-16 buffers that remain alive
+    // for the duration of the call.
+    let succeeded = unsafe {
+        windows_sys::Win32::Storage::FileSystem::MoveFileW(from_wide.as_ptr(), to_wide.as_ptr())
+    };
+    if succeeded == 0 {
+        Err(Error::Io {
+            offset: 0,
+            source: std::io::Error::last_os_error(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+/// Other Unix targets lack a portable no-replace rename API. A hard link is an
+/// atomic no-clobber publication; if the filesystem does not support hard
+/// links, fail closed and keep the partial output.
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn rename_new_entry(dir: &Dir, _dir_path: &Path, from: &Path, to: &Path) -> Result<()> {
+    dir.hard_link(from, dir, to)
+        .map_err(|source| Error::Io { offset: 0, source })?;
+    dir.remove_file(from)
+        .map_err(|source| Error::Io { offset: 0, source })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn rename_new_entry(dir: &Dir, _dir_path: &Path, from: &Path, to: &Path) -> Result<()> {
+    dir.rename(from, dir, to)
+        .map_err(|source| Error::Io { offset: 0, source })
+}
+
+fn validate_leaf_path(path: &Path) -> Result<()> {
+    if matches!(path.components().next(), Some(Component::Normal(_)))
+        && path.components().count() == 1
+    {
+        Ok(())
+    } else {
+        Err(Error::UnsafeDestination(format!(
+            "expected one filename relative to the destination root: {}",
+            path.display()
+        )))
+    }
+}
+
+impl DestinationFile {
+    /// Rename a failed output relative to its anchored parent directory.
+    #[cfg(windows)]
+    pub(crate) fn quarantine(&self) -> Option<PathBuf> {
+        // A path-based Windows move would lose the anchored parent handle. On
+        // failure, the caller removes the incomplete entry relative to it.
+        let _ = self;
+        None
+    }
+
+    /// Rename a failed output relative to its anchored parent directory.
+    #[cfg(not(windows))]
+    pub(crate) fn quarantine(&self) -> Option<PathBuf> {
+        for suffix in 0..1000u32 {
+            let mut partial_name = self.name.clone();
+            if suffix == 0 {
+                partial_name.push(".partial");
+            } else {
+                partial_name.push(format!(".partial.{suffix}"));
+            }
+            match rename_new_entry(
+                &self.parent,
+                self.path.parent().unwrap_or_else(|| Path::new(".")),
+                Path::new(&self.name),
+                Path::new(&partial_name),
+            ) {
+                Ok(()) => return Some(self.path.with_file_name(partial_name)),
+                Err(Error::Io { source, .. })
+                    if source.kind() == std::io::ErrorKind::AlreadyExists =>
+                {
+                    continue
+                }
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    /// Remove a failed output relative to its anchored parent directory.
+    pub(crate) fn remove(&self) -> bool {
+        self.parent.remove_file_or_symlink(&self.name).is_ok()
+    }
 }
 
 #[cfg(windows)]
@@ -857,6 +1210,191 @@ mod tests {
 
         assert_eq!(source_disks, same_disk);
         assert!(source_disks.is_disjoint(&other_disk));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn destination_writer_creates_relative_files_without_overwriting() {
+        use std::io::Write;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-output-create-{}-{serial}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&base).unwrap();
+        let root = DestinationDirectory::open(&base.canonicalize().unwrap()).unwrap();
+        let mut output = root
+            .create_new_file(Path::new("nested/recovered.bin"))
+            .unwrap();
+        output
+            .file
+            .as_mut()
+            .unwrap()
+            .write_all(b"first output")
+            .unwrap();
+
+        let duplicate = root.create_new_file(Path::new("nested/recovered.bin"));
+        let traversal = root.create_new_file(Path::new("../outside.bin"));
+
+        assert!(matches!(duplicate, Err(Error::Io { .. })));
+        assert!(matches!(traversal, Err(Error::UnsafeDestination(_))));
+        assert_eq!(
+            fs::read(base.join("nested/recovered.bin")).unwrap(),
+            b"first output"
+        );
+        assert!(!base.parent().unwrap().join("outside.bin").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn destination_rename_never_replaces_an_existing_entry() {
+        use std::io::Write;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-output-rename-collision-{}-{serial}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&base).unwrap();
+        let root = DestinationDirectory::open(&base.canonicalize().unwrap()).unwrap();
+        let mut staged = root.create_new_file(Path::new("staged.partial")).unwrap();
+        staged
+            .file
+            .as_mut()
+            .unwrap()
+            .write_all(b"new data")
+            .unwrap();
+        fs::write(base.join("final.bin"), b"existing data").unwrap();
+
+        let result = root.rename_file(Path::new("staged.partial"), Path::new("final.bin"));
+
+        assert!(matches!(result, Err(Error::Io { .. })));
+        assert_eq!(fs::read(base.join("final.bin")).unwrap(), b"existing data");
+        assert!(base.join("staged.partial").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn destination_writer_rejects_symlinked_parent_components() {
+        use std::os::unix::fs::symlink;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-output-symlink-{}-{serial}",
+            std::process::id()
+        ));
+        let destination = base.join("destination");
+        let outside = base.join("outside");
+        fs::create_dir_all(&destination).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        symlink(&outside, destination.join("redirect")).unwrap();
+        let root = DestinationDirectory::open(&destination.canonicalize().unwrap()).unwrap();
+
+        let result = root.create_new_file(Path::new("redirect/recovered.bin"));
+
+        assert!(matches!(result, Err(Error::UnsafeDestination(_))));
+        assert!(!outside.join("recovered.bin").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn destination_open_rejects_a_replaced_ancestor() {
+        use std::os::unix::fs::symlink;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-output-ancestor-swap-{}-{serial}",
+            std::process::id()
+        ));
+        let ancestor = base.join("ancestor");
+        let destination = ancestor.join("destination");
+        let moved = base.join("moved");
+        let outside = base.join("outside");
+        fs::create_dir_all(&destination).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let canonical = destination.canonicalize().unwrap();
+        fs::rename(&ancestor, &moved).unwrap();
+        symlink(&outside, &ancestor).unwrap();
+
+        let result = DestinationDirectory::open(&canonical);
+
+        assert!(matches!(result, Err(Error::UnsafeDestination(_))));
+        assert!(!outside.join("destination").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn destination_handles_prevent_windows_ancestor_rename() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-output-windows-ancestor-lock-{}-{serial}",
+            std::process::id()
+        ));
+        let ancestor = base.join("ancestor");
+        let destination = ancestor.join("destination");
+        let moved = base.join("moved");
+        fs::create_dir_all(&destination).unwrap();
+        let root = DestinationDirectory::open(&destination.canonicalize().unwrap()).unwrap();
+
+        let result = fs::rename(&ancestor, &moved);
+
+        assert!(result.is_err(), "an open destination ancestor was renamed");
+        drop(root);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn destination_writer_stays_anchored_if_root_path_is_replaced() {
+        use std::io::Write;
+        use std::os::unix::fs::symlink;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-output-root-swap-{}-{serial}",
+            std::process::id()
+        ));
+        let destination = base.join("destination");
+        let moved = base.join("moved");
+        let outside = base.join("outside");
+        fs::create_dir_all(&destination).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let root = DestinationDirectory::open(&destination.canonicalize().unwrap()).unwrap();
+        fs::rename(&destination, &moved).unwrap();
+        symlink(&outside, &destination).unwrap();
+
+        let mut output = root
+            .create_new_file(Path::new("nested/recovered.bin"))
+            .unwrap();
+        output
+            .file
+            .as_mut()
+            .unwrap()
+            .write_all(b"anchored output")
+            .unwrap();
+
+        assert_eq!(
+            fs::read(moved.join("nested/recovered.bin")).unwrap(),
+            b"anchored output"
+        );
+        assert!(!outside.join("nested/recovered.bin").exists());
         let _ = fs::remove_dir_all(&base);
     }
 

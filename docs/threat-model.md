@@ -91,19 +91,25 @@ The threat model assumes the **source media is untrusted**. The tool must not cr
   components are dropped, colons and other path syntax are replaced, reserved
   Windows names are escaped, components are limited to 100 bytes, and at most
   12 directory levels are kept.
-- Existing symlink directories are refused and the resolved parent is checked
-  against the canonical destination root. New files use `create_new`, so an
-  existing output file is never overwritten. Nested output paths are flattened
-  when their combined path would exceed the writer's 230-character threshold.
+- The canonical destination is opened one directory component at a time from
+  the filesystem root, refusing symlinks and reparse points. Every output
+  parent is opened relative to a retained directory handle, and final files use
+  `create_new`. This prevents traversal through a destination ancestor that is
+  replaced after validation. Nested output paths are flattened when their
+  combined path would exceed the writer's 230-character threshold.
 - Destination verified on a different physical disk. Linux resolves partitions,
   device-mapper/RAID dependencies, and NVMe namespaces through sysfs; mappings
   that cannot be proven are refused. Windows uses volume disk extents.
-- Output files are flushed and synced after writing, then re-read for hash
-  verification by default. Failed outputs are renamed with a `.partial` suffix
-  or removed if they cannot be quarantined; writes are not atomic.
-- Path checks use ordinary filesystem paths and do not prevent a concurrent
-  process with write access to the destination tree from racing a checked
-  directory. Keep the output directory under the user's control during recovery.
+- Output files are flushed and synced after writing, then re-read from the same
+  open handle for hash verification by default. Linux and macOS use atomic
+  no-replace renames to finalize images or quarantine failed outputs. Windows
+  uses a no-overwrite image move while retaining destination directory handles;
+  failed recovery outputs are removed relative to their open parent handle.
+- Recovery output is written directly to its final name, so a process crash or
+  write failure can leave incomplete bytes until cleanup. A local process with
+  write access to the destination can modify output data or cause denial of
+  service; it remains important to keep the destination directory under the
+  user's control.
 - Recovered files are created without an execute bit on Unix.
 
 ### 5. CLI / GUI input handling
