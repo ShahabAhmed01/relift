@@ -25,7 +25,12 @@ where any write can destroy data.
 - Destination safety:
   - Image: same-file rejection via canonical path comparison.
   - Windows physical disk: `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS` mapping.
-  - Linux: `/proc/self/mountinfo` + `rdev` comparison.
+  - Linux: `/proc/self/mountinfo` plus `/sys/dev/block` ancestry. Partitions
+    resolve to their parent disk, stacked devices resolve through their slave
+    devices, and NVMe namespaces on one controller share a disk identity.
+    Virtual devices with no provable physical dependencies fail closed. Btrfs
+    destinations fail closed because a mount can span devices and mountinfo does
+    not prove the full member set.
   - macOS: raw-dest refusal with imaging advice (fail closed, untested).
 
 ## Consequences

@@ -14,6 +14,9 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+#[cfg(any(target_os = "linux", test))]
+use std::collections::HashSet;
+
 use crate::error::{Error, Result};
 use crate::source::{SourceIdentity, SourceKind};
 
@@ -123,34 +126,174 @@ fn raw_destination_is_separate(source_path: &str, dest: &Path) -> Result<()> {
             dest.display()
         ))
     })?;
-    let mut candidates: Vec<(u64, u64)> = Vec::new();
-    if let Some(dev) = info.device {
-        candidates.push(dev);
+    if info.filesystem == "btrfs" {
+        return Err(Error::UnsafeDestination(format!(
+            "cannot prove that every Btrfs device backing destination {} is separate from the \
+             evidence disk. Choose a destination on a filesystem with a directly resolvable \
+             physical device, or scan an image instead.",
+            dest.display()
+        )));
     }
+    let sysfs = Path::new("/sys");
+    let mut destination_disks = HashSet::new();
+    let mount_device = info.device.ok_or_else(|| {
+        Error::UnsafeDestination(format!(
+            "could not identify the backing device of destination {}; refusing to write to a \
+             possibly-identical disk",
+            dest.display()
+        ))
+    })?;
+    destination_disks.extend(
+        resolve_physical_disks(sysfs, mount_device).map_err(|error| {
+            Error::UnsafeDestination(format!(
+                "could not resolve the physical disk backing destination {}: {error}. Create an \
+             image on a separately verified disk, then scan the image.",
+                dest.display()
+            ))
+        })?,
+    );
     if let Some(source) = &info.source {
         if let Ok(meta) = fs::metadata(source) {
-            candidates.push(dev_t_pair(meta.rdev()));
+            if meta.file_type().is_block_device() {
+                destination_disks.extend(
+                    resolve_physical_disks(sysfs, dev_t_pair(meta.rdev())).map_err(|error| {
+                        Error::UnsafeDestination(format!(
+                            "could not resolve mount source {} to a physical disk: {error}",
+                            source.display()
+                        ))
+                    })?,
+                );
+            }
         }
         if fs::canonicalize(source).ok().as_deref() == Some(source_canonical.as_path()) {
             return Err(same_disk_error(source_path, dest));
         }
     }
-    if candidates.is_empty() {
+    if destination_disks.is_empty() {
         return Err(Error::UnsafeDestination(format!(
-            "could not identify the backing device of destination {}; refusing to write to a \
+            "could not identify a physical disk backing destination {}; refusing to write to a \
              possibly-identical disk",
             dest.display()
         )));
     }
-    // `st_rdev` of a block device and the mount's major:minor refer to the
-    // same device when the filesystem is mounted directly. For LVM, device
-    // mapper and btrfs the mount's dev_t can be anonymous; comparing the mount
-    // source path's rdev covers the common mapper case.
-    let src_pair = dev_t_pair(source_meta.rdev());
-    if candidates.iter().any(|c| *c == src_pair) {
+    let source_disks =
+        resolve_physical_disks(sysfs, dev_t_pair(source_meta.rdev())).map_err(|error| {
+            Error::UnsafeDestination(format!(
+                "could not resolve evidence device {} to its physical disk: {error}. Create a \
+                 disk image first, then scan the image.",
+                source_canonical.display()
+            ))
+        })?;
+    if source_disks
+        .iter()
+        .any(|source_disk| destination_disks.contains(source_disk))
+    {
         return Err(same_disk_error(source_path, dest));
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn resolve_physical_disks(
+    sysfs_root: &Path,
+    device: (u64, u64),
+) -> std::io::Result<HashSet<PathBuf>> {
+    let device_path = sysfs_root
+        .join("dev/block")
+        .join(format!("{}:{}", device.0, device.1));
+    let mut visited = HashSet::new();
+    let mut physical_disks = HashSet::new();
+    collect_physical_disks(sysfs_root, &device_path, &mut visited, &mut physical_disks)?;
+    if physical_disks.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            format!(
+                "device {}:{} has no identifiable physical backing disk",
+                device.0, device.1
+            ),
+        ));
+    }
+    Ok(physical_disks)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn collect_physical_disks(
+    sysfs_root: &Path,
+    device_path: &Path,
+    visited: &mut HashSet<PathBuf>,
+    physical_disks: &mut HashSet<PathBuf>,
+) -> std::io::Result<()> {
+    let device_path = fs::canonicalize(device_path)?;
+    let devices_root = fs::canonicalize(sysfs_root.join("devices"))?;
+    if !device_path.starts_with(&devices_root) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "sysfs device path {} is outside /sys/devices",
+                device_path.display()
+            ),
+        ));
+    }
+    if !visited.insert(device_path.clone()) {
+        return Ok(());
+    }
+
+    let slaves_path = device_path.join("slaves");
+    if slaves_path.is_dir() {
+        let slaves = fs::read_dir(&slaves_path)?.collect::<std::io::Result<Vec<_>>>()?;
+        if !slaves.is_empty() {
+            for slave in slaves {
+                collect_physical_disks(sysfs_root, &slave.path(), visited, physical_disks)?;
+            }
+            return Ok(());
+        }
+    }
+
+    if device_path.join("partition").exists() {
+        let parent = device_path.parent().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("partition {} has no parent disk", device_path.display()),
+            )
+        })?;
+        return collect_physical_disks(sysfs_root, parent, visited, physical_disks);
+    }
+
+    if let Some(controller) = nvme_controller_for_namespace(&device_path) {
+        physical_disks.insert(controller);
+        return Ok(());
+    }
+
+    let virtual_root = fs::canonicalize(sysfs_root.join("devices/virtual"))?;
+    if device_path.starts_with(&virtual_root) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            format!(
+                "virtual block device {} has no resolvable physical dependencies",
+                device_path.display()
+            ),
+        ));
+    }
+
+    physical_disks.insert(device_path);
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn nvme_controller_for_namespace(device_path: &Path) -> Option<PathBuf> {
+    let namespace = device_path.file_name()?.to_str()?;
+    let controller_path = device_path.parent()?;
+    let controller = controller_path.file_name()?.to_str()?;
+    let controller_number = controller.strip_prefix("nvme")?;
+    if controller_number.is_empty() || !controller_number.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let namespace_number = namespace.strip_prefix(controller)?.strip_prefix('n')?;
+    if namespace_number.is_empty() || !namespace_number.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some(controller_path.to_path_buf())
 }
 
 #[cfg(target_os = "linux")]
@@ -165,6 +308,7 @@ fn dev_t_pair(dev: u64) -> (u64, u64) {
 struct MountInfo {
     device: Option<(u64, u64)>,
     source: Option<PathBuf>,
+    filesystem: String,
 }
 
 #[cfg(target_os = "linux")]
@@ -189,12 +333,16 @@ fn linux_mount_for(dest: &Path) -> Option<MountInfo> {
             .and_then(|(a, b)| Some((a.parse::<u64>().ok()?, b.parse::<u64>().ok()?)));
         let source = rf[1];
         let source = if source.starts_with('/') {
-            Some(PathBuf::from(unescape_mount(source)))
+            Some(unescape_mount(source))
         } else {
             None
         };
         let score = mount_point.components().count();
-        let info = MountInfo { device, source };
+        let info = MountInfo {
+            device,
+            source,
+            filesystem: rf[0].to_string(),
+        };
         if best.as_ref().map(|(s, _)| score >= *s).unwrap_or(true) {
             best = Some((score, info));
         }
@@ -574,6 +722,142 @@ mod tests {
         let got = sanitize_filename(&name, "fallback");
         assert!(got.ends_with(".jpg"));
         assert!(got.len() <= MAX_COMPONENT_BYTES);
+    }
+
+    #[test]
+    fn linux_partition_mapping_groups_partitions_by_physical_disk() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-sysfs-partitions-{}-{serial}",
+            std::process::id()
+        ));
+        let sysfs = base.join("sys");
+        let sda = sysfs.join("devices/pci0000/block/sda");
+        let sda1 = sda.join("sda1");
+        let sda2 = sda.join("sda2");
+        let sdb = sysfs.join("devices/pci0000/block/sdb");
+        let sdb1 = sdb.join("sdb1");
+        fs::create_dir_all(&sda1).unwrap();
+        fs::create_dir_all(&sda2).unwrap();
+        fs::create_dir_all(&sdb1).unwrap();
+        fs::create_dir_all(sysfs.join("devices/virtual/block")).unwrap();
+        fs::write(sda1.join("partition"), "1").unwrap();
+        fs::write(sda2.join("partition"), "2").unwrap();
+        fs::write(sdb1.join("partition"), "1").unwrap();
+
+        let mut source_seen = HashSet::new();
+        let mut source_disks = HashSet::new();
+        collect_physical_disks(&sysfs, &sda1, &mut source_seen, &mut source_disks).unwrap();
+        let mut destination_seen = HashSet::new();
+        let mut destination_disks = HashSet::new();
+        collect_physical_disks(&sysfs, &sda2, &mut destination_seen, &mut destination_disks)
+            .unwrap();
+        let mut other_disk_seen = HashSet::new();
+        let mut other_disk = HashSet::new();
+        collect_physical_disks(&sysfs, &sdb1, &mut other_disk_seen, &mut other_disk).unwrap();
+
+        assert_eq!(source_disks, destination_disks);
+        assert!(source_disks.is_disjoint(&other_disk));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn linux_nvme_namespaces_map_to_the_same_controller() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base =
+            std::env::temp_dir().join(format!("relift-sysfs-nvme-{}-{serial}", std::process::id()));
+        let sysfs = base.join("sys");
+        let controller = sysfs.join("devices/pci0000/nvme/nvme0");
+        let namespace_one = controller.join("nvme0n1");
+        let namespace_two = controller.join("nvme0n2");
+        fs::create_dir_all(&namespace_one).unwrap();
+        fs::create_dir_all(&namespace_two).unwrap();
+        fs::create_dir_all(sysfs.join("devices/virtual")).unwrap();
+
+        let mut first_seen = HashSet::new();
+        let mut first_disks = HashSet::new();
+        collect_physical_disks(&sysfs, &namespace_one, &mut first_seen, &mut first_disks).unwrap();
+        let mut second_seen = HashSet::new();
+        let mut second_disks = HashSet::new();
+        collect_physical_disks(&sysfs, &namespace_two, &mut second_seen, &mut second_disks)
+            .unwrap();
+
+        assert_eq!(first_disks, second_disks);
+        assert_eq!(
+            first_disks,
+            HashSet::from([controller.canonicalize().unwrap()])
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn linux_virtual_devices_without_dependencies_are_not_treated_as_physical_disks() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-sysfs-virtual-{}-{serial}",
+            std::process::id()
+        ));
+        let sysfs = base.join("sys");
+        let loop_device = sysfs.join("devices/virtual/block/loop0");
+        fs::create_dir_all(&loop_device).unwrap();
+
+        let mut visited = HashSet::new();
+        let mut physical_disks = HashSet::new();
+        let result =
+            collect_physical_disks(&sysfs, &loop_device, &mut visited, &mut physical_disks);
+
+        assert!(result.is_err());
+        assert!(physical_disks.is_empty());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_device_numbers_resolve_partition_links_to_parent_disks() {
+        use std::os::unix::fs::symlink;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!(
+            "relift-sysfs-device-links-{}-{serial}",
+            std::process::id()
+        ));
+        let sysfs = base.join("sys");
+        let dev_block = sysfs.join("dev/block");
+        let sda = sysfs.join("devices/pci0000/block/sda");
+        let sda1 = sda.join("sda1");
+        let sda2 = sda.join("sda2");
+        let sdb = sysfs.join("devices/pci0000/block/sdb");
+        let sdb1 = sdb.join("sdb1");
+        fs::create_dir_all(&sda1).unwrap();
+        fs::create_dir_all(&sda2).unwrap();
+        fs::create_dir_all(&sdb1).unwrap();
+        fs::create_dir_all(&dev_block).unwrap();
+        fs::create_dir_all(sysfs.join("devices/virtual")).unwrap();
+        fs::write(sda1.join("partition"), "1").unwrap();
+        fs::write(sda2.join("partition"), "2").unwrap();
+        fs::write(sdb1.join("partition"), "1").unwrap();
+        symlink(&sda1, dev_block.join("8:1")).unwrap();
+        symlink(&sda2, dev_block.join("8:2")).unwrap();
+        symlink(&sdb1, dev_block.join("8:17")).unwrap();
+
+        let source_disks = resolve_physical_disks(&sysfs, (8, 1)).unwrap();
+        let same_disk = resolve_physical_disks(&sysfs, (8, 2)).unwrap();
+        let other_disk = resolve_physical_disks(&sysfs, (8, 17)).unwrap();
+
+        assert_eq!(source_disks, same_disk);
+        assert!(source_disks.is_disjoint(&other_disk));
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

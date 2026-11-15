@@ -3103,7 +3103,6 @@ dependencies = [
  "clap",
  "clap_complete",
  "relift-core",
- "relift-testkit",
  "serde",
  "serde_json",
 ]

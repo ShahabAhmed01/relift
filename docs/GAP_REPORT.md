@@ -48,12 +48,19 @@ deliberate, and tracked.
 - Windows ARM64: no build or runtime testing yet.
 - macOS: raw-device destination safety fails closed with imaging advice; macOS
   raw paths are untested.
-- Linux: raw device access may require root. No io_uring or `O_DIRECT` path.
+- Linux: raw device access may require root. Destination separation resolves
+  partition, stacked-device, and NVMe namespace ancestry through sysfs; virtual
+  destinations whose physical backing cannot be proven are refused. Btrfs
+  destinations are refused because mount metadata does not establish every
+  device in a multi-device filesystem. No io_uring or `O_DIRECT` path.
 - GUI bundles are unsigned: no Authenticode certificate, Apple Developer ID or
   notarization credentials are configured.
 
 ## Validation gaps
 
+- Recovery path checks are path-based; descriptor-relative no-follow writes are
+  not implemented, so concurrent mutation of the destination tree by another
+  local process is not prevented.
 - No real NTFS/ext4 volumes available locally. All validation so far is against
   deterministic synthetic fixtures (FAT32, exFAT, NTFS, ext4) with SHA-256 byte
   comparison.

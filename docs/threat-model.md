@@ -87,16 +87,24 @@ The threat model assumes the **source media is untrusted**. The tool must not cr
 - Overlong paths (>260 chars on Windows without `\\?\`)
 
 **Mitigations:**
-- `sanitize_path()` in `recover.rs`:
-  - Strips `..` components
-  - Rejects absolute paths
-  - Replaces reserved names with `_reserved_`
-  - Removes ADS suffixes (`:stream`)
-  - Truncates to 255 chars per component
-  - Uses `\\?\` prefix on Windows for long paths
-- Destination verified on different physical device (by device ID, not path)
-- Atomic write: temp file → `fsync` → rename
-- No execute bit on recovered files
+- Recovered paths are rebuilt from sanitized relative components. Traversal
+  components are dropped, colons and other path syntax are replaced, reserved
+  Windows names are escaped, components are limited to 100 bytes, and at most
+  12 directory levels are kept.
+- Existing symlink directories are refused and the resolved parent is checked
+  against the canonical destination root. New files use `create_new`, so an
+  existing output file is never overwritten. Nested output paths are flattened
+  when their combined path would exceed the writer's 230-character threshold.
+- Destination verified on a different physical disk. Linux resolves partitions,
+  device-mapper/RAID dependencies, and NVMe namespaces through sysfs; mappings
+  that cannot be proven are refused. Windows uses volume disk extents.
+- Output files are flushed and synced after writing, then re-read for hash
+  verification by default. Failed outputs are renamed with a `.partial` suffix
+  or removed if they cannot be quarantined; writes are not atomic.
+- Path checks use ordinary filesystem paths and do not prevent a concurrent
+  process with write access to the destination tree from racing a checked
+  directory. Keep the output directory under the user's control during recovery.
+- Recovered files are created without an execute bit on Unix.
 
 ### 5. CLI / GUI input handling
 

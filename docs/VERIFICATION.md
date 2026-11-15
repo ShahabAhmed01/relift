@@ -64,6 +64,22 @@ cargo test -p relift-core carve 2>&1 | tail -20
 # Evidence: [test output]
 ```
 
+#### Linux physical-disk ancestry hardening (2026-11-15)
+
+- Added synthetic sysfs tests proving that two partitions resolve to their
+  shared parent disk, different disks remain distinct, NVMe namespaces on one
+  controller share an identity, and virtual devices without dependencies are
+  rejected.
+- `cargo test --workspace --all-targets`: passed on Windows (62 tests total).
+- `cargo check -p relift-core --all-targets --target x86_64-unknown-linux-gnu`:
+  passed.
+- A Linux-only fixture test also exercises `/sys/dev/block` symlink resolution;
+  cross-target checking compiles it, but this Windows host cannot execute it.
+- `cargo clippy -p relift-core --all-targets --target x86_64-unknown-linux-gnu
+  -- -D warnings`: passed.
+- This is compile-time and synthetic mapping evidence only. The Linux guard has
+  not been exercised against mounted raw devices; G5 remains pending.
+
 ### G6: Performance Benchmarks
 ```bash
 cargo bench -p relift-bench 2>&1 | tail -30
@@ -196,6 +212,7 @@ pipx install relift-cli      # Python
 | Date | Gate | Status | Verifier | Notes |
 |------|------|--------|----------|-------|
 | 2024-11-14 | All | PENDING | — | Initial document creation |
+| 2026-11-15 | G5 | PARTIAL | Local agent | Linux ancestry mapping tests and cross-target checks pass; raw-device runtime validation remains pending. |
 
 ---
 
