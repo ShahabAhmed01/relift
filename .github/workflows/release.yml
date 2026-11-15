@@ -163,11 +163,9 @@ jobs:
             -DestinationPath "dist/${{ matrix.archive }}"
 
       - name: Upload CLI archive to release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          files: dist/${{ matrix.archive }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "dist/${{ matrix.archive }}" --repo "${{ github.repository }}" --clobber
 
   checksums:
     name: Verify assets and publish checksums
