@@ -22,8 +22,11 @@ deliberate, and tracked.
 - Journal replay: not performed; orphan and deleted-inode recovery only.
 
 ### HFS+, APFS, Btrfs, XFS
-- Parsers are implemented and wired into scan, but there are no deterministic
-  fixtures or end-to-end recovery tests for them. Treat output as experimental.
+- Parsers are implemented and wired into scan. Deterministic probe fixtures
+  now exist and are covered by end-to-end detection tests
+  (`probe_identifies_hfsplus`, `probe_identifies_apfs`, `probe_identifies_btrfs`,
+  `probe_identifies_xfs`). Metadata-based deleted-file recovery is not
+  implemented; output is experimental and identified-only.
 - APFS/Btrfs snapshots are not enumerated as separate recovery sources.
 - XFS inode-number reconstruction is approximate for B+tree leaf records.
 

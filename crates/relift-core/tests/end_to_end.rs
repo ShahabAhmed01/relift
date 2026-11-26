@@ -10,8 +10,11 @@ use std::path::{Path, PathBuf};
 use relift_core::candidate::EntryState;
 use relift_core::recover::{run_recovery, RecoverOptions, RecoveryStatus};
 use relift_core::scan::{run_scan, ScanProgress, ScanRequest};
-use relift_core::source::FileSource;
-use relift_testkit::{exfat_image, ext4_image, fat32_image, ntfs_image, sha256_hex, FixtureFile};
+use relift_core::source::{FileSource, ReadOnlySource};
+use relift_testkit::{
+    apfs_image, btrfs_image, exfat_image, ext4_image, fat32_image, hfsplus_image, ntfs_image,
+    sha256_hex, xfs_image, FixtureFile,
+};
 
 fn case_dir(label: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("relift-e2e-{}-{label}", std::process::id()));
@@ -187,5 +190,84 @@ fn no_unexpected_files_are_written_outside_the_destination() {
     assert!(path_exists(&dest, "deleted.txt"));
     // The original image must still be byte-identical after recovery.
     assert!(base.join("source.img").exists());
+    let _ = fs::remove_dir_all(&base);
+}
+
+/// Probe identifies an XFS volume from its sector-0 magic.
+#[test]
+fn probe_identifies_xfs() {
+    let fixture = xfs_image();
+    let base = case_dir("probe-xfs");
+    let image_path = base.join("source.img");
+    fs::write(&image_path, fixture.image()).unwrap();
+    let src = FileSource::open(&image_path).unwrap();
+    let vol_ref = relift_core::fs::VolumeRef::new(0, src.len());
+    let info = relift_core::fs::probe(&src, &vol_ref).unwrap();
+    assert_eq!(info.kind, relift_core::fs::FsKind::Xfs);
+    let _ = fs::remove_dir_all(&base);
+}
+
+/// Probe identifies a Btrfs volume from its superblock magic.
+#[test]
+fn probe_identifies_btrfs() {
+    let fixture = btrfs_image();
+    let base = case_dir("probe-btrfs");
+    let image_path = base.join("source.img");
+    fs::write(&image_path, fixture.image()).unwrap();
+    let src = FileSource::open(&image_path).unwrap();
+    let vol_ref = relift_core::fs::VolumeRef::new(0, src.len());
+    let info = relift_core::fs::probe(&src, &vol_ref).unwrap();
+    assert_eq!(info.kind, relift_core::fs::FsKind::Btrfs);
+    let _ = fs::remove_dir_all(&base);
+}
+
+/// Probe identifies an HFS+ volume from its volume-header magic.
+#[test]
+fn probe_identifies_hfsplus() {
+    let fixture = hfsplus_image();
+    let base = case_dir("probe-hfsplus");
+    let image_path = base.join("source.img");
+    fs::write(&image_path, fixture.image()).unwrap();
+    let src = FileSource::open(&image_path).unwrap();
+    let vol_ref = relift_core::fs::VolumeRef::new(0, src.len());
+    let info = relift_core::fs::probe(&src, &vol_ref).unwrap();
+    assert_eq!(info.kind, relift_core::fs::FsKind::HfsPlus);
+    let _ = fs::remove_dir_all(&base);
+}
+
+/// Probe identifies an APFS volume from its container magic.
+#[test]
+fn probe_identifies_apfs() {
+    let fixture = apfs_image();
+    let base = case_dir("probe-apfs");
+    let image_path = base.join("source.img");
+    fs::write(&image_path, fixture.image()).unwrap();
+    let src = FileSource::open(&image_path).unwrap();
+    let vol_ref = relift_core::fs::VolumeRef::new(0, src.len());
+    let info = relift_core::fs::probe(&src, &vol_ref).unwrap();
+    assert_eq!(info.kind, relift_core::fs::FsKind::Apfs);
+    let _ = fs::remove_dir_all(&base);
+}
+
+/// scan_metadata reports experimental filesystems as identified-but-not-recovered.
+#[test]
+fn scan_metadata_reports_experimental_without_recovery() {
+    let fixture = xfs_image();
+    let base = case_dir("scan-xfs");
+    let image_path = base.join("source.img");
+    fs::write(&image_path, fixture.image()).unwrap();
+    let src = FileSource::open(&image_path).unwrap();
+    let vol_ref = relift_core::fs::VolumeRef::new(0, src.len());
+    let mut sink = relift_core::fs::VecSink::default();
+    let summary = relift_core::fs::scan_metadata(
+        &src,
+        &vol_ref,
+        &relift_core::fs::FsScanOptions::default(),
+        &mut sink,
+    )
+    .unwrap();
+    assert_eq!(summary.kind, Some(relift_core::fs::FsKind::Xfs));
+    // Experimental parsers should not emit candidates from metadata alone.
+    assert_eq!(sink.items.len(), 0);
     let _ = fs::remove_dir_all(&base);
 }

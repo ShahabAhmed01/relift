@@ -1805,6 +1805,132 @@ pub fn ext4_image() -> Ext4Fixture {
     }
 }
 
+// ---------------------------------------------------------------------------
+// XFS probe fixture
+// ---------------------------------------------------------------------------
+
+/// XFS probe fixture: sector 0 carries the XFS magic "XFSB". Both the
+/// top-level probe (offset 0) and xfs::scan (offset 0) check the same
+/// location. Metadata recovery is experimental and not covered here.
+#[derive(Debug, Clone)]
+pub struct XfsFixture {
+    pub bytes: Vec<u8>,
+}
+
+impl XfsFixture {
+    pub fn image(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// Build a minimal XFS probe image (1 MiB).
+pub fn xfs_image() -> XfsFixture {
+    let mut bytes = vec![0u8; 1024 * 1024];
+    bytes[0..4].copy_from_slice(b"XFSB"); // magic at offset 0
+    XfsFixture { bytes }
+}
+
+// ---------------------------------------------------------------------------
+// Btrfs probe fixture
+// ---------------------------------------------------------------------------
+
+/// Btrfs probe fixture: magic "_BHRfS_M" at two offsets because the top-level
+/// probe checks buf[0x10040] while btrfs::scan checks buf[256..264] of the
+/// 0x10000 read (absolute 0x10100).
+#[derive(Debug, Clone)]
+pub struct BtrfsFixture {
+    pub bytes: Vec<u8>,
+}
+
+impl BtrfsFixture {
+    pub fn image(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// Build a minimal Btrfs probe image (0x11000 bytes = 69632).
+pub fn btrfs_image() -> BtrfsFixture {
+    let mut bytes = vec![0u8; 0x11000];
+    // Top-level probe: buf[0x10040..0x10048] => absolute 0x10040.
+    bytes[0x10040..0x10048].copy_from_slice(b"_BHRfS_M");
+    // btrfs::scan: buf[256..264] of the 0x10000 read => absolute 0x10100.
+    bytes[0x10100..0x10108].copy_from_slice(b"_BHRfS_M");
+    BtrfsFixture { bytes }
+}
+
+// ---------------------------------------------------------------------------
+// HFS+ probe fixture
+// ---------------------------------------------------------------------------
+
+/// HFS+ probe fixture: magic 0x482B ("H+") at two offsets because the
+/// top-level probe checks u16 at buf[1026] while hfs::scan checks buf[0..2]
+/// of the 1024 read (absolute 1024).
+#[derive(Debug, Clone)]
+pub struct HfsPlusFixture {
+    pub bytes: Vec<u8>,
+}
+
+impl HfsPlusFixture {
+    pub fn image(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// Build a minimal HFS+ probe image (2048 bytes).
+pub fn hfsplus_image() -> HfsPlusFixture {
+    let mut bytes = vec![0u8; 2048];
+    let off = 1024usize;
+    // hfs::scan reads header at offset 1024, magic at buf[0..2].
+    bytes[off..off + 2].copy_from_slice(&0x482Bu16.to_be_bytes());
+    // Top-level probe checks u16 at buf[1026] => absolute 1026.
+    bytes[off + 2..off + 4].copy_from_slice(&0x482Bu16.to_be_bytes());
+    // Five BTreeRef structs at offsets 112, 160, 208, 256, 304 within header.
+    for btree_off in [112usize, 160, 208, 256, 304] {
+        let abs = off + btree_off;
+        bytes[abs + 14..abs + 16].copy_from_slice(&4096u16.to_be_bytes()); // node_size
+        bytes[abs + 18..abs + 22].copy_from_slice(&1u32.to_be_bytes()); // total_nodes
+        bytes[abs + 36] = 0; // btree_type
+        bytes[abs + 37] = 0; // key_compare_type
+    }
+    HfsPlusFixture { bytes }
+}
+
+// ---------------------------------------------------------------------------
+// APFS probe fixture
+// ---------------------------------------------------------------------------
+
+/// APFS probe fixture: "NXSB" container magic at two offsets (top-level probe
+/// checks buf[1027], apfs::scan checks buf[0]), plus "APSB" volume magic at
+/// block_size*2.
+#[derive(Debug, Clone)]
+pub struct ApfsFixture {
+    pub bytes: Vec<u8>,
+}
+
+impl ApfsFixture {
+    pub fn image(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// Build a minimal APFS probe image (container + volume superblocks).
+pub fn apfs_image() -> ApfsFixture {
+    let block_size: u32 = 4096;
+    let mut bytes = vec![0u8; block_size as usize * 3];
+
+    // Container superblock at offset 0.
+    bytes[0..4].copy_from_slice(b"NXSB"); // apfs::scan checks buf[0..4]
+    bytes[24..28].copy_from_slice(&block_size.to_le_bytes()); // block_size
+    bytes[32..40].copy_from_slice(&(block_size as u64 * 3).to_le_bytes()); // total_blocks > 0
+    bytes[1027..1031].copy_from_slice(b"NXSB"); // top-level probe checks buf[1027..1031]
+
+    // Volume superblock at block_size * 2 = 8192.
+    let vol_off = block_size as usize * 2;
+    bytes[vol_off..vol_off + 4].copy_from_slice(b"APSB"); // volume magic
+
+    ApfsFixture { bytes }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
