@@ -5,10 +5,9 @@ use relift_core::fs::{scan_metadata, VolumeRef, VecSink, FsScanOptions};
 use relift_core::source::{FileSource, ReadOnlySource};
 use std::io::Write;
 
-/// Fuzz filesystem probing and metadata recovery with arbitrary bytes.
-///
-/// Probe and metadata scanning must never panic on malformed images, even for
-/// filesystems that are only "identified but not implemented."
+// Fuzz filesystem probing and metadata recovery with arbitrary bytes.
+// Probe and metadata scanning must never panic on malformed images, even for
+// filesystems that are only "identified but not implemented."
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {
         return;
