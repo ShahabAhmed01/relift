@@ -59,8 +59,12 @@ A session is a directory, not a database:
 
 Candidate records stream to disk rather than being accumulated into one
 in-memory result list. A completed session can be listed, recovered, or
-reported again. Resuming an interrupted scan from a checkpoint is not
-implemented.
+reported again. `session.json` also stores a volume-level checkpoint: after a
+volume's metadata and carving work is flushed and synced, the checkpoint records
+the volume index and the durable length of `candidates.jsonl`. `relift scan
+--resume` truncates back to that boundary, rebuilds the summary from the
+surviving records, and continues. The interrupted volume is rescanned from its
+start; there is no chunk-level checkpoint.
 
 ## Recovery and imaging writes
 
@@ -81,9 +85,9 @@ overwrite an existing destination.
 
 The CLI exposes the complete current command set and machine-readable JSON.
 The GUI covers source selection, scanning, result review, preview, and recovery.
-Imaging and report-format selection remain CLI-only. The GUI can stop a scan
-and keep partial results; it does not pause and resume a running scan. See
-[`CLI.md`](CLI.md) and [`GUI.md`](GUI.md) for user-facing behavior.
+Imaging, report-format selection, and checkpoint resume remain CLI-only. The
+GUI can stop a scan and keep partial results; it does not pause a running scan.
+See [`CLI.md`](CLI.md) and [`GUI.md`](GUI.md) for user-facing behavior.
 
 ## Verification boundaries
 

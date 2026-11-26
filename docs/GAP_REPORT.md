@@ -89,7 +89,8 @@ deliberate, and tracked.
 ## Interface gaps
 
 - No TUI. The CLI and Tauri desktop GUI are the supported interfaces.
-- The GUI exposes stop/cancel but not pause/resume for scans.
+- The GUI exposes stop/cancel but not live pause/resume for scans; checkpoint
+  resume is CLI-only via `relift scan --resume`.
 - The GUI does not export JSON/CSV/HTML reports; use `relift report` on the
   session directory.
 

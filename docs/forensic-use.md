@@ -2,7 +2,8 @@
 
 Relift is a data-recovery utility, not a certified forensic acquisition tool.
 It has no case-management mode, DFXML export, source-range hashing, investigator
-fields, hardware write-blocker control, or checkpoint-resume workflow. Do not
+fields, hardware write-blocker control, or forensic-grade checkpointing. Scan
+resume is a crash-recovery convenience, not a chain-of-custody control. Do not
 describe its output as a validated forensic image or a complete chain-of-
 custody record.
 

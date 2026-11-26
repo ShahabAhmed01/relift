@@ -1,0 +1,30 @@
+[package]
+name = "relift-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.relift-core]
+path = ".."
+
+[[bin]]
+name = "fuzz_carver"
+path = "fuzz_targets/fuzz_carver.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_filesystem"
+path = "fuzz_targets/fuzz_filesystem.rs"
+test = false
+doc = false
+bench = false

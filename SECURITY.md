@@ -2,7 +2,7 @@
 
 ## Release support
 
-The v0.1.0 GitHub release is a draft, not a published stable release. There is no formal security-support window. Check the repository for current status before use.
+The [v0.1.0 GitHub preview](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) is published as a prerelease. Its assets are unsigned and macOS bundles are not notarized. `SHA256SUMS` checks file integrity but does not authenticate the publisher. There is no formal security-support window. Check the repository for current status before use.
 
 ## Report a vulnerability
 

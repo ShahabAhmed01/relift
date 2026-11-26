@@ -64,6 +64,20 @@ pub struct ManualVolume {
     pub length: u64,
 }
 
+/// Crash-safe scan progress.
+///
+/// A checkpoint is advanced only after a whole volume has been scanned and its
+/// candidates have been flushed to disk. `candidates_len` is the byte length of
+/// `candidates.jsonl` at that boundary; on resume, anything after it belongs to
+/// an interrupted volume and is discarded before the volume is scanned again.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ScanCheckpoint {
+    #[serde(default)]
+    pub completed_volumes: Vec<u32>,
+    #[serde(default)]
+    pub candidates_len: u64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionSummary {
     pub candidates: u64,
@@ -161,6 +175,10 @@ pub struct SessionHeader {
     pub status: SessionStatus,
     pub source: SourceIdentity,
     pub options: SessionOptions,
+    /// Present for sessions written by this build. Older sessions have no
+    /// checkpoint and are deliberately not resumable.
+    #[serde(default)]
+    pub checkpoint: Option<ScanCheckpoint>,
     pub partition_table: Option<PartitionTable>,
     pub filesystems: Vec<FilesystemReport>,
     pub summary: SessionSummary,
@@ -241,6 +259,7 @@ impl Session {
             status: SessionStatus::Scanning,
             source,
             options,
+            checkpoint: Some(ScanCheckpoint::default()),
             partition_table: None,
             filesystems: Vec::new(),
             summary: SessionSummary::default(),
@@ -265,6 +284,95 @@ impl Session {
         session.write_readme()?;
         session.save_header()?;
         Ok(session)
+    }
+
+    /// Reopen an interrupted session for writing.
+    ///
+    /// Candidates beyond the last checkpoint are truncated, the summary is
+    /// rebuilt from the surviving lines, and candidate IDs continue from the
+    /// highest surviving ID. The caller is responsible for validating that the
+    /// source and options still match; see `scan::run_scan`.
+    pub fn resume(dir: impl AsRef<Path>, mut header: SessionHeader) -> Result<Self> {
+        let dir = dir.as_ref().to_path_buf();
+        let checkpoint = header.checkpoint.clone().ok_or_else(|| {
+            Error::Session(
+                "session has no scan checkpoint; start a new scan instead of resuming".into(),
+            )
+        })?;
+        let candidates_path = dir.join(CANDIDATES_FILE);
+        let file = OpenOptions::new()
+            .write(true)
+            .open(&candidates_path)
+            .map_err(|e| Error::Session(format!("open {}: {e}", candidates_path.display())))?;
+        let actual = file
+            .metadata()
+            .map_err(|e| Error::Session(format!("stat {}: {e}", candidates_path.display())))?
+            .len();
+        if checkpoint.candidates_len > actual {
+            return Err(Error::Session(format!(
+                "{} is {actual} bytes but the checkpoint records {}; the session is damaged",
+                candidates_path.display(),
+                checkpoint.candidates_len
+            )));
+        }
+        if actual > checkpoint.candidates_len {
+            file.set_len(checkpoint.candidates_len).map_err(|e| {
+                Error::Session(format!("truncate {}: {e}", candidates_path.display()))
+            })?;
+            file.sync_all()
+                .map_err(|e| Error::Session(format!("sync {}: {e}", candidates_path.display())))?;
+        }
+        drop(file);
+
+        let mut reader = CandidateReader::open(&dir)?;
+        let mut summary = SessionSummary::default();
+        let mut max_id = 0u64;
+        while let Some(candidate) = reader.next_candidate() {
+            let candidate = candidate?;
+            max_id = max_id.max(candidate.id);
+            summary.observe(&candidate);
+        }
+        header.summary = summary;
+
+        let file = OpenOptions::new()
+            .append(true)
+            .open(&candidates_path)
+            .map_err(|e| Error::Session(format!("open {}: {e}", candidates_path.display())))?;
+        Ok(Self {
+            dir,
+            header,
+            candidates: BufWriter::new(file),
+            next_id: max_id.saturating_add(1),
+            since_flush: 0,
+        })
+    }
+
+    /// Flush and fsync candidates, returning the durable file length. The
+    /// checkpoint is only meaningful when the bytes it refers to are on disk.
+    pub fn sync_candidates(&mut self) -> Result<u64> {
+        self.flush()?;
+        let file = self.candidates.get_ref();
+        file.sync_all()
+            .map_err(|e| Error::Session(format!("sync candidates: {e}")))?;
+        file.metadata()
+            .map(|m| m.len())
+            .map_err(|e| Error::Session(format!("stat candidates: {e}")))
+    }
+
+    /// Mark one volume's metadata and carving work as durable and persist the
+    /// header atomically. Candidate bytes are synced before the header rename,
+    /// so a crash can only make the checkpoint older, never newer.
+    pub fn record_volume_complete(&mut self, index: u32) -> Result<()> {
+        let len = self.sync_candidates()?;
+        let checkpoint = self
+            .header
+            .checkpoint
+            .get_or_insert_with(ScanCheckpoint::default);
+        if !checkpoint.completed_volumes.contains(&index) {
+            checkpoint.completed_volumes.push(index);
+        }
+        checkpoint.candidates_len = len;
+        self.save_header()
     }
 
     fn write_readme(&self) -> Result<()> {
@@ -593,6 +701,96 @@ mod tests {
         )
         .unwrap_err();
         assert!(e.to_string().contains("not empty"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn options() -> SessionOptions {
+        SessionOptions {
+            include_live: false,
+            carve: false,
+            max_candidates: 10,
+            volume_indices: vec![],
+            manual_volume: None,
+        }
+    }
+
+    fn emit_named(session: &mut Session, name: &str) {
+        let c = Candidate::new(
+            name,
+            3,
+            "txt",
+            DataLocation::resident(b"abc".to_vec()),
+            RecoveryMethod::MetadataOnly,
+            Confidence::verified(90, "test"),
+            "test",
+        );
+        crate::fs::CandidateSink::emit(session, c).unwrap();
+    }
+
+    #[test]
+    fn resume_truncates_to_checkpoint_and_continues_ids() {
+        let dir = std::env::temp_dir().join(format!("relift-resume-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        {
+            let mut s = Session::create(&dir, source(), options()).unwrap();
+            emit_named(&mut s, "a.txt");
+            emit_named(&mut s, "b.txt");
+            s.record_volume_complete(0).unwrap();
+            emit_named(&mut s, "c.txt");
+            s.finish(SessionStatus::Cancelled).unwrap();
+        }
+        // A process can die mid-write; the checkpoint boundary must discard the
+        // complete-but-uncommitted candidate as well as any torn tail.
+        {
+            use std::io::Write as _;
+            let mut f = OpenOptions::new()
+                .append(true)
+                .open(dir.join(CANDIDATES_FILE))
+                .unwrap();
+            f.write_all(b"{\"torn\":").unwrap();
+        }
+
+        let header = load_header(&dir).unwrap();
+        assert_eq!(
+            header.checkpoint.as_ref().unwrap().completed_volumes,
+            vec![0]
+        );
+        let mut s = Session::resume(&dir, header).unwrap();
+        assert_eq!(s.header().summary.candidates, 2);
+        assert_eq!(s.header().summary.by_format.get("txt"), Some(&2));
+
+        emit_named(&mut s, "d.txt");
+        s.finish(SessionStatus::Complete).unwrap();
+
+        let candidates = load_candidates(&dir).unwrap();
+        assert_eq!(
+            candidates.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(candidates[2].name, "d.txt");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resume_refuses_a_candidates_file_shorter_than_its_checkpoint() {
+        let dir = std::env::temp_dir().join(format!("relift-resume-short-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        {
+            let mut s = Session::create(&dir, source(), options()).unwrap();
+            emit_named(&mut s, "a.txt");
+            s.record_volume_complete(0).unwrap();
+            s.finish(SessionStatus::Cancelled).unwrap();
+        }
+        let header = load_header(&dir).unwrap();
+        let path = dir.join(CANDIDATES_FILE);
+        OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(1)
+            .unwrap();
+        let e = Session::resume(&dir, header).unwrap_err();
+        assert!(e.to_string().contains("damaged"), "{e}");
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -1,8 +1,9 @@
 # Troubleshooting
 
 Use the command reference in [`CLI.md`](CLI.md) for available flags. Relift does
-not implement `--resume`, `--max-mem`, `--threads`, `--rate-limit`, image map
-files, or a forensic mode.
+not implement `--max-mem`, `--threads`, `--rate-limit`, image map files, or a
+forensic mode. Scan resume is available as `scan --resume`; it is not a live
+pause control.
 
 ## Device access
 
@@ -38,9 +39,12 @@ existing session's files.
 
 ### The scan is interrupted
 
-Candidates already written to the session are retained. A later scan cannot
-resume from the previous scan's checkpoint; start a new scan in a new session.
-The GUI's stop action cancels scanning and keeps the results already recorded.
+Candidates already written to the session are retained. Continue the same
+session with `relift scan <source> --session <dir> --resume`; the source must be
+unchanged. Resume skips volumes already completed and rescans the interrupted
+volume from its start, discarding candidates written after the last completed
+volume. The GUI's stop action cancels scanning and keeps the results already
+recorded; it has no resume control.
 
 ### The source changes before recovery
 

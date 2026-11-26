@@ -21,6 +21,6 @@ This replaces the original planning draft, which described features that were no
 
 ## Deferred product work
 
-Checkpoint resume, multi-pass imaging maps, GUI report export, and additional image/container formats remain unimplemented. Any new carver or filesystem parser needs deterministic fixtures and a documented evidence level. TUI and MCP support remain deferred.
+Checkpoint resume for scans is implemented at volume granularity. Multi-pass imaging maps, GUI report export, and additional image/container formats remain unimplemented. Any new carver or filesystem parser needs deterministic fixtures and a documented evidence level. TUI and MCP support remain deferred.
 
 Do not run scans or recovery against a person's physical device without their explicit confirmation of source and destination. Always start with a dry run and keep recovery output on a different physical volume.

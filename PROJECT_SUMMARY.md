@@ -17,7 +17,7 @@ Relift is a Rust command-line and Tauri desktop application for scanning raw dis
 
 The current support and verification boundaries are maintained in docs/support-matrix.md and docs/VERIFICATION.md. FAT, exFAT, NTFS and ext2/3/4 have synthetic fixture coverage. HFS+, APFS, Btrfs and XFS parsers are experimental. Signature carving emits only candidates accepted by registered validators. FLAC, RAR5, ZIP64 and OLE are not emitted.
 
-Only raw images are supported. Imaging is a single copy pass; there is no map-file resume. Sessions use JSON and JSONL files; interrupted scans do not resume from checkpoints. The GUI supports source selection, scan progress, result filtering and recovery; imaging and report export remain CLI-only.
+Only raw images are supported. Imaging is a single copy pass; there is no map-file resume. Sessions use JSON and JSONL files; a cancelled or crashed scan can be continued with `relift scan --resume` (volume-level checkpoint). The GUI supports source selection, scan progress, result filtering and recovery; imaging, report export, and resume remain CLI-only.
 
 ## Verification
 

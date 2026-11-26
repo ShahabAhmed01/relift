@@ -33,7 +33,8 @@ relift scan <SOURCE> --session <DIR> [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `<SOURCE>` | Disk image path or raw device (e.g., `image.dd`, `\\.\PhysicalDrive1`) |
-| `--session <DIR>` | New or empty directory for session output (required) |
+| `--session <DIR>` | New or empty directory for session output; an existing interrupted session with `--resume` (required) |
+| `--resume` | Continue an interrupted session. Uses the session's recorded options and requires an unchanged source |
 | `--mode <MODE>` | Scan preset: `quick` (metadata only) or `deep` (metadata + validating carving) (default: `quick`) |
 | `--live` | Also list files that are still allocated |
 | `--carve` | Run signature carving in addition to metadata recovery (implied by `--mode deep`) |
@@ -52,12 +53,25 @@ relift scan /dev/sdb --session ./session
 # Deep scan with validating signature carving
 relift scan image.dd --session ./session --mode deep
 
+# Continue a cancelled or crashed scan (the source must be unchanged)
+relift scan image.dd --session ./session --resume
+
 # Scan only a specific volume index
 relift scan /dev/sdb --session ./session --volume 2
 
 # Manual volume range
 relift scan image.dd --session ./session --offset 1048576 --length 1000000000
 ```
+
+**Resume semantics.** The checkpoint advances only after a whole volume has
+been scanned and its candidates have been flushed to disk. `--resume` skips
+volumes already recorded as complete and rescans the interrupted volume from
+its start; candidates written after the last completed volume are discarded.
+The session's recorded options (carving, live entries, volume selection, manual
+range, candidate limit) are reused. The source is re-opened read-only and its
+size and sampled fingerprint must match the session, otherwise resume is
+refused with exit code 4. Live pause/resume is not supported, and imaging has
+no resumable map-file workflow.
 
 ### `relift list`
 
@@ -225,7 +239,7 @@ The following are documented in `AGENTS.md` as planned work and are **not**
 part of the current CLI:
 
 - `relift info`, `relift verify`, `relift session`, `relift self-update`
-- `--mode formatted`, `--mode lost-partition`, `--resume` on `scan`
+- `--mode formatted`, `--mode lost-partition`
 - `--quiet`, `--dry-run` on `scan`
 - `--preserve-paths`, `--preserve-times`, `--on-conflict` on `recover`
 - `--map`, `--passes`, `--rate-limit` on `image`

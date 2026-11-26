@@ -4,6 +4,20 @@ Notable changes to Relift are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Checkpoint-based scan resume: `relift scan --resume` continues a cancelled or
+  crashed scan after revalidating source identity (size, kind, fingerprint).
+  Completed volumes are skipped; the interrupted volume is rescanned from its
+  start. Candidate IDs are dense and `candidates.jsonl` is byte-identical to an
+  uninterrupted run.
+- Fuzz harnesses for the carving validator and filesystem scanner in `fuzz/`.
+- Benchmark results and methodology in `docs/benches/results/`.
+
+### Changed
+
+- `scan` accepts `--session` pointing to an existing interrupted session when
+  combined with `--resume`.
 ## [0.1.0] - 2026-11-15 (preview)
 
 ### Added
@@ -31,4 +45,4 @@ Notable changes to Relift are recorded here.
 - Release assets are unsigned and not notarized. Package-manager submissions are not accepted or verified.
 - SHA256SUMS records asset hashes but does not authenticate the publisher.
 
-See [the v0.1.0 preview release notes](docs/releases/v0.1.0.md) for download verification and safety information.
+See [the v0.1.0 preview release notes](docs/releases/v0.1.0.md) and [published release](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) for downloads, checksum verification, and safety information.

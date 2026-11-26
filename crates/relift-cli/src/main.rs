@@ -89,9 +89,14 @@ struct ScanArgs {
     /// Disk image or raw device path.
     source: PathBuf,
 
-    /// New or empty directory for session output.
+    /// New or empty directory for session output (existing directory with --resume).
     #[arg(long, value_name = "DIR")]
     session: PathBuf,
+
+    /// Resume an interrupted scan in an existing session directory. The
+    /// session's recorded scan options are used.
+    #[arg(long)]
+    resume: bool,
 
     /// Scan preset: quick (metadata only) or deep (metadata + carving).
     #[arg(long, value_enum, default_value_t = ScanMode::Quick, value_name = "MODE")]
@@ -263,6 +268,7 @@ fn cmd_scan(args: ScanArgs, json: bool) -> anyhow::Result<u8> {
     request.volume_indices = args.volume.clone();
     request.manual_volume = manual_volume;
     request.max_candidates = args.max_candidates.max(1);
+    request.resume = args.resume;
 
     let mut printer = Progress::new(!json);
     let header = {

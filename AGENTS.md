@@ -28,8 +28,9 @@ npm ci
 npm run tauri build
 ```
 
-Package-manager submissions (Homebrew, winget, Scoop, AUR, Flatpak, Snap) are
-templates only — no release artifacts exist yet.
+The v0.1.0 preview is published with unsigned release artifacts and a SHA256SUMS
+manifest on GitHub. Package-manager submissions (Homebrew, winget, Scoop, AUR,
+Flatpak, Snap) remain templates only and have not been submitted or verified.
 
 ## Safety rules (MUST follow)
 

@@ -63,9 +63,11 @@ the device is stable enough to read.
 
 ### Can I pause or resume a scan?
 
-No. A completed scan session can be reused, but checkpoint-based resume of an
-interrupted scan is not implemented. The GUI can stop a scan and keep the
-results already written to the session.
+Relift cannot pause a running scan. If a scan is cancelled or the process
+crashes, `relift scan <source> --session <dir> --resume` continues it after
+revalidating the source. Completed volumes are skipped and the interrupted
+volume is rescanned from its start, so that volume's candidates are regenerated
+rather than duplicated. The GUI can stop a scan but does not expose resume.
 
 ## Using Relift
 
@@ -145,8 +147,9 @@ service is required.
 
 ### Is there a stable release or package-manager installer?
 
-No stable release has been published. The repository currently has a draft
-release with unsigned assets. Homebrew, winget, Scoop, AUR, Flatpak, and Snap
+The [v0.1.0 preview](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0)
+is published with unsigned assets and a SHA256SUMS file. No stable, signed, or
+notarized release is available. Homebrew, winget, Scoop, AUR, Flatpak, and Snap
 submissions have not been completed. See [`GAP_REPORT.md`](GAP_REPORT.md).
 
 ## Validation limits

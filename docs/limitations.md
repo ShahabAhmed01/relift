@@ -103,10 +103,11 @@ are not carved. See the constants in `crates/relift-core/src/carve.rs`.
 ### Sessions
 - Sessions are directories with `session.json`, `candidates.jsonl`, and
   `recovered.jsonl`; they do not use SQLite.
-- Completed sessions can be listed, recovered, and reported later. Resuming an
-  interrupted scan from a checkpoint is not implemented.
+- Completed sessions can be listed, recovered, and reported later. A cancelled
+  or crashed scan can be continued with `relift scan --resume`; the checkpoint
+  is volume-level, so the interrupted volume is rescanned from its start.
 - Recovery refuses a source whose size or fingerprint no longer matches the
-  identity recorded in the session.
+  identity recorded in the session. Scan resume applies the same check.
 
 ## Performance
 

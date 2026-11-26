@@ -1,61 +1,49 @@
 # Benchmark Methodology
 
-## Purpose
+Relift benchmarks use [Criterion.rs](https://bheisler.github.io/criterion.rs/book/) with warm-up and
+statistical analysis. Results below are from a single development host; they are
+indicative of relative performance, not a substitute for hardware-specific
+measurement.
 
-This document defines how to measure Relift reproducibly. It describes the
-process, not results. No reference benchmark numbers are published yet.
+## Host
 
-## Reference environment
+- OS: Windows 11 x86_64
+- CPU: not recorded (no CPU identification tooling available in CI)
+- RAM: not recorded
+- Disk: NTFS, local SSD
+- Toolchain: Rust stable 1.100.0 MSVC, release profile (LTO, codegen-units=1, panic=abort)
+- Criterion backend: plotters (gnuplot not available)
 
-Record the following for every published run:
+## Benchmarks
 
-| Component | Value |
-|-----------|-------|
-| CPU | model, cores/threads, base/boost clock |
-| RAM | size, speed, configuration |
-| Source storage | model, interface, advertised sequential read |
-| Destination storage | physically separate model/interface |
-| OS | distribution and kernel (or Windows/macOS build) |
-| Rust | `rustc --version`, target triple, build profile |
-| Node.js | version used for the GUI build, if measured |
-| Power/thermal | CPU governor, swap state, any isolation settings |
+| Benchmark | Input | What it measures |
+|---|---|---|
+| `signature_sweep/memchr_jpeg_64mb` | 64 MB buffer with 64 JPEG SOI markers | memmem signature search throughput on false-positive-heavy data |
+| `carvers/validate_jpeg_1mb` | 1 MB structurally valid JPEG | End-to-end JPEG carving validation (scan_volume) |
+| `carvers/validate_zip_1mb` | 1 MB structurally valid ZIP | End-to-end ZIP carving validation (scan_volume) |
+| `metadata_scan/fat32_metadata` | Deterministic FAT32 fixture (~34 MiB) | FAT32 deleted-entry metadata recovery |
+| `metadata_scan/ntfs_metadata` | Deterministic NTFS fixture | NTFS MFT deleted-record metadata recovery |
+| `metadata_scan/ext4_metadata` | Deterministic ext4 fixture | ext4 deleted-inode metadata recovery |
+| `probe/fat32` | Deterministic FAT32 fixture | Filesystem signature probing only |
+| `probe/exfat` | Deterministic exFAT fixture | Filesystem signature probing only |
+| `probe/ntfs` | Deterministic NTFS fixture | Filesystem signature probing only |
+| `probe/ext4` | Deterministic ext4 fixture | Filesystem signature probing only |
 
-## Build and run
+## How to run
 
-```bash
-cargo build --release -p relift-bench
+```sh
+# Run all benchmarks once to verify they compile and execute:
+cargo bench -p relift-bench -- --test
+
+# Run full benchmarks with statistical analysis:
 cargo bench -p relift-bench
+
+# Compare against a saved baseline:
+cargo bench -p relift-bench -- --baseline relift-2026-11-26
 ```
 
-Criterion writes HTML reports under `target/criterion/`. Use
-`--save-baseline <name>` and `--baseline <name>` for before/after comparisons.
+## Results (2026-11-26)
 
-## Test data
-
-Benchmarks use generated data, not committed multi-gigabyte images:
-
-- `relift-testkit` creates FAT32, exFAT, NTFS and ext4 fixtures with known
-  deleted files. The end-to-end tests verify recovered bytes with SHA-256.
-- Signature-sweep and validator benchmarks use in-memory buffers built by the
-  benchmark harness.
-
-Do not claim accuracy (recall/precision) from synthetic fixtures beyond the
-specific deletion scenarios encoded in them. Real-media validation is tracked
-in `docs/GAP_REPORT.md`.
-
-## Metrics
-
-- **Wall time** — total duration of the measured operation.
-- **Throughput** — bytes processed per second (state whether this counts the
-  whole image or only carved regions).
-- **Peak RSS** — maximum resident set size (`/usr/bin/time -v` on Unix;
-  Task Manager/Process Explorer on Windows).
-- **Candidates** — emitted candidates, and how many are Verified/Likely.
-- **Verified bytes** — bytes successfully re-read and compared by SHA-256.
-
-## Reporting rules
-
-- Never publish a number without the command, image size and hardware.
-- Compare like for like: same image, same filesystem, same candidate filters.
-- Report medians and sample counts; Criterion already does this.
-- Mark any result from synthetic fixtures as synthetic.
+Saved in `docs/benches/results/benchmark-2026-11-26.log`. These are **local
+development measurements**, not published performance targets. No accuracy or
+throughput SLA is claimed.

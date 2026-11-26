@@ -42,5 +42,6 @@ their implementation can be described as production-validated.
 - No real-volume recovery study or labeled precision/recall corpus exists.
 - The Criterion suite is an internal synthetic smoke benchmark; no public
   hardware performance comparison has been published.
-- The current GitHub release is a draft. Package-manager submissions, signing,
-  notarization, docs-site deployment, and launch publication remain incomplete.
+- The GitHub v0.1.0 preview is published with unsigned assets and a checksum
+  manifest. Package-manager submissions, signing, notarization, and docs-site
+  deployment/indexing remain incomplete.

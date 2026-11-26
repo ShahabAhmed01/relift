@@ -70,6 +70,84 @@ fn usage_and_runtime_failures_have_documented_exit_codes() {
 }
 
 #[test]
+fn scan_resume_continues_a_cancelled_session_and_rejects_a_changed_source() {
+    let temp = TestDirectory::new();
+    let image = temp.path().join("source.img");
+    let session = temp.path().join("session");
+    let bytes = vec![0u8; 1024 * 1024];
+    fs::write(&image, &bytes).unwrap();
+
+    let scan = Command::new(env!("CARGO_BIN_EXE_relift"))
+        .arg("--json")
+        .arg("scan")
+        .arg(&image)
+        .arg("--session")
+        .arg(&session)
+        .output()
+        .expect("launch relift CLI");
+    assert_eq!(scan.status.code(), Some(0));
+
+    rewind_session_to_cancelled(&session);
+
+    let resume = Command::new(env!("CARGO_BIN_EXE_relift"))
+        .arg("--json")
+        .arg("scan")
+        .arg(&image)
+        .arg("--session")
+        .arg(&session)
+        .arg("--resume")
+        .output()
+        .expect("launch relift CLI");
+    assert_eq!(
+        resume.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&resume.stderr)
+    );
+    let value: Value = serde_json::from_slice(&resume.stdout).expect("resume JSON");
+    assert_eq!(value["status"], "complete");
+    assert_eq!(value["checkpoint"]["completed_volumes"][0], 0);
+
+    rewind_session_to_cancelled(&session);
+    let mut changed = bytes;
+    changed[0] = 1;
+    fs::write(&image, changed).unwrap();
+
+    let rejected = Command::new(env!("CARGO_BIN_EXE_relift"))
+        .arg("--json")
+        .arg("scan")
+        .arg(&image)
+        .arg("--session")
+        .arg(&session)
+        .arg("--resume")
+        .output()
+        .expect("launch relift CLI");
+    assert_eq!(rejected.status.code(), Some(4));
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr).contains("source"),
+        "stderr: {}",
+        String::from_utf8_lossy(&rejected.stderr)
+    );
+}
+
+/// Rewind a completed session to the state left by an interruption before its
+/// first volume was committed, without needing to kill a process mid-scan.
+fn rewind_session_to_cancelled(session: &std::path::Path) {
+    let header_path = session.join("session.json");
+    let mut header: Value =
+        serde_json::from_slice(&fs::read(&header_path).unwrap()).expect("session header JSON");
+    header["status"] = Value::String("cancelled".into());
+    header["finished"] = Value::Null;
+    header["filesystems"] = serde_json::json!([]);
+    header["checkpoint"] = serde_json::json!({
+        "completed_volumes": [],
+        "candidates_len": 0
+    });
+    fs::write(&header_path, serde_json::to_vec_pretty(&header).unwrap()).unwrap();
+    fs::write(session.join("candidates.jsonl"), b"").unwrap();
+}
+
+#[test]
 fn scan_json_is_valid_and_recovery_rejects_a_changed_source() {
     let temp = TestDirectory::new();
     let image = temp.path().join("source.img");

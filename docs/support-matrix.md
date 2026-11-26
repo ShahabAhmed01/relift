@@ -80,7 +80,7 @@ separately classified from their container families.
 | Quick scan (metadata) | ✓ | ✓ | `--mode quick` |
 | Deep scan (carve) | ✓ | ✓ | `--mode deep` / `--carve` |
 | Keep partial results after stopping a scan | ✓ | ✓ | Scan cancellation preserves candidates already written to the session |
-| Resume an interrupted scan from a checkpoint | ✗ | ✗ | Not implemented |
+| Resume an interrupted scan from a checkpoint | ✓ | ✗ | CLI `--resume`; volume-level checkpoint. Completed volumes are skipped and the interrupted volume is rescanned from its start. Source size/fingerprint must match |
 | Live file listing | ✓ | ✓ | `--live` |
 | Filter by extension/confidence | ✓ | ✓ | Filter expressions |
 | Preview (text/hex/metadata) | ✗ | ✓ | Results pane |

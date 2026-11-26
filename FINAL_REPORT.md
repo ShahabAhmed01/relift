@@ -25,6 +25,6 @@ The test suite uses deterministic synthetic fixtures. It covers byte comparison,
 
 ## Release state
 
-The v0.1.0 GitHub release is a draft, not a published stable release. The local Windows installers are unsigned. No signing certificates, notarization credentials, published checksums, or accepted package-manager submissions are available.
+The v0.1.0 GitHub preview is published with 12 cross-platform binaries and a SHA256SUMS manifest. Assets are unsigned and macOS bundles are not notarized; checksums match the uploaded files but do not authenticate the publisher. No stable release, signing certificates, notarization credentials, or accepted package-manager submissions are available.
 
 The repository is not 100% release-ready. Open gates and their evidence requirements are tracked in docs/GAP_REPORT.md and docs/VERIFICATION.md.

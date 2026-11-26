@@ -2,7 +2,7 @@
 
 No package-manager submission is currently verified or accepted. The files under packaging/ are drafts and must not be treated as installable release manifests.
 
-The public v0.1.0 GitHub release is a draft. Do not submit manifests using guessed URLs, placeholder versions, or checksums. There are no published stable artifacts with verified checksums to cite.
+The [v0.1.0 GitHub preview](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) is published with 12 unsigned binaries and a checksum manifest. It is a prerelease, not a stable package-manager release; its hashes do not authenticate the publisher. Do not submit templates with placeholder versions, URLs, or checksums. Each package still needs its own current upstream validation and clean-install test.
 
 ## Before submitting
 

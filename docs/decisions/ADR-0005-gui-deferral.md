@@ -18,8 +18,9 @@ library through typed Tauri commands. CI builds the workspace on Windows,
 macOS, and Linux; the release workflow defines platform GUI bundles.
 
 The CLI remains the full scriptable interface. The GUI does not currently
-expose every CLI capability: imaging and report export are CLI-only, and
-in-progress pause/resume is not implemented. No TUI is selected or shipped.
+expose every CLI capability: imaging and report export are CLI-only, live
+pause/resume is not implemented, and checkpoint resume is CLI-only. No TUI is
+selected or shipped.
 
 ## Rationale
 
@@ -31,6 +32,7 @@ demonstrated user need.
 
 - Keep recovery logic in `relift-core`; frontend code must call shared APIs.
 - Describe GUI-only and CLI-only capabilities accurately in the support matrix.
-- Do not expose pause/resume controls until the backend can pause and resume a
-  scan safely.
+- Do not expose live pause controls until the backend can pause and resume a
+  running scan safely; checkpoint resume remains CLI-only until a GUI flow is
+  designed and tested.
 - Validate GUI behavior and performance separately from Rust workspace CI.

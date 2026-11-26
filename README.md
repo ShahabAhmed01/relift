@@ -20,7 +20,7 @@ Relift scans disk images and raw devices without writing to them, records what i
 - **Sparse-file segment preservation:** holes and unwritten extents keep byte offsets.
 - **Destination safety:** output proven separate from evidence before any write.
 - **SHA-256 verification** of every recovered file (on by default).
-- **Session-based workflow:** scan → session → recover → report (JSON/HTML/CSV). Completed scan results persist in the session; restarting an interrupted scan from a checkpoint is not implemented.
+- **Session-based workflow:** scan → session → recover → report (JSON/HTML/CSV). Completed scan results persist in the session, and a cancelled or crashed scan can be continued with `--resume` after the source identity is revalidated.
 - **`devices` and `doctor`** report device accessibility and run local self-tests; they do not diagnose SMART health or TRIM status.
 - **No telemetry;** default offline.
 - **GUI (Tauri 2 + Svelte 5):** source selection, scan progress, result filtering and preview, and recovery to a selected destination. Imaging and report export remain CLI-only.
@@ -41,6 +41,12 @@ Scan an image directly:
 ```sh
 relift scan image.dd --session ./session --live --carve
 relift recover ./session --dest ./out
+```
+
+Continue an interrupted scan (the source must be unchanged):
+
+```sh
+relift scan image.dd --session ./session --resume
 ```
 
 List devices:
@@ -76,7 +82,7 @@ Relift includes a desktop GUI built with Tauri 2 and Svelte 5:
 2. **Scan** — live progress and a stop action that keeps partial results
 3. **Results and recovery** — filterable table, candidate metadata, destination selection, recovery summary
 
-The release workflow builds draft desktop bundles for Windows, macOS, and Linux. No stable release has been published. The artifacts are unsigned; this workflow does not create a signature, notarization, or checksum manifest.
+The [v0.1.0 preview release](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) includes desktop bundles for Windows, macOS, and Linux plus CLI archives for five targets. The attached `SHA256SUMS` manifest matches the uploaded assets. All assets are unsigned; hashes detect byte mismatches but do not authenticate the publisher. The preview is tested on synthetic images only; no real drive or representative recovery corpus has been validated.
 
 ## Comparison
 
@@ -155,8 +161,8 @@ See `docs/limitations.md` and `docs/GAP_REPORT.md` for details. Notable gaps:
 - ext4: inline data >60 bytes, encryption, bigalloc, journal replay not implemented.
 - Carving: FLAC, RAR5, ZIP64, OLE compound files not validated.
 - No real NTFS/ext4 volumes available locally; only synthetic fixtures tested.
-- The current GitHub release is a draft; no stable release has been published.
-- No signing certificates/notarization credentials; release artifacts are unsigned.
+- The v0.1.0 preview is published; no stable release has been published.
+- No signing certificates/notarization credentials; release artifacts are unsigned. `SHA256SUMS` is attached but does not authenticate the publisher.
 - macOS raw-device destination safety intentionally fails closed; macOS raw paths untested.
 - Desktop GUI requires WebView2 on Windows.
 

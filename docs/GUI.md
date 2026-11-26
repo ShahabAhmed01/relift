@@ -32,7 +32,8 @@ The scan screen receives progress events from the running scan and displays
 phase, bytes processed, elapsed time, estimated throughput, ETA, and the number
 of candidates saved in the session. ETA and throughput are estimates, not
 promises. The user can stop the scan and keep results already written to the
-session. Pause and checkpoint-resume are not implemented.
+session. Live pause is not implemented, and the GUI does not expose the CLI's
+checkpoint-resume workflow.
 
 Candidates are reviewed after the scan finishes or is stopped. The GUI does
 not preview or recover candidates while scanning.
@@ -55,7 +56,8 @@ Recovery destination safety is still subject to the platform limits in
 - No imaging workflow in the GUI; use `relift image` from the CLI.
 - No report format picker in the GUI; use `relift report` from the CLI.
 - No content viewer, folder-tree view, or 500,000-row performance claim.
-- No pause/resume for scans, and no crash-resume workflow.
+- No pause/resume for a running scan, and no resume control in the GUI; the
+  backend supports `relift scan --resume` from the CLI.
 - No device-health, SMART, or TRIM diagnosis.
 - No real screenshot evidence is included in the repository yet.
 

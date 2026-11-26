@@ -68,12 +68,17 @@ destination volume.
   closed.
 - Resource behavior on multi-terabyte images and very large candidate sets has
   not been profiled. There is no `--max-mem` or `--timeout` option.
-- An interrupted scan cannot resume from a checkpoint. A process crash may
-  leave partial destination output; failed-output cleanup differs by platform.
+- Scan resume is volume-level: an interrupted volume is rescanned from its
+  start, and candidates written after the last completed volume are discarded.
+  The source fingerprint samples head/tail bytes rather than hashing the whole
+  source, so a change outside the sampled ranges is not detected. A process
+  crash may leave partial destination output; failed-output cleanup differs by
+  platform.
 - A local process with write access to the destination can alter output or
   cause denial of service.
-- No signed release artifacts or notarized GUI bundles exist. The current
-  release is a draft with unsigned assets.
+- No signed release artifacts or notarized GUI bundles exist. The published
+  v0.1.0 preview has unsigned assets; its SHA256SUMS file does not authenticate
+  the publisher.
 
 ## Forensic limits
 

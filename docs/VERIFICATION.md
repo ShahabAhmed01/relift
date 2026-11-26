@@ -6,7 +6,7 @@ This record separates local checks from product-release evidence. A successful s
 
 | Gate | Requirement | Status | Evidence or remaining work |
 |---|---|---|---|
-| G1 | Linux, macOS, and Windows CI | PASS | [GitHub Actions run 43697970455](https://github.com/ShahabAhmed01/relift/actions/runs/43697970455): frontend, dependency/license, documentation, and Rust jobs passed across Linux, macOS, and Windows on stable and Rust 1.90 |
+| G1 | Linux, macOS, and Windows CI | PASS | [GitHub Actions run 43701255160](https://github.com/ShahabAhmed01/relift/actions/runs/43701255160): frontend, dependency/license, documentation, and Rust jobs passed across Linux, macOS, and Windows on stable and Rust 1.90 |
 | G2 | Metadata recall and precision targets | PENDING | No representative labeled filesystem corpus |
 | G3 | Carving recall and precision targets | PENDING | No representative labeled file corpus |
 | G4 | No source writes | PARTIAL | Read-only source abstraction and synthetic image hash checks; no physical-device before/after test |
@@ -15,7 +15,7 @@ This record separates local checks from product-release evidence. A successful s
 | G7 | Quick scan of 1 TB NTFS under 90 seconds | PENDING | Not measured on a representative image and documented hardware |
 | G8 | GUI cold start and large-result performance | PENDING | Cold start, accessibility, and 500,000-row behavior not measured |
 | G9 | CLI JSON and exit-code contracts | PASS | CLI process-level contract tests; Tauri DTO casing contract tests |
-| G10 | Resume interrupted scan after process termination | NOT IMPLEMENTED | Checkpoint-based scan resume is not a feature |
+| G10 | Resume interrupted scan after process termination | IMPLEMENTED | Volume-level checkpoint resume: `relift scan --resume` revalidates source size/fingerprint, skips completed volumes, and rescans the interrupted volume from its start. Verified by unit tests (cancelled-carve, multi-volume skip, mismatch refusal, completed-session refusal) and a real process-kill test whose resumed `candidates.jsonl` is byte-identical (SHA-256) to an uninterrupted scan. |
 | G11 | 24-hour parser fuzzing | PENDING | No checked-in cargo-fuzz harness or long-run logs |
 | G12 | Signed and notarized platform releases | PENDING | Release assets are unsigned; credentials are not configured |
 | G13 | Screenshots from the running GUI | PENDING | No screenshot evidence checked in |
@@ -31,8 +31,8 @@ Host: Windows 11 x86_64. Rust stable 1.100.0 and Rust 1.90.0 MSVC. Node.js 26.13
 
 | Check | Result |
 |---|---|
-| cargo test --workspace --all-targets --offline | PASS, 74 tests |
-| cargo +1.90.0 test --workspace --all-targets --offline | PASS, 74 tests |
+| cargo test --workspace --all-targets --offline | PASS, 82 tests |
+| cargo +1.90.0 test --workspace --all-targets --offline | PASS, 82 tests |
 | cargo clippy --workspace --all-targets -- -D warnings | PASS |
 | cargo +1.90.0 doc --workspace --no-deps --offline | PASS |
 | cargo fmt --all -- --check | PASS |
@@ -47,7 +47,7 @@ The full npm development dependency audit reports one low-severity advisory in t
 
 ## CI evidence
 
-The current revision passed [GitHub Actions run 43697970455](https://github.com/ShahabAhmed01/relift/actions/runs/43697970455). Frontend, dependency/license, documentation, and all configured Rust jobs passed, including Linux, macOS, and Windows with stable and Rust 1.90. The benchmark job was skipped because this push did not request benchmark execution.
+The current release workflow source passed [GitHub Actions run 43701255160](https://github.com/ShahabAhmed01/relift/actions/runs/43701255160). Frontend, dependency/license, documentation, and all configured Rust jobs passed, including Linux, macOS, and Windows with stable and Rust 1.90. The release workflow passed [run 43701736196](https://github.com/ShahabAhmed01/relift/actions/runs/43701736196), building 12 binaries and attaching a SHA256SUMS manifest. All 12 manifest entries were checked against the SHA-256 asset digests reported by GitHub. The benchmark job was skipped because the CI run did not request benchmark execution.
 
 ## Recovery evidence and limits
 
@@ -57,6 +57,6 @@ No physical device was accessed during this verification. macOS raw-device behav
 
 ## Release state
 
-The public v0.1.0 GitHub release is a draft, not a published stable release. Locally built Windows installers are unsigned. Package-manager files contain explicit placeholders and must not be submitted until release assets, source URLs, checksums, and install behavior are independently verified.
+The [v0.1.0 GitHub preview](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) is published as a prerelease with 12 unsigned binaries and a SHA256SUMS manifest. The manifest matches GitHub's asset digests but does not authenticate the publisher. No signing or notarization credentials are configured. Package-manager files still contain placeholders and are not installable or submitted.
 
 See docs/GAP_REPORT.md for the authoritative open work list and docs/support-matrix.md for implementation status.

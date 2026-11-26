@@ -17,9 +17,9 @@ current safety instructions take precedence over aspirational alternatives.
 | License | GPL-3.0-or-later | Conflicting MIT/Apache-only options in source prompt variants | Existing `LICENSE` and workspace package metadata |
 | Source I/O | Open sources read-only; write only through explicit destination writers | In-place repair or source mutation | `ReadOnlySource`, imaging/recovery modules, destination safety tests |
 | Recovery evidence | Mark fixture-validated and experimental support separately; publish only measured results | Claims of broad accuracy, superiority, or real-media validation without evidence | `docs/support-matrix.md`, `docs/GAP_REPORT.md`, `docs/VERIFICATION.md` |
-| Sessions | Directory with JSON header and JSONL records | SQLite database and crash-resume claims | `crates/relift-core/src/session.rs`; no SQLite dependency |
+| Sessions | Directory with JSON header and JSONL records; volume-level scan checkpoints | SQLite database | `crates/relift-core/src/session.rs`; no SQLite dependency |
 | Network and telemetry | No telemetry or automatic update checks; recovery is local | Required accounts, cloud scanning, silent telemetry | No network client in the core/CLI; no update command is implemented |
-| Release status | Draft release only; unsigned artifacts | Claiming a published or signed release | Current GitHub release is a draft; no signing credentials are configured |
+| Release status | Published v0.1.0 preview; unsigned artifacts | Claiming a stable or signed release | Preview assets and SHA256SUMS are published; no signing or notarization credentials are configured |
 
 ## Filesystem and format status
 
@@ -30,7 +30,7 @@ current safety instructions take precedence over aspirational alternatives.
 | Other filesystems | Detection only or unsupported | See `docs/support-matrix.md` and `docs/GAP_REPORT.md` |
 | Carving | Emit only formats with structural validators | Validated formats and unimplemented formats are listed in `docs/support-matrix.md` |
 | Container images | Raw images only | Convert E01/AFF4/VHD/VMDK/QCOW2/DMG to raw before scanning |
-| In-progress resume | Not implemented | A completed session is reusable; there is no `scan --resume` checkpoint workflow |
+| In-progress resume | Implemented for scans; volume-level checkpoint | `relift scan --resume` revalidates source size/fingerprint, skips completed volumes, and rescans the interrupted volume. Imaging resume and live pause remain unimplemented |
 
 ## Decision records
 
