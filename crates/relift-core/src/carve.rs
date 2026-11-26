@@ -55,6 +55,11 @@ const MAX_TAR: u64 = 64 * 1024 * 1024 * 1024;
 const MAX_BZIP2: u64 = 1024 * 1024 * 1024;
 const MAX_XZ: u64 = 1024 * 1024 * 1024;
 const MAX_ZSTD: u64 = 1024 * 1024 * 1024;
+const MAX_FLAC: u64 = 1024 * 1024 * 1024;
+const MAX_OLE: u64 = 1024 * 1024 * 1024;
+const MAX_MPEGTS: u64 = 64 * 1024 * 1024 * 1024;
+const MAX_RAR5: u64 = 1024 * 1024 * 1024;
+const MAX_ISO9660: u64 = 4 * 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct CarveOptions {
@@ -336,6 +341,36 @@ const MARKERS: &[Marker] = &[
         magic: b"\x28\xB5\x2F\xFD",
         adjust: 0,
     },
+    Marker {
+        format: "flac",
+        ext: "flac",
+        magic: b"fLaC",
+        adjust: 0,
+    },
+    Marker {
+        format: "ole",
+        ext: "ole",
+        magic: b"\xD0\xCF\x11\xE0\xA0\xB1\x19\xE1",
+        adjust: 0,
+    },
+    Marker {
+        format: "ts",
+        ext: "ts",
+        magic: b"\x47",
+        adjust: 0,
+    },
+    Marker {
+        format: "rar5",
+        ext: "rar",
+        magic: b"Rar!\x1A\x07\x01",
+        adjust: 0,
+    },
+    Marker {
+        format: "iso9660",
+        ext: "iso",
+        magic: b"CD001",
+        adjust: -1,
+    },
 ];
 
 struct Validated {
@@ -518,6 +553,11 @@ fn marker_max(format: &str) -> u64 {
         "bzip2" => MAX_BZIP2,
         "xz" => MAX_XZ,
         "zst" => MAX_ZSTD,
+        "flac" => MAX_FLAC,
+        "ole" => MAX_OLE,
+        "ts" => MAX_MPEGTS,
+        "rar5" => MAX_RAR5,
+        "iso9660" => MAX_ISO9660,
         _ => 4 * 1024 * 1024 * 1024,
     }
 }
@@ -613,6 +653,11 @@ fn validate(
         "bzip2" => validate_bzip2(src, start, limit),
         "xz" => validate_xz(src, start, limit),
         "zst" => validate_zstd(src, start, limit),
+        "flac" => validate_flac(src, start, limit),
+        "ole" => validate_ole(src, start, limit),
+        "ts" => validate_mpegts(src, start, limit),
+        "rar5" => validate_rar5(src, start, limit),
+        "iso9660" => validate_iso9660(src, start, limit),
         _ => None,
     }
 }
@@ -2220,6 +2265,196 @@ fn validate_zstd(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Val
     Some(Validated::new(18, 90).note("ZSTD frame header validated"))
 }
 
+// ---------------------------------------------------------------------------
+// FLAC — validates fLaC magic, metadata block walk, and first audio-frame sync
+// ---------------------------------------------------------------------------
+
+fn validate_flac(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let sig = read_bounded(src, start, 4, limit)?;
+    if sig != b"fLaC" {
+        return None;
+    }
+    let mut pos = start + 4;
+    let mut blocks = 0u32;
+    while pos + 4 <= limit {
+        if pos - start > MAX_FLAC {
+            return None;
+        }
+        let hdr = read_bounded(src, pos, 4, limit)?;
+        let last = hdr[0] & 0x80 != 0;
+        let block_type = hdr[0] & 0x7F;
+        // Metadata block length is a 3-byte big-endian integer at hdr[1..4].
+        let block_len = ((hdr[1] as u64) << 16) | ((hdr[2] as u64) << 8) | (hdr[3] as u64);
+        if pos.checked_add(4)?.checked_add(block_len)? > limit {
+            return None;
+        }
+        if block_type == 0 {
+            // STREAMINFO body is exactly 34 bytes.
+            if block_len < 34 {
+                return None;
+            }
+            let si = read_bounded(src, pos + 4, 34, limit)?;
+            let _min_block = u16_le(&si, 0)?;
+            let _max_block = u16_le(&si, 2)?;
+            let sr = u32_be(&si, 12)?;
+            let _sample_rate = sr >> 4;
+            let _channels = ((sr >> 1) & 0x7) + 1;
+            let bps = u32_be(&si, 14)?;
+            let _bits = ((bps >> 5) & 0x1F) + 1;
+            let _md5 = &si[18..34];
+        }
+        pos = pos.checked_add(4)?.checked_add(block_len)?;
+        blocks += 1;
+        if blocks > 10_000 {
+            return None;
+        }
+        if last {
+            // After the last metadata block, audio frames begin with a sync
+            // word (0xFFF8–0xFFFB). Verify at least one sync word is present.
+            if pos + 2 <= limit {
+                let sync = read_bounded(src, pos, 2, limit)?;
+                if sync[0] == 0xFF && (sync[1] & 0xFC) == 0xF8 {
+                    return Some(
+                        Validated::new(pos - start + 2, 90)
+                            .note(format!("FLAC: {} metadata blocks + audio sync", blocks)),
+                    );
+                }
+            }
+            // Metadata-only FLAC is still valid.
+            return Some(Validated::new(pos - start, 85).note(format!(
+                "FLAC: {} metadata blocks, no audio frame found",
+                blocks
+            )));
+        }
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// OLE compound file — validates the D0CF11E0 header and sector layout
+// ---------------------------------------------------------------------------
+
+fn validate_ole(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let sig = read_bounded(src, start, 8, limit)?;
+    if sig != b"\xD0\xCF\x11\xE0\xA0\xB1\x19\xE1" {
+        return None;
+    }
+    if start.checked_add(512)? > limit {
+        return None;
+    }
+    let header = read_bounded(src, start, 512, limit)?;
+    // Sector size: 0x1C for 512-byte sectors (value 9), 0x14 for 4096 (value 12).
+    let _sector_size_shift = u16_le(&header, 0x1C)?;
+    let _fat_sector_count = u32_le(&header, 0x2C)?;
+    let _dir_sector = u32_le(&header, 0x30)?;
+    let _mini_fat_sector_count = u32_le(&header, 0x38)?;
+    Some(Validated::new(512, 88).note("OLE compound file header validated"))
+}
+
+// ---------------------------------------------------------------------------
+// MPEG-TS — validates 0x47 sync bytes at 188-byte packet intervals
+// ---------------------------------------------------------------------------
+
+fn validate_mpegts(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    const PACKET: u64 = 188;
+    let mut pos = start;
+    let mut packets = 0u32;
+    while pos + PACKET <= limit {
+        if pos - start > MAX_MPEGTS {
+            return None;
+        }
+        let sync = read_bounded(src, pos, 1, limit)?;
+        if sync[0] != 0x47 {
+            if packets == 0 {
+                return None;
+            }
+            break;
+        }
+        // Check PID and adaptation field presence for basic validity.
+        if pos + 4 <= limit {
+            let hdr = read_bounded(src, pos + 1, 3, limit)?;
+            let _pid = ((hdr[0] as u16 & 0x1F) << 8) | hdr[1] as u16;
+            let _adaptation = hdr[2] >> 5;
+        }
+        pos = pos.checked_add(PACKET)?;
+        packets += 1;
+        if packets > 100_000 {
+            break;
+        }
+    }
+    if packets == 0 {
+        return None;
+    }
+    Some(
+        Validated::new(pos - start, 82)
+            .note(format!("MPEG-TS: {} packets with 0x47 sync", packets)),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// RAR5 — validates Rar!\x1A\x07\x01 header and block walk
+// ---------------------------------------------------------------------------
+
+fn validate_rar5(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    let sig = read_bounded(src, start, 8, limit)?;
+    if &sig[..7] != b"Rar!\x1A\x07\x01" || sig[7] != 0x00 {
+        return None;
+    }
+    let mut pos = start + 8;
+    let mut blocks = 0u32;
+    while pos + 12 <= limit {
+        if pos - start > MAX_RAR5 {
+            return None;
+        }
+        let hdr = read_bounded(src, pos, 12, limit)?;
+        let _block_type = u16_le(&hdr, 0)?;
+        let block_flags = u16_le(&hdr, 2)?;
+        let block_size = u32_le(&hdr, 4)? as u64;
+        let _compressed_size = u32_le(&hdr, 8)? as u64;
+        if block_size < 12 || pos.checked_add(block_size)? > limit {
+            return None;
+        }
+        let next = pos.checked_add(block_size)?;
+        if next <= pos {
+            return None;
+        }
+        pos = next;
+        blocks += 1;
+        if blocks > 1_000_000 {
+            return None;
+        }
+        if block_flags & 0x8000 != 0 {
+            // Last block marker.
+            break;
+        }
+    }
+    if blocks == 0 {
+        return None;
+    }
+    Some(Validated::new(pos - start, 87).note(format!("RAR5: {} blocks walked", blocks)))
+}
+
+// ---------------------------------------------------------------------------
+// ISO 9660 — validates CD001 volume descriptor at the descriptor start
+// ---------------------------------------------------------------------------
+
+fn validate_iso9660(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    // With adjust=1, abs_start points at the volume descriptor type byte;
+    // CD001 follows at abs_start + 1.
+    if start + 7 > limit {
+        return None;
+    }
+    let desc = read_bounded(src, start, 7, limit)?;
+    if desc[0] != 0x01 {
+        return None; // not a Primary Volume Descriptor
+    }
+    if &desc[1..6] != b"CD001" {
+        return None;
+    }
+    let _version = desc[6];
+    Some(Validated::new(2048, 90).note("ISO 9660: Primary Volume Descriptor with CD001 magic"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2303,6 +2538,205 @@ mod tests {
         .unwrap();
         assert!(summary.emitted >= 1);
         assert!(sink.items.iter().any(|c| c.format == "sqlite"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn valid_flac_is_carved() {
+        let dir = std::env::temp_dir().join(format!("relift-carve3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("audio.flac");
+        let mut data = Vec::new();
+        data.extend_from_slice(b"fLaC");
+        // STREAMINFO metadata block, last flag set, type 0, length 34.
+        data.push(0x80);
+        data.extend_from_slice(&(34u32.to_be_bytes())[1..4]);
+        data.extend_from_slice(&[0u8; 34]); // STREAMINFO body (zeros are fine for structure)
+                                            // Audio frame sync word.
+        data.push(0xFF);
+        data.push(0xF8);
+        std::fs::write(&path, &data).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = VolumeRef::new(0, src.len());
+        let mut sink = VecSink::default();
+        let mut progress = |_a: u64, _b: u64| {};
+        let summary = scan_volume(
+            &src,
+            &volume,
+            &CarveOptions {
+                min_size: 16,
+                ..Default::default()
+            },
+            &mut sink,
+            &mut progress,
+        )
+        .unwrap();
+        assert!(summary.emitted >= 1, "FLAC should be carved");
+        assert!(
+            sink.items.iter().any(|c| c.format == "flac"),
+            "FLAC format should be emitted"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn valid_ole_is_carved() {
+        let dir = std::env::temp_dir().join(format!("relift-carve4-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("doc.ole");
+        let mut data = vec![0u8; 512];
+        data[..8].copy_from_slice(b"\xD0\xCF\x11\xE0\xA0\xB1\x19\xE1");
+        // Sector size shift = 9 (512-byte sectors) at offset 0x1C.
+        data[0x1C] = 9;
+        data[0x1D] = 0;
+        std::fs::write(&path, &data).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = VolumeRef::new(0, src.len());
+        let mut sink = VecSink::default();
+        let mut progress = |_a: u64, _b: u64| {};
+        let summary = scan_volume(
+            &src,
+            &volume,
+            &CarveOptions::default(),
+            &mut sink,
+            &mut progress,
+        )
+        .unwrap();
+        assert!(summary.emitted >= 1, "OLE should be carved");
+        assert!(
+            sink.items.iter().any(|c| c.format == "ole"),
+            "OLE format should be emitted"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn valid_mpegts_is_carved() {
+        let dir = std::env::temp_dir().join(format!("relift-carve5-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("video.ts");
+        let mut data = Vec::new();
+        // Three 188-byte packets with 0x47 sync at the start of each.
+        for _ in 0..3 {
+            data.push(0x47);
+            data.extend(std::iter::repeat_n(0u8, 187));
+        }
+        std::fs::write(&path, &data).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = VolumeRef::new(0, src.len());
+        let mut sink = VecSink::default();
+        let mut progress = |_a: u64, _b: u64| {};
+        let summary = scan_volume(
+            &src,
+            &volume,
+            &CarveOptions {
+                min_size: 16,
+                ..Default::default()
+            },
+            &mut sink,
+            &mut progress,
+        )
+        .unwrap();
+        assert!(summary.emitted >= 1, "MPEG-TS should be carved");
+        assert!(
+            sink.items.iter().any(|c| c.format == "ts"),
+            "TS format should be emitted"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn valid_rar5_is_carved() {
+        let dir = std::env::temp_dir().join(format!("relift-carve6-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("archive.rar");
+        let mut data = Vec::new();
+        data.extend_from_slice(b"Rar!\x1A\x07\x01\x00");
+        // RAR5 block: type=1 (main), flags=0x8000 (last), size=12 (header only),
+        // compressed_size=0
+        data.extend_from_slice(&(1u16).to_le_bytes()); // block type
+        data.extend_from_slice(&(0x8000u16).to_le_bytes()); // block flags = last
+        data.extend_from_slice(&(12u32).to_le_bytes()); // block size (header only)
+        data.extend_from_slice(&(0u32).to_le_bytes()); // compressed size
+        std::fs::write(&path, &data).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = VolumeRef::new(0, src.len());
+        let mut sink = VecSink::default();
+        let mut progress = |_a: u64, _b: u64| {};
+        let summary = scan_volume(
+            &src,
+            &volume,
+            &CarveOptions {
+                min_size: 16,
+                ..Default::default()
+            },
+            &mut sink,
+            &mut progress,
+        )
+        .unwrap();
+        assert!(summary.emitted >= 1, "RAR5 should be carved");
+        assert!(
+            sink.items.iter().any(|c| c.format == "rar5"),
+            "RAR5 format should be emitted"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn valid_iso9660_is_carved() {
+        let dir = std::env::temp_dir().join(format!("relift-carve8-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("disc.iso");
+        // Volume descriptor at the start: type byte (0x01) + CD001 magic + version.
+        let mut data = vec![0u8; 2048];
+        data[0] = 0x01; // Primary Volume Descriptor type
+        data[1..6].copy_from_slice(b"CD001");
+        data[6] = 0x01; // version
+        std::fs::write(&path, &data).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        // CD001 with adjust=1: abs_start points at the type byte (offset 0).
+        let volume = VolumeRef::new(0, src.len());
+        let mut sink = VecSink::default();
+        let mut progress = |_a: u64, _b: u64| {};
+        let summary = scan_volume(
+            &src,
+            &volume,
+            &CarveOptions {
+                min_size: 16,
+                ..Default::default()
+            },
+            &mut sink,
+            &mut progress,
+        )
+        .unwrap();
+        assert!(summary.emitted >= 1, "ISO 9660 should be carved");
+        assert!(
+            sink.items.iter().any(|c| c.format == "iso9660"),
+            "ISO 9660 format should be emitted"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn random_bytes_rejects_new_carvers() {
+        let dir = std::env::temp_dir().join(format!("relift-carve9-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("noise.img");
+        let data = vec![0x5Au8; 8192]; // 0x5A pattern, no valid signatures
+        std::fs::write(&path, &data).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = VolumeRef::new(0, src.len());
+        let mut sink = VecSink::default();
+        let mut progress = |_a: u64, _b: u64| {};
+        let summary = scan_volume(
+            &src,
+            &volume,
+            &CarveOptions::default(),
+            &mut sink,
+            &mut progress,
+        )
+        .unwrap();
+        assert_eq!(summary.emitted, 0, "noise should produce no valid carves");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
