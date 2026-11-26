@@ -11,12 +11,12 @@ This record separates local checks from product-release evidence. A successful s
 | G3 | Carving recall and precision targets | PENDING | No representative labeled file corpus |
 | G4 | No source writes | PARTIAL | Read-only source abstraction and synthetic image hash checks; no physical-device before/after test |
 | G5 | Refuse destination on source device | PARTIAL | Synthetic ancestry and destination tests; no mounted raw-device validation |
-| G6 | Throughput targets | PARTIAL | Benchmark harness smoke runs only; no published hardware baseline |
+| G6 | Throughput targets | PARTIAL | Criterion baselines measured on Windows 11 x86_64 (Rust 1.100): signature sweep 4.07-4.37 GiB/s on a 64 MiB buffer; JPEG carver validation 5.9 ms / 1 MiB; ZIP carver validation 5.8 ms / 1 MiB; NTFS metadata scan ~1.0 ms; ext4 metadata scan ~0.75 ms; filesystem probes tens of microseconds. No published hardware baseline or 1 TB device measurement yet |
 | G7 | Quick scan of 1 TB NTFS under 90 seconds | PENDING | Not measured on a representative image and documented hardware |
 | G8 | GUI cold start and large-result performance | PENDING | Cold start, accessibility, and 500,000-row behavior not measured |
 | G9 | CLI JSON and exit-code contracts | PASS | CLI process-level contract tests; Tauri DTO casing contract tests |
 | G10 | Resume interrupted scan after process termination | IMPLEMENTED | Volume-level checkpoint resume: `relift scan --resume` revalidates source size/fingerprint, skips completed volumes, and rescans the interrupted volume from its start. Verified by unit tests (cancelled-carve, multi-volume skip, mismatch refusal, completed-session refusal) and a real process-kill test whose resumed `candidates.jsonl` is byte-identical (SHA-256) to an uninterrupted scan. |
-| G11 | 24-hour parser fuzzing | PENDING | No checked-in cargo-fuzz harness or long-run logs |
+| G11 | 24-hour parser fuzzing | PARTIAL | cargo-fuzz harnesses for the carver and filesystem probes are checked in under fuzz/ and compile cleanly on nightly; a CI fuzz job runs bounded executions on Linux (nightly + clang). Local Windows execution is blocked by the missing clang/libFuzzer runtime DLL. Sustained 24-hour run and crash-minimized corpus remain pending |
 | G12 | Signed and notarized platform releases | PENDING | Release assets are unsigned; credentials are not configured |
 | G13 | Screenshots from the running GUI | PENDING | No screenshot evidence checked in |
 | G14 | Deployed, indexed documentation site | PENDING | No documentation site deployment or indexing evidence |

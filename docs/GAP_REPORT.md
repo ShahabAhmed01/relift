@@ -83,7 +83,7 @@ deliberate, and tracked.
   raw physical media has been validated on any platform.
 - Public test images or real-volume validation still needed before claiming
   real-media recovery.
-- No `cargo-fuzz` harness is checked in yet; parser fuzzing is a release gate.
+- `cargo-fuzz` harnesses for the signature carver and filesystem probes are checked in under `fuzz/`, and CI runs bounded fuzz executions on Linux runners (nightly + clang). Local Windows execution is blocked because the clang/libFuzzer runtime DLL is not installed on this host; the harnesses compile cleanly. A sustained 24-hour fuzz campaign and crash-minimized corpus remain pending CI execution.
 - Code coverage is not measured in CI.
 
 ## Interface gaps
