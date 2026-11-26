@@ -60,17 +60,17 @@ Every emitted carve must pass a structural validator. The current validators are
 |----------|---------|
 | Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF |
 | Documents | PDF, DOCX, XLSX, PPTX |
-| Archives | ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, tar |
-| Video | MP4/ISO-BMFF, MKV |
-| Audio | MP3, WAV/RIFF, Ogg |
+| Archives | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, tar |
+| Video | MP4/ISO-BMFF, MKV, MPEG-TS |
+| Audio | MP3, WAV/RIFF, Ogg, FLAC |
 | Databases | SQLite |
-| System | PST/OST, LNK, EVTX |
+| System | PST/OST, LNK, EVTX, OLE |
 | Executables | PE (EXE/DLL), ELF |
 
-**Not emitted:** FLAC (the current parser did not establish audio-frame
-boundaries), RAR5, ZIP64, OLE compound files (legacy DOC/XLS/PPT), MPEG-TS,
-ISO 9660, and formats without a registered validator. MOV and WebM are not
-separately classified from their container families.
+**Not emitted:** ZIP64 (shares the PK\\x03\\x04 local-header magic with ZIP;
+handled by the existing ZIP validator), and formats without a registered
+validator. MOV and WebM are not separately classified from their container
+families.
 
 ## Feature matrix
 

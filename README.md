@@ -16,7 +16,7 @@ Relift scans disk images and raw devices without writing to them, records what i
 - **Read-only-by-construction:** `ReadOnlySource` exposes no write method; the engine cannot modify the source device.
 - **Byte-for-byte recovery verified against synthetic fixtures with SHA-256.**
 - **Filesystem metadata recovery:** FAT12/16/32, exFAT, NTFS, ext2/3/4 (fixture-validated); HFS+, APFS, Btrfs and XFS parsers are implemented but only lightly exercised (experimental).
-- **Signature carving:** structurally validated formats listed in [`docs/support-matrix.md`](docs/support-matrix.md); unvalidated formats such as OLE, RAR5, and ZIP64 are not emitted.
+- **Signature carving:** structurally validated formats listed in [`docs/support-matrix.md`](docs/support-matrix.md); unvalidated formats such as ZIP64 are not emitted.
 - **Sparse-file segment preservation:** holes and unwritten extents keep byte offsets.
 - **Destination safety:** output proven separate from evidence before any write.
 - **SHA-256 verification** of every recovered file (on by default).
@@ -159,7 +159,7 @@ See `docs/limitations.md` and `docs/GAP_REPORT.md` for details. Notable gaps:
 
 - NTFS: `$ATTRIBUTE_LIST`, named ADS, compression, EFS, `$UsnJrnl` not recovered.
 - ext4: inline data >60 bytes, encryption, bigalloc, journal replay not implemented.
-- Carving: FLAC, RAR5, ZIP64, OLE compound files not validated.
+- Carving: ZIP64 not validated (handled by the ZIP validator).
 - No real NTFS/ext4 volumes available locally; only synthetic fixtures tested.
 - The v0.1.0 preview is published; no stable release has been published.
 - No signing certificates/notarization credentials; release artifacts are unsigned. `SHA256SUMS` is attached but does not authenticate the publisher.

@@ -29,12 +29,9 @@ deliberate, and tracked.
 
 ## Carving gaps
 
-- FLAC: metadata block framing alone did not establish audio-frame boundaries;
-  the incomplete validator was removed and FLAC is not emitted.
-- RAR5: no validator; not carved.
-- ZIP64: no validator; not carved.
-- OLE compound files (legacy DOC/XLS/PPT): not carved.
-- MPEG-TS and ISO 9660: no validated carver.
+- ZIP64: shares the PK\\x03\\x04 local-header magic with ZIP and is handled by
+  the existing ZIP validator rather than a separate carver. A dedicated ZIP64
+  end-of-central-directory validator is not yet implemented.
 - Every emitted carve must pass a structural validator; unvalidated carves are
   never emitted.
 
