@@ -9,7 +9,7 @@ license=('GPL-3.0-or-later')
 depends=('gcc-libs' 'glibc')
 makedepends=('rust' 'cargo')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/ShahabAhmed01/relift/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('27966eef7bd14123999f24af743cd0e62d89f1dfcf43878e72532e943dc2277c')
+sha256sums=('921b75d52695b3d127f87f5983720d736dacbb014d87b0e0037c57f7ed71c4eb')
 
 build() {
   cd "${pkgname}-${pkgver}"
