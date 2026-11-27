@@ -499,6 +499,5 @@ fn xfs_time_to_iso(sec: u64) -> String {
     if sec == 0 {
         return "1970-01-01T00:00:00Z".to_string();
     }
-    let dt = chrono::DateTime::from_timestamp(sec as i64, 0).unwrap_or_default();
-    dt.to_rfc3339()
+    crate::util::unix_to_iso(sec as i64).unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
 }

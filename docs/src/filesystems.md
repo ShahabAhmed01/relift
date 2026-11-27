@@ -22,7 +22,7 @@ The parser reads inode metadata, supported block/extent mappings, directory entr
 
 ## Experimental parsers
 
-HFS+, APFS, Btrfs, and XFS parsers are wired into scanning but have no deterministic fixtures or end-to-end recovery tests. Treat their results as experimental. Snapshot enumeration, encryption, compression, hardlink resolution, and other filesystem-specific cases are incomplete; see docs/limitations.md.
+HFS+, APFS, Btrfs, and XFS parsers are wired into scanning. Deterministic probe fixtures and end-to-end detection tests exist (`probe_identifies_hfsplus`, `probe_identifies_apfs`, `probe_identifies_btrfs`, `probe_identifies_xfs`), but metadata-based deleted-file recovery has not been validated against a fixture or real volume. Treat recovery results as experimental. Snapshot enumeration, encryption, compression, hardlink resolution, and other filesystem-specific cases are incomplete; see [limitations](limitations.md).
 
 ## Detection without metadata recovery
 
@@ -34,4 +34,4 @@ Quick mode scans supported filesystem metadata. Deep mode also runs the register
 
 ## Evidence boundary
 
-Current metadata recovery evidence is from deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures. No real physical volume or representative real-media corpus has been validated. For details, use docs/support-matrix.md, docs/limitations.md, and docs/GAP_REPORT.md.
+Current metadata recovery evidence is from deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures. No real physical volume or representative real-media corpus has been validated. For details, use the [support matrix](support-matrix.md), [limitations](limitations.md), and [gap report](GAP_REPORT.md).

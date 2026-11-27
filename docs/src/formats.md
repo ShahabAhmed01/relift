@@ -5,9 +5,10 @@ corresponding validator accepts the structure. A candidate passing validation
 is evidence about its container structure; it is not proof that the file is
 complete, uncorrupted, or openable in every application.
 
-The implementation is in [`crates/relift-core/src/carve.rs`](../crates/relift-core/src/carve.rs).
-The list below describes formats currently registered for carving; formats
-without a working validator are not emitted.
+The implementation is in
+[`crates/relift-core/src/carve.rs`](https://github.com/ShahabAhmed01/relift/blob/main/crates/relift-core/src/carve.rs).
+The 36 formats below are registered for carving; a format without a working
+validator is not emitted.
 
 ## Registered formats
 
@@ -15,23 +16,23 @@ without a working validator are not emitted.
 |---|---|
 | Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF |
 | Documents | PDF, DOCX, XLSX, PPTX |
-| Archives | ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, TAR |
-| Audio | MP3, WAV/RIFF, Ogg |
-| Video | MP4/ISO-BMFF, MKV |
+| Archives and containers | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660 |
+| Video | MP4/ISO-BMFF, MKV, MPEG-TS |
+| Audio | MP3, WAV/RIFF, Ogg, FLAC |
 | Databases | SQLite |
-| System files | PST/OST, LNK, EVTX |
-| Executables | PE, ELF |
+| System files | PST/OST, LNK, EVTX, OLE compound files |
+| Executables | PE (EXE/DLL), ELF |
 
-The MP4/ISO-BMFF validator does not separately classify MOV. DOCX/XLSX/PPTX
-are checked as ZIP containers with expected package entries. Relift does not
-extract archive members.
+The MP4/ISO-BMFF validator does not separately classify MOV. WebM is handled by
+the MKV/Matroska validator. DOCX/XLSX/PPTX are checked as ZIP containers with
+expected package entries. Relift does not extract archive members.
 
 ## Not emitted
 
-- FLAC: metadata-only parsing did not establish audio-frame boundaries, so the
-  incomplete validator was removed. No FLAC candidates are emitted.
-- RAR5, ZIP64, OLE compound files (legacy Office), MPEG-TS, ISO 9660, camera
-  RAW, ODT/ODS/ODP, RTF, EPUB, AVI, FLV, AAC, and AIFF have no registered
+- ZIP64: shares the `PK\x03\x04` local-header magic with ZIP and is handled by
+  the existing ZIP validator. A dedicated ZIP64 end-of-central-directory
+  validator is not implemented.
+- Camera RAW, ODT/ODS/ODP, RTF, EPUB, AVI, FLV, AAC, and AIFF have no registered
   validator in this build.
 
 See [`support-matrix.md`](support-matrix.md) and
@@ -55,4 +56,6 @@ match an original copy.
 
 Follow the contribution guide and add valid, truncated, and malformed test
 fixtures before registering a new marker. Do not emit a format based only on a
-magic-byte match.
+magic-byte match. The `registered_format_count_is_stable` unit test fails when
+the marker set changes, which is the prompt to update this page and the support
+matrix.

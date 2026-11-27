@@ -59,6 +59,7 @@ const MAX_FLAC: u64 = 1024 * 1024 * 1024;
 const MAX_OLE: u64 = 1024 * 1024 * 1024;
 const MAX_MPEGTS: u64 = 64 * 1024 * 1024 * 1024;
 const MAX_RAR5: u64 = 1024 * 1024 * 1024;
+const MAX_RAR4: u64 = 1024 * 1024 * 1024;
 const MAX_ISO9660: u64 = 4 * 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -556,6 +557,7 @@ fn marker_max(format: &str) -> u64 {
         "flac" => MAX_FLAC,
         "ole" => MAX_OLE,
         "ts" => MAX_MPEGTS,
+        "rar" => MAX_RAR4,
         "rar5" => MAX_RAR5,
         "iso9660" => MAX_ISO9660,
         _ => 4 * 1024 * 1024 * 1024,
@@ -2715,6 +2717,22 @@ mod tests {
             "ISO 9660 format should be emitted"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn registered_format_count_is_stable() {
+        // This guard exists to keep public documentation honest. When the
+        // marker set changes, update docs/src/formats.md,
+        // docs/src/support-matrix.md, and the "36 formats" statements in the
+        // README and llms files at the same time.
+        let mut formats: Vec<&str> = MARKERS.iter().map(|m| m.format).collect();
+        formats.sort_unstable();
+        formats.dedup();
+        assert_eq!(
+            formats.len(),
+            36,
+            "registered carve formats changed; update docs/src/formats.md, docs/src/support-matrix.md, README.md, and llms*.txt: {formats:?}"
+        );
     }
 
     #[test]

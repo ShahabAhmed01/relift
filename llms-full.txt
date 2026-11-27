@@ -4,15 +4,15 @@ Relift is a GPL-3.0-or-later Rust workspace with a CLI and a Tauri desktop front
 
 ## Interfaces
 
-The CLI supports scanning, recovery, imaging, device listing, candidate listing, reports, diagnostics, and shell completions. Consult docs/CLI.md for exact flags, JSON shapes, and exit codes. The desktop GUI supports source selection, scan progress, candidate filtering, metadata preview, and recovery. Imaging and report export remain CLI-only.
+The CLI supports scanning, recovery, imaging, device listing, candidate listing, reports, diagnostics, and shell completions. Consult docs/src/CLI.md for exact flags, JSON shapes, and exit codes. The desktop GUI supports source selection, scan progress, candidate filtering, metadata preview, and recovery. Imaging, report export, and checkpoint resume remain CLI-only.
 
 ## Data and sessions
 
-Sessions use a JSON header and JSONL records. A completed session can be reused. Interrupted scans do not resume from checkpoints. Imaging is a single copy pass without a bad-sector map or multi-pass retry.
+Sessions use a JSON header and JSONL records. A completed session can be reused. An interrupted scan can be resumed with `relift scan --resume`; the source size and fingerprint are revalidated and completed volumes are skipped. Imaging is a single copy pass without a bad-sector map or multi-pass retry.
 
 ## Evidence boundaries
 
-FAT, exFAT, NTFS, and ext2/3/4 have deterministic synthetic fixture coverage. HFS+, APFS, Btrfs, and XFS parsers are experimental. Carving emits only candidates accepted by registered validators; see docs/formats.md. No real physical drive or representative real-media corpus has been validated.
+FAT, exFAT, NTFS, and ext2/3/4 have deterministic synthetic fixture coverage with byte-exact SHA-256 recovery checks. HFS+, APFS, Btrfs, and XFS have deterministic probe fixtures, but metadata-based deleted-file recovery on those filesystems is experimental and not end-to-end validated. Carving registers 36 formats and emits only candidates accepted by their validators; see docs/src/formats.md. No real physical drive or representative real-media corpus has been validated.
 
 ## Operational safety
 
@@ -29,4 +29,4 @@ Requires Rust 1.90 or newer. GUI development requires Node.js 22.17 or newer.
     npm run check
     npm run tauri build
 
-For current support, release status, and evidence, use docs/support-matrix.md, docs/GAP_REPORT.md, and docs/VERIFICATION.md.
+For current support, release status, and evidence, use docs/src/support-matrix.md, docs/src/GAP_REPORT.md, and docs/src/VERIFICATION.md.
