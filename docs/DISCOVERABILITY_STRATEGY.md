@@ -63,13 +63,13 @@ All listed as **draft / not submitted**. No PRs opened to external repositories 
 
 | Destination | Type | Eligibility | Status | Notes |
 |-------------|------|-------------|--------|-------|
-| crates.io | Package registry | GPL-3.0-or-later OK; needs stable release | Draft | Owner approval required |
-| Homebrew tap | Package manager | Needs tested formula; `packaging/homebrew/relift.rb` has placeholder SHA | Draft | Owner approval required |
-| winget | Package manager | Needs MSI with verified SHA256; manifest has placeholders | Draft | Owner approval required |
-| Scoop | Package manager | Needs ZIP with verified SHA256; manifest has placeholders | Draft | Owner approval required |
-| AUR | Package manager | `packaging/aur/PKGBUILD` exists | Draft | Owner approval required |
-| Flatpak | Package manager | `packaging/flatpak/` exists | Draft | Owner approval required |
-| Snap | Package manager | `packaging/snap/snapcraft.yaml` exists | Draft | Owner approval required |
+| crates.io | Package registry | GPL-3.0-or-later OK; needs stable release | Not submitted | Owner approval required |
+| Homebrew tap | Package manager | Formula submitted; v1.0.0 source verified | PR #328237 open | Submitted to Homebrew/homebrew-core |
+| winget | Package manager | Manifest submitted; MSI verified | PR #490778 open | Submitted to microsoft/winget-pkgs |
+| Scoop | Package manager | Manifest submitted; ZIP verified | PR #8883 open | Submitted to ScoopInstaller/Main |
+| AUR | Package manager | PKGBUILD exists with verified checksum | Not submitted | Requires SSH access to AUR git |
+| Flatpak | Package manager | Manifest submitted; tag v1.0.0 | PR #11383 open | Submitted to flathub/flathub |
+| Snap | Package manager | snapcraft.yaml exists with tag v1.0.0 | Not submitted | Requires snapcraft command |
 
 For each submission: check upstream rules, verify package name availability, use real URLs/checksums, test clean install, disclose maintainer affiliation.
 
@@ -97,7 +97,7 @@ Not yet performed. If done, would sample fixed neutral prompts across available 
 
 ## Next steps
 
-1. Wait for Search Console/Bing access from owner (if desired).
-2. After stable release, submit package-manager manifests with verified values.
+1. Wait for package-manager PR reviews (Scoop #8883, Homebrew #328237, winget #490778, Flathub #11383).
+2. Wait for Search Console/Bing access from owner (if desired).
 3. Identify relevant curated lists (data-recovery, forensics, Rust, Tauri) and submit per their rules.
 4. Record search baseline once indexing is confirmed.
