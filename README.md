@@ -136,7 +136,7 @@ No reproducible head-to-head recovery or performance comparison has been run. Re
 
 ## Benchmarks
 
-Targets and measured results are kept separate. The latest recorded run (2026-11-26, Windows 11 x86_64, Rust 1.100) is documented in [`docs/benches/METHODOLOGY.md`](docs/benches/METHODOLOGY.md), with raw benchmark output in [`docs/benches/results/benchmark-2026-11-26.log`](docs/benches/results/benchmark-2026-11-26.log):
+Targets and measured results are kept separate. The latest recorded run (2026-11-26, Windows 11 x86_64, Rust 1.100) is documented in [`docs/benches/METHODOLOGY.md`](docs/benches/METHODOLOGY.md). Raw benchmark output is generated locally with `cargo bench -p relift-bench` and is not committed to the repository:
 
 | Metric | Target | Latest measured |
 |---|---|---|
