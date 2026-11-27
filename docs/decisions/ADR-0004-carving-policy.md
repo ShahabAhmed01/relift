@@ -23,8 +23,11 @@ A carved candidate is emitted only when all of the following hold:
   size).
 
 Carved candidates use `RecoveryMethod::Carved`, `EntryState::Carved`, and are
-marked `confidence` according to validator strength. Unsupported carving targets
-(FLAC, RAR5, ZIP64) are documented gaps, never silently claimed.
+marked `confidence` according to validator strength. ZIP64 is not separately
+handled (it shares the `PK\x03\x04` local-header magic with ZIP and is
+validated by the existing ZIP validator); every other registered format carries
+its own structural validator. Unsupported targets are documented gaps, never
+silently claimed.
 
 ## Consequences
 

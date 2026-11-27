@@ -6,8 +6,8 @@ Toolchains: Rust 1.100.0 MSVC, Rust 1.90.0 MSVC, Node.js 26.13.0
 
 ## Checks completed
 
-- cargo test --workspace --all-targets: passed, 74 tests.
-- cargo +1.90.0 test --workspace --all-targets --offline: passed, 74 tests.
+- cargo test --workspace --all-targets: passed, 94 tests.
+- cargo +1.90.0 test --workspace --all-targets --offline: passed, 94 tests.
 - cargo clippy --workspace --all-targets -- -D warnings: passed.
 - cargo fmt --all -- --check: passed.
 - cargo doc --workspace --no-deps: passed.
