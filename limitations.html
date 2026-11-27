@@ -226,15 +226,14 @@ deleted-file recovery has no deterministic end-to-end test yet.</li>
 find content on the underlying bytes.</li>
 </ul>
 <h2 id="carving"><a class="header" href="#carving">Carving</a></h2>
-<h3 id="formats-without-validated-carvers"><a class="header" href="#formats-without-validated-carvers">Formats without validated carvers</a></h3>
+<h3 id="formats-without-a-dedicated-validator"><a class="header" href="#formats-without-a-dedicated-validator">Formats without a dedicated validator</a></h3>
 <ul>
-<li>RAR5</li>
-<li>ZIP64</li>
-<li>OLE compound files (legacy DOC/XLS/PPT)</li>
-<li>MPEG-TS</li>
-<li>ISO 9660</li>
+<li>ZIP64: shares the <code>PK\x03\x04</code> local-header magic with ZIP and is validated by
+the existing ZIP validator rather than a separate carver. A dedicated ZIP64
+end-of-central-directory validator is not yet implemented.</li>
 </ul>
-<p>An unvalidated carve is never emitted.</p>
+<p>Every other registered format carries its own structural validator, and an
+unvalidated carve is never emitted.</p>
 <h3 id="fragmentation"><a class="header" href="#fragmentation">Fragmentation</a></h3>
 <ul>
 <li>Bifragment gap carving is not implemented for most formats.</li>
