@@ -199,3 +199,33 @@ jobs:
           gh release upload "${GITHUB_REF_NAME}" dist/SHA256SUMS \
             --repo "${GITHUB_REPOSITORY}" \
             --clobber
+
+  sbom:
+    name: SBOM generation
+    needs: [cli, gui]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          mkdir -p dist
+          cargo cyclonedx --all-features --output-format json > dist/sbom.json
+
+      - name: Upload SBOM to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" dist/sbom.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+
