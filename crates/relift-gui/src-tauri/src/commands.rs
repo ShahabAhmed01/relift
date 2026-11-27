@@ -5,6 +5,7 @@ use relift_core::{
     devices::list_devices,
     imaging::{create_image, ImageOptions},
     recover::{run_recovery, RecoverOptions},
+    safety::validate_destination,
     scan::{run_scan, ScanProgress, ScanRequest},
     session::load_header,
     source::open_source,
@@ -295,6 +296,10 @@ pub async fn recover_cmd(
     let src = open_source(&source_path).map_err(|e| format!("could not open source: {}", e))?;
 
     let dest = std::path::PathBuf::from(&options.dest);
+    // Validate destination separation BEFORE creating anything on disk. This
+    // prevents an accidentally-chosen source drive from having a destination
+    // directory created on it before the safety check runs.
+    validate_destination(&header.source, &dest).map_err(|e| format!("unsafe destination: {e}"))?;
     if !dest.exists() {
         std::fs::create_dir_all(&dest)
             .map_err(|e| format!("could not create destination: {}", e))?;
