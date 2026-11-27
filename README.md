@@ -174,7 +174,7 @@ cargo test --workspace --all-targets
 cargo doc --workspace --no-deps
 ```
 
-The suite has 93 tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit and process-level contract tests, GUI DTO contract tests, carver validation tests, filesystem probe tests, and resume tests. CI runs the same suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
+The suite has 94 tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit and process-level contract tests, GUI DTO contract tests, carver validation tests, filesystem probe tests, and resume tests. CI runs the same suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
 
 ## Security
 

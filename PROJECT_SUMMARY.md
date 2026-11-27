@@ -15,13 +15,16 @@ Relift is a Rust command-line and Tauri desktop application for scanning raw dis
 
 ## Supported scope
 
-The current support and verification boundaries are maintained in docs/support-matrix.md and docs/VERIFICATION.md. FAT, exFAT, NTFS and ext2/3/4 have synthetic fixture coverage. HFS+, APFS, Btrfs and XFS parsers are experimental. Signature carving emits only candidates accepted by registered validators. FLAC, RAR5, ZIP64 and OLE are not emitted.
+The current support and verification boundaries are maintained in docs/support-matrix.md and docs/VERIFICATION.md. FAT, exFAT, NTFS and ext2/3/4 have synthetic fixture coverage. HFS+, APFS, Btrfs and XFS parsers are experimental. Signature carving emits only candidates accepted by registered validators. ZIP64
+is not separately emitted (it shares the `PK\x03\x04` local-header magic with ZIP
+and is validated by the existing ZIP validator); every other registered format
+carries its own structural validator.
 
 Only raw images are supported. Imaging is a single copy pass; there is no map-file resume. Sessions use JSON and JSONL files; a cancelled or crashed scan can be continued with `relift scan --resume` (volume-level checkpoint). The GUI supports source selection, scan progress, result filtering and recovery; imaging, report export, and resume remain CLI-only.
 
 ## Verification
 
-The current Rust workspace has 74 tests. On 2026-11-15, tests passed on stable and Rust 1.90.0. The Svelte and TypeScript checks and production build passed. A local Windows Tauri build generated MSI and NSIS installer packages.
+The current Rust workspace has 94 tests. On 2026-11-15, tests passed on stable and Rust 1.90.0. The Svelte and TypeScript checks and production build passed. A local Windows Tauri build generated MSI and NSIS installer packages.
 
 All recovery accuracy evidence is synthetic. No physical drive or representative real-media corpus has been validated. Open release gates are listed in docs/GAP_REPORT.md.
 

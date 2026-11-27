@@ -51,14 +51,13 @@ tracked work list.
 
 ## Carving
 
-### Formats without validated carvers
-- RAR5
-- ZIP64
-- OLE compound files (legacy DOC/XLS/PPT)
-- MPEG-TS
-- ISO 9660
+### Formats without a dedicated validator
+- ZIP64: shares the `PK\x03\x04` local-header magic with ZIP and is validated by
+  the existing ZIP validator rather than a separate carver. A dedicated ZIP64
+  end-of-central-directory validator is not yet implemented.
 
-An unvalidated carve is never emitted.
+Every other registered format carries its own structural validator, and an
+unvalidated carve is never emitted.
 
 ### Fragmentation
 - Bifragment gap carving is not implemented for most formats.

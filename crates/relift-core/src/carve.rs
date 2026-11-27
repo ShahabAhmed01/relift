@@ -6,9 +6,11 @@
 //! verifies a checksum or end marker. Only then is a candidate emitted, with the
 //! validator's notes attached.
 //!
-//! Deliberately unsupported in this build: ZIP64 archives, RAR5, OLE compound
-//! files, FLAC, ISO 9660 and formats that do not carry a reliable length. They
-//! are documented as gaps rather than emitted with guessed ends.
+//! ZIP64 is not separately handled: it shares the `PK\x03\x04` local-header
+//! magic with ZIP and is validated by the existing ZIP validator. MOV is
+//! classified as MP4/ISO-BMFF and WebM as MKV. Every other registered format
+//! carries its own structural validator; formats without a registered validator
+//! are never emitted.
 
 use std::collections::BTreeMap;
 use std::io::{self, Read};
