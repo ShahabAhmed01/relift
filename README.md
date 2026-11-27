@@ -119,7 +119,7 @@ See the [CLI reference](docs/src/CLI.md) for every option and the exit-code cont
 
 The desktop app uses Tauri 2 and Svelte 5. It supports source selection, quick and deep scans with real progress events, result filtering and preview, destination selection, and recovery with hash verification. Imaging, report export, and checkpoint resume remain CLI-only.
 
-Screenshots of the running application are tracked in `docs/assets/screenshots/` and are captured from deterministic synthetic fixtures. See [GUI docs](docs/src/GUI.md) for the exact capability boundary.
+Genuine screenshots of the running application are not yet checked in. The files under `docs/assets/screenshots/` are placeholder captures and do not show the Relift GUI. To capture real screenshots, build the GUI and follow the procedure in [docs/GUI_CAPTURE.md](docs/GUI_CAPTURE.md) using a deterministic synthetic fixture.
 
 ## Evidence and limitations
 
