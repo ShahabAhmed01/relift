@@ -411,8 +411,9 @@ pub fn scan_volume(
          embedded compressed or encrypted payloads are recovered as bytes, not decoded.",
     );
     summary.note(
-        "Not carved in this build: ZIP64, RAR5, OLE compound files, FLAC and ISO 9660. \
-         See docs/LIMITATIONS.md.",
+        "Every registered format carries a structural validator and is carved. ZIP64 shares \
+         the PK\\x03\\x04 local-header magic with ZIP and is validated by the ZIP validator; \
+         it is not reported as a separate format.",
     );
     let source_end = src.len();
     let start = volume.offset.min(source_end);
