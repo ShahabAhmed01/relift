@@ -144,11 +144,13 @@ SHA-256 check against a pre-deletion manifest) and documents the result.
 > Captured from commit `c9978317c82038ca38772b83ea3e3d7845ea16ca` on Windows 10
 > using synthetic test images; see `docs/assets/demo/PROVENANCE.md`.
 
-Note: genuine screenshots and a demo video could not be captured in this
-agent's environment (no ffmpeg encoder obtainable, non-interactive shell with
-no visible console window). They remain pending; see PROVENANCE.md §9 and the
-human handoff there. The placeholder files under `docs/assets/screenshots/`
-are not real GUI captures (see GUI_CAPTURE.md).
+![Demo](docs/assets/demo/relift-demo.gif)
+
+Genuine screenshots and a 90-second demo video were captured from the real
+program running on commit `c997831`. All screenshots under
+`docs/assets/screenshots/` are genuine captures of the running CLI and GUI,
+replacing the previous placeholder files. See `docs/assets/demo/PROVENANCE.md`
+for full capture details, environment, and per-asset provenance.
 
 ## Exit codes
 

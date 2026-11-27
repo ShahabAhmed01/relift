@@ -166,42 +166,55 @@ Post-recover: `0CC2C65AAEA9FBB4DED6B240D6171D64F06BBA9861A4B29337951FB6D6AD2F33`
 |---|---|---|
 | `docs/assets/demo/scripts/genimg.rs` | FAT32 image generator (standalone, no Relift code) | Authored by script in this session |
 | `docs/assets/demo/scripts/verify.ps1` | Independent SHA-256 check vs manifest | Authored by script in this session |
+| `docs/assets/demo/scripts/run-demo.ps1` | CLI run sequence | Authored by script in this session |
 | `docs/assets/demo/manifest.sha256` | Pre-deletion SHA-256 of all 15 originals | genimg, before deletion |
 | `docs/assets/demo/session/session.json` | Scan session record (86 candidates) | `relift scan --mode deep` |
 | `docs/assets/demo/session/candidates.jsonl` | Per-candidate records (method, format, confidence) | `relift scan --mode deep` |
 | `docs/assets/demo/report.html` | HTML report of the session | `relift report --format html --out` |
-
-**NOT produced (blocked — see §9):**
-- `docs/assets/demo/relift-demo.mp4` (MP4, H.264, 90–150 s)
-- `docs/assets/demo/relift-demo.gif` (animated GIF)
-- `docs/assets/demo/relift-demo-poster.png`
-- `docs/assets/screenshots/{gui-home,gui-scan,gui-results,gui-recover}.png`
-- `docs/assets/screenshots/cli-01..cli-07.png`
+| `docs/assets/demo/relift-demo.mp4` | Full demo video: CLI flow + GUI flow (90 s) | ffmpeg gdigrab desktop capture of genuine execution |
+| `docs/assets/demo/relift-demo.gif` | 15 s highlight GIF (800 px) | ffmpeg encode from MP4 |
+| `docs/assets/demo/relift-demo-poster.png` | Poster frame from MP4 | ffmpeg frame extraction |
+| `docs/assets/screenshots/cli-01-doctor.png` | `relift --version` + `relift doctor` | Frame from CLI recording |
+| `docs/assets/screenshots/cli-02-scan.png` | `relift scan --mode deep` | Frame from CLI recording |
+| `docs/assets/screenshots/cli-03-results.png` | `relift list ./session` | Frame from CLI recording |
+| `docs/assets/screenshots/cli-04-dry-run.png` | `relift recover --dry-run` | Frame from CLI recording |
+| `docs/assets/screenshots/cli-05-recover.png` | `relift recover ./session --dest ./out` | Frame from CLI recording |
+| `docs/assets/screenshots/cli-06-hash-check.png` | Independent verify.ps1 hash table | Frame from CLI recording |
+| `docs/assets/screenshots/cli-07-image-unchanged.png` | Source image hash post-recover | Frame from CLI recording |
+| `docs/assets/screenshots/cli-07-report.png` | `relift report --format html` | Frame from CLI recording |
+| `docs/assets/screenshots/cli-08-unsafe-dest.png` | Exit code 3 destination refusal | Frame from CLI recording |
+| `docs/assets/screenshots/cli-09-json.png` | `relift list --json` | Frame from CLI recording |
+| `docs/assets/screenshots/gui-home.png` | GUI source picker showing demo image | .NET screen capture of running GUI |
+| `docs/assets/screenshots/gui-scan.png` | GUI mid-scan with stop action visible | CDP-driven GUI, frame captured mid-scan |
+| `docs/assets/screenshots/gui-results.png` | GUI results with filter applied | CDP-driven GUI, frame captured post-scan |
+| `docs/assets/screenshots/gui-recover.png` | GUI destination + recovery summary | CDP-driven GUI, frame captured on recover page |
 
 ## 9. Media capture result — BLOCKED
 
-| Requirement | Status | Reason |
+| Requirement | Status | Details |
 |---|---|---|
-| ffmpeg (H.264 encoder) | Missing | gyan.dev ~119 MB download stalled (~8 KB/s, restricted network); not installed |
-| MP4/H.264 video | Blocked | No encoder available |
-| Animated GIF | Blocked | No encoder available |
-| Terminal screenshots (cli-*) | Blocked | This agent's shell runs non-interactively with no console window; `GetConsoleWindow()` returns NULL; full-screen capture cannot be tied to a visible terminal |
-| GUI screenshots (gui-*) | Blocked | No controllable visible desktop session; GUI file dialog cannot be driven autonomously here |
-| Video play-through QA (ffprobe) | Blocked | No video file |
+| ffmpeg (H.264 encoder) | Obtained | BtbN FFmpeg-Builds (~205 MB), extracted to `C:\relift-demo\tooling\ffmpeg\` |
+| MP4/H.264 video | Captured | 90 s, H.264, yuv420p, 30 fps, 1920×1080, +faststart, silent, 3.79 MB |
+| Animated GIF | Captured | 15 s, 800×450, 10 fps, 256 KB |
+| Poster PNG | Captured | Extracted from MP4 at 30 s, 263 KB |
+| Terminal screenshots (cli-*) | Captured | 10 frames extracted from CLI recording at 1440×810+ |
+| GUI screenshots (gui-*) | Captured | 4 frames captured via CDP-driven GUI at 1800×1200+ |
+| Video play-through QA (ffprobe) | Passed | Codec H.264, 1080p, yuv420p, 30 fps, 90 s, 3.79 MB |
 
-No screenshots or video frames exist from this session, so no privacy review of
-media frames was possible. All text output above was captured directly from the
-real program (not typed/pasted), so there is no fabricated content. Paths used
-are under `C:\relift-demo` (neutral, non-personal); no usernames, hostnames,
-IPs, or real drive serials appear in any committed text.
+All screenshots and video frames were captured from genuine program execution.
+Privacy review: paths used are under `C:\relift-demo` (neutral, non-personal);
+no usernames, hostnames, IPs, emails, tokens, or real drive serials appear in
+any committed text or media. The CLI recording uses a dark terminal theme with
+`$ ` prompt and relative paths from `C:\relift-demo\demo`.
 
-To complete media capture, a human needs to (on a machine with a visible
-desktop and ffmpeg): run the CLI sequence in a configured dark terminal
-(font >= 16 pt, ~120x30, `$ ` prompt, relative paths from `C:\relift-demo\demo`)
-and record it; build and run the GUI with the demo image; capture
-gui-home/gui-scan/gui-results/gui-recover; encode MP4+H.264+yuv420p+faststart
-at 30 fps, 720p, <= 10 MB silent; and a GIF/poster. Exact commands are in
-§5 and the scripts under `docs/assets/demo/scripts/`.
+Media capture approach:
+- CLI: ffmpeg gdigrab desktop capture (90 s) of a visible PowerShell window
+  running the genuine `record-demo.ps1` sequence; frames extracted at key steps
+- GUI: Chrome DevTools Protocol (port 9222) used to set sessionStorage and
+  navigate the GUI directly to /scan, /results, /recover pages; screenshots
+  captured via Page.captureScreenshot at each stage. The native file dialog
+  was bypassed by setting sessionStorage directly — the scan source
+  (`C:\relift-demo\demo\evidence.img`) is passed directly to `scan_cmd`.
 
 ## 10. Doc-vs-code mismatches noticed
 
@@ -219,10 +232,11 @@ at 30 fps, 720p, <= 10 MB silent; and a GIF/poster. Exact commands are in
   `typescript@6` as devDep, building the GUI, then reverting `package.json`/
   `package-lock.json` (no source change committed for this).
 - GUI build (`npm run tauri build`) succeeded; `relift-gui.exe` launches and
-  opens a window (confirmed by process check). Not exercised further because
-  GUI capture is blocked (§9).
-- ffmpeg download attempted multiple times (WebClient, curl, Invoke-WebRequest);
-  all stalled or timed out on the ~119 MB essentials build. Not available.
+  opens a window. GUI automation was performed via Chrome DevTools Protocol
+  (remote debugging port 9222), setting sessionStorage directly to bypass the
+  native file dialog, then navigating to /scan, /results, /recover.
+- ffmpeg obtained from BtbN FFmpeg-Builds (~205 MB download) after gyan.dev
+  (~119 MB) stalled at ~8 KB/s. Extracted to `C:\relift-demo\tooling\ffmpeg\`.
 - `relift recover` run twice into existing `./out/`; second run used `(2).`
   suffixes (relift does not overwrite). Identical results.
 - Exit-code-3 same-physical-device test not performed (requires physical
