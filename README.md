@@ -1,23 +1,46 @@
 # Relift
 
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="Relift logo" width="96" height="96" />
+</p>
+
 **Read-only deleted-file recovery for raw disk images and drives.**
 
 Relift scans disk images and raw devices without writing to them, records what it finds in a session directory, and recovers validated byte ranges only to a separate destination. Unsupported filesystems and unvalidated carves are reported, never silently presented as recovered.
 
 > **Status: v0.1.0 preview.** Validation is limited to deterministic synthetic fixtures. No real drive, deleted volume, or representative recovery corpus has been validated. Release binaries are unsigned and not notarized. Do not rely on Relift as the only copy or recovery method for important data.
 
+> **Safety first.** Never write to the source device. Always recover to a different physical volume than the one you are scanning. Use `--dry-run` before writing any recovered files. Stop using the drive immediately after deletion — continued use overwrites deleted data.
+
 [![CI](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/badge/release-v0.1.0%20preview-orange)](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.90%2B-blue)](Cargo.toml)
+[![Tests](https://img.shields.io/badge/tests-94%20passing-brightgreen)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
 
 ## Why Relift
 
-- **Read-only by construction.** `ReadOnlySource` exposes no write method, so the recovery engine cannot modify the source. Imaging and recovery write only to an explicitly selected destination.
-- **Destination separation is checked before any write.** Relift refuses a destination that resolves to the same physical device as the source, including partition and stacked-device ancestry on Linux.
-- **Recovery is verified, not assumed.** Recovered files are hashed with SHA-256 by default. The check proves the destination bytes match what was read back; it does not prove they match an unknown original file.
-- **Carving requires structural validation.** A magic-byte match alone is never emitted as a candidate. The 36 registered formats are listed in the [support matrix](docs/src/support-matrix.md).
-- **Sessions are inspectable and resumable.** Scan results are stored as JSON/JSONL, and an interrupted scan can continue with `relift scan --resume` after the source identity is revalidated.
+Relift is built for situations where deleted data still exists on the media but
+filesystem metadata no longer points to it. Every design decision prioritizes
+the safety of the evidence over the speed of the recovery.
+
+- **Read-only by construction.** `ReadOnlySource` exposes no write method, so
+  the recovery engine cannot modify the source. Imaging and recovery write only
+  to an explicitly selected destination.
+- **Destination separation is checked before any write.** Relift refuses a
+  destination that resolves to the same physical device as the source, including
+  partition and stacked-device ancestry on Linux.
+- **Recovery is verified, not assumed.** Recovered files are hashed with SHA-256
+  by default. The check proves the destination bytes match what was read back;
+  it does not prove they match an unknown original file.
+- **Carving requires structural validation.** A magic-byte match alone is never
+  emitted as a candidate. The 36 registered formats each pass a structural
+  validator before a candidate is reported.
+- **Sessions are inspectable and resumable.** Scan results are stored as
+  JSON/JSONL, and an interrupted scan can continue with `relift scan --resume`
+  after the source identity is revalidated.
+- **Offline by default.** Relift contains no network client and sends no
+  telemetry.
 
 ## What it does
 
@@ -174,7 +197,7 @@ cargo test --workspace --all-targets
 cargo doc --workspace --no-deps
 ```
 
-The suite has 93 tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit and process-level contract tests, GUI DTO contract tests, carver validation tests, filesystem probe tests, and resume tests. CI runs the same suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
+The suite has 94 tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit and process-level contract tests, GUI DTO contract tests, carver validation tests, filesystem probe tests, and resume tests. CI runs the same suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
 
 ## Security
 
@@ -187,3 +210,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). New carvers need valid, truncated, and m
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+---
+
+<p align="center">
+  <img src="docs/assets/social-preview.png" alt="Relift social preview" width="640" height="320" />
+</p>
+
+<p align="center">
+  <a href="https://shahabahmed01.github.io/relift/">Documentation site</a> ·
+  <a href="docs/src/CLI.md">CLI reference</a> ·
+  <a href="docs/src/support-matrix.md">Support matrix</a> ·
+  <a href="docs/src/VERIFICATION.md">Verification record</a> ·
+  <a href="SECURITY.md">Security policy</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
