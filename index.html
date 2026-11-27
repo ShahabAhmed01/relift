@@ -173,6 +173,9 @@
                     <main>
                         <h1 id="relift-documentation"><a class="header" href="#relift-documentation">Relift Documentation</a></h1>
 <p>Welcome to the Relift documentation. Relift is a free, open-source, read-only deleted-file recovery tool for disk images and drives.</p>
+<blockquote>
+<p><strong>Preview status.</strong> Validation is limited to deterministic synthetic fixtures. No physical drive or representative recovery corpus has been validated. Release binaries are unsigned. See <a href="VERIFICATION.html">Verification</a> for the current evidence boundary.</p>
+</blockquote>
 <h2 id="what-relift-does"><a class="header" href="#what-relift-does">What Relift Does</a></h2>
 <p>Relift scans disk images and raw devices without writing to them, records what it finds in a session directory, and recovers validated byte ranges only to a separate destination. Unsupported filesystems and unvalidated carves are reported, never silently presented as recovered.</p>
 <h2 id="key-features"><a class="header" href="#key-features">Key Features</a></h2>
@@ -180,7 +183,7 @@
 <li><strong>Read-only by construction</strong> – <code>ReadOnlySource</code> exposes no write method; the engine cannot modify the source device</li>
 <li><strong>Byte-for-byte recovery</strong> verified against synthetic fixtures with SHA-256</li>
 <li><strong>Filesystem metadata recovery</strong> – FAT12/16/32, exFAT, NTFS, ext2/3/4 (fixture-validated); HFS+, APFS, Btrfs and XFS parsers are implemented but experimental</li>
-<li><strong>Signature carving</strong> – structurally validated formats (JPEG, PNG, PDF, ZIP, MP4, MP3, SQLite, and 200+ more)</li>
+<li><strong>Signature carving</strong> – 36 structurally validated formats, including JPEG, PNG, PDF, ZIP, MP4, MP3, SQLite, FLAC, RAR5, OLE, MPEG-TS, and ISO 9660 (full list in <a href="formats.html">Supported Formats</a>)</li>
 <li><strong>Session-based workflow</strong> – scan → session → recover → report, with checkpoint resume</li>
 <li><strong>Cross-platform</strong> – Windows, macOS, and Linux</li>
 <li><strong>No telemetry</strong> – fully offline by default</li>

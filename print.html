@@ -174,6 +174,9 @@
                     <main>
                         <h1 id="relift-documentation"><a class="header" href="#relift-documentation">Relift Documentation</a></h1>
 <p>Welcome to the Relift documentation. Relift is a free, open-source, read-only deleted-file recovery tool for disk images and drives.</p>
+<blockquote>
+<p><strong>Preview status.</strong> Validation is limited to deterministic synthetic fixtures. No physical drive or representative recovery corpus has been validated. Release binaries are unsigned. See <a href="VERIFICATION.html">Verification</a> for the current evidence boundary.</p>
+</blockquote>
 <h2 id="what-relift-does"><a class="header" href="#what-relift-does">What Relift Does</a></h2>
 <p>Relift scans disk images and raw devices without writing to them, records what it finds in a session directory, and recovers validated byte ranges only to a separate destination. Unsupported filesystems and unvalidated carves are reported, never silently presented as recovered.</p>
 <h2 id="key-features"><a class="header" href="#key-features">Key Features</a></h2>
@@ -181,7 +184,7 @@
 <li><strong>Read-only by construction</strong> – <code>ReadOnlySource</code> exposes no write method; the engine cannot modify the source device</li>
 <li><strong>Byte-for-byte recovery</strong> verified against synthetic fixtures with SHA-256</li>
 <li><strong>Filesystem metadata recovery</strong> – FAT12/16/32, exFAT, NTFS, ext2/3/4 (fixture-validated); HFS+, APFS, Btrfs and XFS parsers are implemented but experimental</li>
-<li><strong>Signature carving</strong> – structurally validated formats (JPEG, PNG, PDF, ZIP, MP4, MP3, SQLite, and 200+ more)</li>
+<li><strong>Signature carving</strong> – 36 structurally validated formats, including JPEG, PNG, PDF, ZIP, MP4, MP3, SQLite, FLAC, RAR5, OLE, MPEG-TS, and ISO 9660 (full list in <a href="formats.html">Supported Formats</a>)</li>
 <li><strong>Session-based workflow</strong> – scan → session → recover → report, with checkpoint resume</li>
 <li><strong>Cross-platform</strong> – Windows, macOS, and Linux</li>
 <li><strong>No telemetry</strong> – fully offline by default</li>
@@ -495,7 +498,7 @@ Recovery destination safety is still subject to the platform limits in
 <li>No pause/resume for a running scan, and no resume control in the GUI; the
 backend supports <code>relift scan --resume</code> from the CLI.</li>
 <li>No device-health, SMART, or TRIM diagnosis.</li>
-<li>No real screenshot evidence is included in the repository yet.</li>
+<li>No real screenshot evidence is included in the repository yet. See <a href="../GUI_CAPTURE.html">GUI_CAPTURE.md</a> for the owner-run capture procedure using deterministic synthetic fixtures.</li>
 </ul>
 <p>The GUI is built in the release workflow, but platform runtime behavior,
 accessibility, cold-start time, and large-result performance have not been
@@ -512,42 +515,43 @@ measured as release gates. See <a href="VERIFICATION.html"><code>VERIFICATION.md
 <h3 id="ext2-ext3-ext4"><a class="header" href="#ext2-ext3-ext4">ext2, ext3, ext4</a></h3>
 <p>The parser reads inode metadata, supported block/extent mappings, directory entries, sparse extents, and unwritten extents. It does not replay the journal, recover inline data larger than 60 bytes, decrypt fscrypt data, or support bigalloc. Deletion and reuse can remove the metadata needed to locate content.</p>
 <h2 id="experimental-parsers"><a class="header" href="#experimental-parsers">Experimental parsers</a></h2>
-<p>HFS+, APFS, Btrfs, and XFS parsers are wired into scanning but have no deterministic fixtures or end-to-end recovery tests. Treat their results as experimental. Snapshot enumeration, encryption, compression, hardlink resolution, and other filesystem-specific cases are incomplete; see docs/limitations.md.</p>
+<p>HFS+, APFS, Btrfs, and XFS parsers are wired into scanning. Deterministic probe fixtures and end-to-end detection tests exist (<code>probe_identifies_hfsplus</code>, <code>probe_identifies_apfs</code>, <code>probe_identifies_btrfs</code>, <code>probe_identifies_xfs</code>), but metadata-based deleted-file recovery has not been validated against a fixture or real volume. Treat recovery results as experimental. Snapshot enumeration, encryption, compression, hardlink resolution, and other filesystem-specific cases are incomplete; see <a href="limitations.html">limitations</a>.</p>
 <h2 id="detection-without-metadata-recovery"><a class="header" href="#detection-without-metadata-recovery">Detection without metadata recovery</a></h2>
 <p>ReFS, F2FS, ZFS, ReiserFS, ISO 9660, and UDF may be identified by probing, but metadata recovery is not implemented.</p>
 <h2 id="scan-mode"><a class="header" href="#scan-mode">Scan mode</a></h2>
 <p>Quick mode scans supported filesystem metadata. Deep mode also runs the registered signature validators. Formatted-volume and lost-partition scan modes are not implemented. See docs/CLI.md for exact options.</p>
 <h2 id="evidence-boundary"><a class="header" href="#evidence-boundary">Evidence boundary</a></h2>
-<p>Current metadata recovery evidence is from deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures. No real physical volume or representative real-media corpus has been validated. For details, use docs/support-matrix.md, docs/limitations.md, and docs/GAP_REPORT.md.</p>
+<p>Current metadata recovery evidence is from deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures. No real physical volume or representative real-media corpus has been validated. For details, use the <a href="support-matrix.html">support matrix</a>, <a href="limitations.html">limitations</a>, and <a href="GAP_REPORT.html">gap report</a>.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="carved-format-reference"><a class="header" href="#carved-format-reference">Carved Format Reference</a></h1>
 <p>Relift searches for registered signatures and emits a candidate only when the
 corresponding validator accepts the structure. A candidate passing validation
 is evidence about its container structure; it is not proof that the file is
 complete, uncorrupted, or openable in every application.</p>
-<p>The implementation is in <a href="../crates/relift-core/src/carve.rs"><code>crates/relift-core/src/carve.rs</code></a>.
-The list below describes formats currently registered for carving; formats
-without a working validator are not emitted.</p>
+<p>The implementation is in
+<a href="https://github.com/ShahabAhmed01/relift/blob/main/crates/relift-core/src/carve.rs"><code>crates/relift-core/src/carve.rs</code></a>.
+The 36 formats below are registered for carving; a format without a working
+validator is not emitted.</p>
 <h2 id="registered-formats"><a class="header" href="#registered-formats">Registered formats</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Group</th><th>Formats</th></tr></thead><tbody>
 <tr><td>Images</td><td>JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF</td></tr>
 <tr><td>Documents</td><td>PDF, DOCX, XLSX, PPTX</td></tr>
-<tr><td>Archives</td><td>ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, TAR</td></tr>
-<tr><td>Audio</td><td>MP3, WAV/RIFF, Ogg</td></tr>
-<tr><td>Video</td><td>MP4/ISO-BMFF, MKV</td></tr>
+<tr><td>Archives and containers</td><td>ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660</td></tr>
+<tr><td>Video</td><td>MP4/ISO-BMFF, MKV, MPEG-TS</td></tr>
+<tr><td>Audio</td><td>MP3, WAV/RIFF, Ogg, FLAC</td></tr>
 <tr><td>Databases</td><td>SQLite</td></tr>
-<tr><td>System files</td><td>PST/OST, LNK, EVTX</td></tr>
-<tr><td>Executables</td><td>PE, ELF</td></tr>
+<tr><td>System files</td><td>PST/OST, LNK, EVTX, OLE compound files</td></tr>
+<tr><td>Executables</td><td>PE (EXE/DLL), ELF</td></tr>
 </tbody></table>
 </div>
-<p>The MP4/ISO-BMFF validator does not separately classify MOV. DOCX/XLSX/PPTX
-are checked as ZIP containers with expected package entries. Relift does not
-extract archive members.</p>
+<p>The MP4/ISO-BMFF validator does not separately classify MOV. WebM is handled by
+the MKV/Matroska validator. DOCX/XLSX/PPTX are checked as ZIP containers with
+expected package entries. Relift does not extract archive members.</p>
 <h2 id="not-emitted"><a class="header" href="#not-emitted">Not emitted</a></h2>
 <ul>
-<li>FLAC: metadata-only parsing did not establish audio-frame boundaries, so the
-incomplete validator was removed. No FLAC candidates are emitted.</li>
-<li>RAR5, ZIP64, OLE compound files (legacy Office), MPEG-TS, ISO 9660, camera
-RAW, ODT/ODS/ODP, RTF, EPUB, AVI, FLV, AAC, and AIFF have no registered
+<li>ZIP64: shares the <code>PK\x03\x04</code> local-header magic with ZIP and is handled by
+the existing ZIP validator. A dedicated ZIP64 end-of-central-directory
+validator is not implemented.</li>
+<li>Camera RAW, ODT/ODS/ODP, RTF, EPUB, AVI, FLV, AAC, and AIFF have no registered
 validator in this build.</li>
 </ul>
 <p>See <a href="support-matrix.html"><code>support-matrix.md</code></a> and
@@ -566,7 +570,9 @@ match an original copy.</p>
 <h2 id="adding-a-format"><a class="header" href="#adding-a-format">Adding a format</a></h2>
 <p>Follow the contribution guide and add valid, truncated, and malformed test
 fixtures before registering a new marker. Do not emit a format based only on a
-magic-byte match.</p>
+magic-byte match. The <code>registered_format_count_is_stable</code> unit test fails when
+the marker set changes, which is the prompt to update this page and the support
+matrix.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="forensic-use-and-evidence-handling"><a class="header" href="#forensic-use-and-evidence-handling">Forensic Use and Evidence Handling</a></h1>
 <p>Relift is a data-recovery utility, not a certified forensic acquisition tool.
 It has no case-management mode, DFXML export, source-range hashing, investigator
@@ -950,8 +956,8 @@ inode fields, directory entries and contiguous-run heuristics.</li>
 </ul>
 <h3 id="hfs-apfs-btrfs-xfs"><a class="header" href="#hfs-apfs-btrfs-xfs">HFS+, APFS, Btrfs, XFS</a></h3>
 <ul>
-<li>Parsers are implemented but experimental: there are no deterministic
-fixtures or end-to-end tests yet.</li>
+<li>Parsers are implemented and probe fixtures exist, but metadata-based
+deleted-file recovery has no deterministic end-to-end test yet.</li>
 <li>APFS/Btrfs snapshot trees are not enumerated as separate recovery sources.</li>
 <li>APFS clone extents and FileVault-encrypted volumes are not decoded.</li>
 <li>HFS+ journal replay and hardlink/alias resolution are not implemented.</li>

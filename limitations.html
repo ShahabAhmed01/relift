@@ -212,8 +212,8 @@ inode fields, directory entries and contiguous-run heuristics.</li>
 </ul>
 <h3 id="hfs-apfs-btrfs-xfs"><a class="header" href="#hfs-apfs-btrfs-xfs">HFS+, APFS, Btrfs, XFS</a></h3>
 <ul>
-<li>Parsers are implemented but experimental: there are no deterministic
-fixtures or end-to-end tests yet.</li>
+<li>Parsers are implemented and probe fixtures exist, but metadata-based
+deleted-file recovery has no deterministic end-to-end test yet.</li>
 <li>APFS/Btrfs snapshot trees are not enumerated as separate recovery sources.</li>
 <li>APFS clone extents and FileVault-encrypted volumes are not decoded.</li>
 <li>HFS+ journal replay and hardlink/alias resolution are not implemented.</li>

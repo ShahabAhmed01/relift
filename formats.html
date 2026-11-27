@@ -176,30 +176,31 @@
 corresponding validator accepts the structure. A candidate passing validation
 is evidence about its container structure; it is not proof that the file is
 complete, uncorrupted, or openable in every application.</p>
-<p>The implementation is in <a href="../crates/relift-core/src/carve.rs"><code>crates/relift-core/src/carve.rs</code></a>.
-The list below describes formats currently registered for carving; formats
-without a working validator are not emitted.</p>
+<p>The implementation is in
+<a href="https://github.com/ShahabAhmed01/relift/blob/main/crates/relift-core/src/carve.rs"><code>crates/relift-core/src/carve.rs</code></a>.
+The 36 formats below are registered for carving; a format without a working
+validator is not emitted.</p>
 <h2 id="registered-formats"><a class="header" href="#registered-formats">Registered formats</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Group</th><th>Formats</th></tr></thead><tbody>
 <tr><td>Images</td><td>JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF</td></tr>
 <tr><td>Documents</td><td>PDF, DOCX, XLSX, PPTX</td></tr>
-<tr><td>Archives</td><td>ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, TAR</td></tr>
-<tr><td>Audio</td><td>MP3, WAV/RIFF, Ogg</td></tr>
-<tr><td>Video</td><td>MP4/ISO-BMFF, MKV</td></tr>
+<tr><td>Archives and containers</td><td>ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660</td></tr>
+<tr><td>Video</td><td>MP4/ISO-BMFF, MKV, MPEG-TS</td></tr>
+<tr><td>Audio</td><td>MP3, WAV/RIFF, Ogg, FLAC</td></tr>
 <tr><td>Databases</td><td>SQLite</td></tr>
-<tr><td>System files</td><td>PST/OST, LNK, EVTX</td></tr>
-<tr><td>Executables</td><td>PE, ELF</td></tr>
+<tr><td>System files</td><td>PST/OST, LNK, EVTX, OLE compound files</td></tr>
+<tr><td>Executables</td><td>PE (EXE/DLL), ELF</td></tr>
 </tbody></table>
 </div>
-<p>The MP4/ISO-BMFF validator does not separately classify MOV. DOCX/XLSX/PPTX
-are checked as ZIP containers with expected package entries. Relift does not
-extract archive members.</p>
+<p>The MP4/ISO-BMFF validator does not separately classify MOV. WebM is handled by
+the MKV/Matroska validator. DOCX/XLSX/PPTX are checked as ZIP containers with
+expected package entries. Relift does not extract archive members.</p>
 <h2 id="not-emitted"><a class="header" href="#not-emitted">Not emitted</a></h2>
 <ul>
-<li>FLAC: metadata-only parsing did not establish audio-frame boundaries, so the
-incomplete validator was removed. No FLAC candidates are emitted.</li>
-<li>RAR5, ZIP64, OLE compound files (legacy Office), MPEG-TS, ISO 9660, camera
-RAW, ODT/ODS/ODP, RTF, EPUB, AVI, FLV, AAC, and AIFF have no registered
+<li>ZIP64: shares the <code>PK\x03\x04</code> local-header magic with ZIP and is handled by
+the existing ZIP validator. A dedicated ZIP64 end-of-central-directory
+validator is not implemented.</li>
+<li>Camera RAW, ODT/ODS/ODP, RTF, EPUB, AVI, FLV, AAC, and AIFF have no registered
 validator in this build.</li>
 </ul>
 <p>See <a href="support-matrix.html"><code>support-matrix.md</code></a> and
@@ -218,7 +219,9 @@ match an original copy.</p>
 <h2 id="adding-a-format"><a class="header" href="#adding-a-format">Adding a format</a></h2>
 <p>Follow the contribution guide and add valid, truncated, and malformed test
 fixtures before registering a new marker. Do not emit a format based only on a
-magic-byte match.</p>
+magic-byte match. The <code>registered_format_count_is_stable</code> unit test fails when
+the marker set changes, which is the prompt to update this page and the support
+matrix.</p>
 
                     </main>
 

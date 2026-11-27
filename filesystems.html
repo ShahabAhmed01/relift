@@ -183,13 +183,13 @@
 <h3 id="ext2-ext3-ext4"><a class="header" href="#ext2-ext3-ext4">ext2, ext3, ext4</a></h3>
 <p>The parser reads inode metadata, supported block/extent mappings, directory entries, sparse extents, and unwritten extents. It does not replay the journal, recover inline data larger than 60 bytes, decrypt fscrypt data, or support bigalloc. Deletion and reuse can remove the metadata needed to locate content.</p>
 <h2 id="experimental-parsers"><a class="header" href="#experimental-parsers">Experimental parsers</a></h2>
-<p>HFS+, APFS, Btrfs, and XFS parsers are wired into scanning but have no deterministic fixtures or end-to-end recovery tests. Treat their results as experimental. Snapshot enumeration, encryption, compression, hardlink resolution, and other filesystem-specific cases are incomplete; see docs/limitations.md.</p>
+<p>HFS+, APFS, Btrfs, and XFS parsers are wired into scanning. Deterministic probe fixtures and end-to-end detection tests exist (<code>probe_identifies_hfsplus</code>, <code>probe_identifies_apfs</code>, <code>probe_identifies_btrfs</code>, <code>probe_identifies_xfs</code>), but metadata-based deleted-file recovery has not been validated against a fixture or real volume. Treat recovery results as experimental. Snapshot enumeration, encryption, compression, hardlink resolution, and other filesystem-specific cases are incomplete; see <a href="limitations.html">limitations</a>.</p>
 <h2 id="detection-without-metadata-recovery"><a class="header" href="#detection-without-metadata-recovery">Detection without metadata recovery</a></h2>
 <p>ReFS, F2FS, ZFS, ReiserFS, ISO 9660, and UDF may be identified by probing, but metadata recovery is not implemented.</p>
 <h2 id="scan-mode"><a class="header" href="#scan-mode">Scan mode</a></h2>
 <p>Quick mode scans supported filesystem metadata. Deep mode also runs the registered signature validators. Formatted-volume and lost-partition scan modes are not implemented. See docs/CLI.md for exact options.</p>
 <h2 id="evidence-boundary"><a class="header" href="#evidence-boundary">Evidence boundary</a></h2>
-<p>Current metadata recovery evidence is from deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures. No real physical volume or representative real-media corpus has been validated. For details, use docs/support-matrix.md, docs/limitations.md, and docs/GAP_REPORT.md.</p>
+<p>Current metadata recovery evidence is from deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures. No real physical volume or representative real-media corpus has been validated. For details, use the <a href="support-matrix.html">support matrix</a>, <a href="limitations.html">limitations</a>, and <a href="GAP_REPORT.html">gap report</a>.</p>
 
                     </main>
 
