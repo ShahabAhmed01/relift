@@ -19,7 +19,7 @@ authors = ["Shahab Ahmed"]
 [workspace.dependencies]
 anyhow = "1"
 cap-fs-ext = "=3.4.6"
-cap-std = "=3.4.6"
+cap-std = "=4.0.3"
 rustix = { version = "=1.1.6", features = ["fs"] }
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 clap = { version = "4.4", features = ["derive"] }
