@@ -21,3 +21,6 @@ crates/relift-gui/src-tauri/WixTools/
 # Scratch artifacts
 mingw.7z
 *.7z
+
+# mdBook build output
+/book/

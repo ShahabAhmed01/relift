@@ -1,0 +1,8 @@
+[book]
+authors = ["Shahab Ahmed"]
+language = "en"
+src = "src"
+title = "Relift Documentation"
+
+[build]
+build-dir = "../book"
