@@ -18,8 +18,8 @@ body:
       placeholder: |
         relift 0.1.0 on windows
         profile: release
-        PASS  raw_device_access     GENERIC_READ + FILE_SHARE_READ
-        PASS  trim_detection        NVMe TRIM supported
+        PASS  raw_device_access     read-only handle opened
+        PASS  destination_separation  separate physical volume confirmed
         ...
     validations:
       required: true
@@ -74,7 +74,7 @@ body:
         - External USB HDD
         - External USB SSD
         - SD/microSD Card
-        - Disk Image (.img/.dd/.E01/.vhd/.vmdk)
+        - Disk Image (.img/.dd/.raw)
         - Other
     validations:
       required: true
@@ -86,8 +86,6 @@ body:
       options:
         - quick
         - deep
-        - formatted
-        - lost-partition
     validations:
       required: true
 

@@ -43,8 +43,8 @@ function check(file, target, line) {
     clean = clean.slice(1, -1);
   }
   if (!clean || clean.startsWith("#") || isExternal(clean)) return;
-  // Strip anchor and query string.
-  clean = clean.split("#")[0].split("?")[0];
+  // Strip anchor, query string, and trailing slash.
+  clean = clean.split("#")[0].split("?")[0].replace(/\/$/, "");
   if (!clean) return;
   // Ignore template placeholders.
   if (clean.includes("{{") || clean.includes("${{")) return;
