@@ -2,7 +2,8 @@
 //!
 //! Run with: `cargo bench -p relift-bench`
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
 use relift_core::{carve::CarveOptions, fs::FsScanOptions, source::FileSource};
 use relift_testkit::{exfat_image, ext4_image, fat32_image, ntfs_image};
 use tempfile::tempdir;
