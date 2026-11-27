@@ -32,7 +32,19 @@ const textExtensions = new Set([
 ]);
 
 // Sequences produced when UTF-8 punctuation is decoded as Windows-1252.
-const mojibake = ["â€", "â†", "â‰", "â€¦", "Ã©", "Ã¨", "Ã¢", "Ã¼", "Ã¶", "Ã¤"];
+// Stored as Unicode escapes so the file itself contains no mojibake.
+const mojibake = [
+  "\u00E2\u20AC", // a-euro sign (a-circumflex + euro)
+  "\u00E2\u2020", // a-dagger
+  "\u00E2\u2030", // a-permille
+  "\u00E2\u2026", // a-ellipsis
+  "\u00C3\u00A9", // A-eacute
+  "\u00C3\u00A8", // A-grave
+  "\u00C3\u00A2", // A-circumflex
+  "\u00C3\u00BC", // A-umlaut-u
+  "\u00C3\u00B6", // A-umlaut-o
+  "\u00C3\u00A4", // A-umlaut-a
+];
 
 const files = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" })
   .split(/\r?\n/)
