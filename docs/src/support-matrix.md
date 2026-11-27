@@ -12,18 +12,19 @@ means there is code plus at least a deterministic fixture or end-to-end test.
 | exFAT | ✓ | Fixture-validated | Entry sets, allocation bitmap, NoFatChain |
 | NTFS | ✓ | Fixture-validated | $MFT records, resident/non-resident data, sparse runs |
 | ext2/3/4 | ✓ | Fixture-validated | Inodes, direct/indirect blocks, extent trees, sparse/unwritten runs |
-| HFS+ | ✓ | Experimental | Catalog B-tree and extent descriptors; no fixture yet |
-| APFS | ✓ | Experimental | Container/volume headers and B-tree inode scan; no fixture yet |
-| Btrfs | ✓ | Experimental | Root/chunk tree probing and inode items; no fixture yet |
-| XFS | ✓ | Experimental | AG headers and inode B+tree scan; no fixture yet |
+| HFS+ | ✓ | Experimental (probe-tested) | Catalog B-tree and extent descriptors; probe fixture exists, metadata recovery not verified |
+| APFS | ✓ | Experimental (probe-tested) | Container/volume headers and B-tree inode scan; probe fixture exists, metadata recovery not verified |
+| Btrfs | ✓ | Experimental (probe-tested) | Root/chunk tree probing and inode items; probe fixture exists, metadata recovery not verified |
+| XFS | ✓ | Experimental (probe-tested) | AG headers and inode B+tree scan; probe fixture exists, metadata recovery not verified |
 | ReFS, F2FS, ZFS, ReiserFS, ISO 9660, UDF | ✗ | Identified only | Detected by `probe()`; metadata recovery not implemented |
 
 **Legend**
 
 - **Fixture-validated** — exercised by the deterministic testkit and end-to-end
   scan → recover → SHA-256 tests.
-- **Experimental** — parser exists and is wired into scan, but has not been
-  validated against a fixture or real volume.
+- **Experimental (probe-tested)** — parser exists and is wired into scan; probe
+  detection has a deterministic fixture, but metadata-based deleted-file
+  recovery has not been validated against a fixture or real volume.
 - **Identified only** — detected and reported; no metadata recovery.
 
 ## Platform support
@@ -54,23 +55,26 @@ There is no io_uring, `O_DIRECT`, or OS-specific direct-I/O path.
 
 ## Carved format support
 
-Every emitted carve must pass a structural validator. The current validators are:
+Every emitted carve must pass a structural validator. There are 36 registered
+format identifiers:
 
 | Category | Formats |
 |----------|---------|
 | Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF |
 | Documents | PDF, DOCX, XLSX, PPTX |
-| Archives | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, tar |
+| Archives and containers | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660 |
 | Video | MP4/ISO-BMFF, MKV, MPEG-TS |
 | Audio | MP3, WAV/RIFF, Ogg, FLAC |
 | Databases | SQLite |
-| System | PST/OST, LNK, EVTX, OLE |
+| System | PST/OST, LNK, EVTX, OLE compound files |
 | Executables | PE (EXE/DLL), ELF |
 
 **Not emitted:** ZIP64 (shares the PK\\x03\\x04 local-header magic with ZIP;
 handled by the existing ZIP validator), and formats without a registered
-validator. MOV and WebM are not separately classified from their container
-families.
+validator. MOV is classified as MP4/ISO-BMFF; WebM is classified as MKV.
+
+The `registered_format_count_is_stable` unit test fails when the marker set
+changes, so this table cannot drift silently.
 
 ## Feature matrix
 

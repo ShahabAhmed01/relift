@@ -2,13 +2,19 @@
 
 Relift is a Rust CLI and Tauri desktop application for recovering deleted files from raw disk images and devices. Device scans open sources read-only. Recovery requires a separate destination that passes device-separation checks.
 
+- Repository: https://github.com/ShahabAhmed01/relift
+- Documentation: https://shahabahmed01.github.io/relift/
+- License: GPL-3.0-or-later
+- Status: v0.1.0 preview; synthetic-fixture validation only; release assets are unsigned.
+
 ## Repository references
 
 - [README](https://github.com/ShahabAhmed01/relift/blob/main/README.md)
-- [CLI reference](https://github.com/ShahabAhmed01/relift/blob/main/docs/CLI.md)
-- [Support matrix](https://github.com/ShahabAhmed01/relift/blob/main/docs/support-matrix.md)
-- [Format validators](https://github.com/ShahabAhmed01/relift/blob/main/docs/formats.md)
-- [Known gaps](https://github.com/ShahabAhmed01/relift/blob/main/docs/GAP_REPORT.md)
-- [Verification record](https://github.com/ShahabAhmed01/relift/blob/main/docs/VERIFICATION.md)
+- [CLI reference](https://github.com/ShahabAhmed01/relift/blob/main/docs/src/CLI.md)
+- [Support matrix](https://github.com/ShahabAhmed01/relift/blob/main/docs/src/support-matrix.md)
+- [Format validators](https://github.com/ShahabAhmed01/relift/blob/main/docs/src/formats.md)
+- [Known gaps](https://github.com/ShahabAhmed01/relift/blob/main/docs/src/GAP_REPORT.md)
+- [Verification record](https://github.com/ShahabAhmed01/relift/blob/main/docs/src/VERIFICATION.md)
+- [Threat model](https://github.com/ShahabAhmed01/relift/blob/main/docs/src/threat-model.md)
 
-Validation evidence currently comes from synthetic fixtures. The v0.1.0 release is a draft. Do not claim real-media accuracy, stable release availability, signed artifacts, or package-manager installation.
+Validation evidence currently comes from deterministic synthetic fixtures. The v0.1.0 release is a published prerelease, not a stable release. Do not claim real-media accuracy, stable release availability, signed artifacts, or package-manager installation.

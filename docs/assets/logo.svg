@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-label="Relift">
+  <!-- Relift wordmark + mark: an abstract read-only arrow lifting a block -->
+  <defs>
+    <style>
+      .mark { fill: #0ea5e9; }
+      .mark.mono { fill: #000000; }
+      .mark.inverse { fill: #ffffff; }
+      .text { fill: #111827; font-family: system-ui, -apple-system, sans-serif; font-weight: 700; }
+      .text.mono { fill: #000000; }
+      .text.inverse { fill: #ffffff; }
+    </style>
+  </defs>
+
+  <!-- Read-only arrow lifting upward -->
+  <path class="mark" d="M20 46 L14 46 L14 38 L26 26 L38 38 L38 46 L32 46 L32 54 L20 54 Z" />
+  <path class="mark" d="M20 46 L20 40 L26 40 L26 46 Z" fill="#059669" />
+
+  <!-- Recovered block above -->
+  <rect class="mark" x="26" y="22" width="12" height="6" rx="1" />
+  <rect class="mark" x="28" y="16" width="8" height="6" rx="1" fill="#059669" />
+</svg>

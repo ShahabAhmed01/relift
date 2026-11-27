@@ -1835,8 +1835,8 @@ pub fn xfs_image() -> XfsFixture {
 // ---------------------------------------------------------------------------
 
 /// Btrfs probe fixture: magic "_BHRfS_M" at two offsets because the top-level
-/// probe checks buf[0x10040] while btrfs::scan checks buf[256..264] of the
-/// 0x10000 read (absolute 0x10100).
+/// probe checks `buf[0x10040]` while `btrfs::scan` checks `buf[256..264]` of the
+/// `0x10000` read (absolute `0x10100`).
 #[derive(Debug, Clone)]
 pub struct BtrfsFixture {
     pub bytes: Vec<u8>,
@@ -1863,8 +1863,8 @@ pub fn btrfs_image() -> BtrfsFixture {
 // ---------------------------------------------------------------------------
 
 /// HFS+ probe fixture: magic 0x482B ("H+") at two offsets because the
-/// top-level probe checks u16 at buf[1026] while hfs::scan checks buf[0..2]
-/// of the 1024 read (absolute 1024).
+/// top-level probe checks `u16` at `buf[1026]` while `hfs::scan` checks
+/// `buf[0..2]` of the 1024-byte read (absolute 1024).
 #[derive(Debug, Clone)]
 pub struct HfsPlusFixture {
     pub bytes: Vec<u8>,
@@ -1900,8 +1900,8 @@ pub fn hfsplus_image() -> HfsPlusFixture {
 // ---------------------------------------------------------------------------
 
 /// APFS probe fixture: "NXSB" container magic at two offsets (top-level probe
-/// checks buf[1027], apfs::scan checks buf[0]), plus "APSB" volume magic at
-/// block_size*2.
+/// checks `buf[1027]`, `apfs::scan` checks `buf[0]`), plus "APSB" volume magic
+/// at `block_size * 2`.
 #[derive(Debug, Clone)]
 pub struct ApfsFixture {
     pub bytes: Vec<u8>,

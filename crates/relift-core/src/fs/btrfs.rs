@@ -590,6 +590,6 @@ fn btrfs_time_to_iso(sec: u64, nsec: u32) -> String {
     if sec == 0 {
         return "1970-01-01T00:00:00Z".to_string();
     }
-    let dt = chrono::DateTime::from_timestamp(sec as i64, nsec).unwrap_or_default();
-    dt.to_rfc3339()
+    crate::util::unix_to_iso_nanos(sec as i64, nsec)
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
 }

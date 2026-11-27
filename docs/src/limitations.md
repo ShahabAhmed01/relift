@@ -37,8 +37,8 @@ tracked work list.
 - Journal replay is not performed.
 
 ### HFS+, APFS, Btrfs, XFS
-- Parsers are implemented but experimental: there are no deterministic
-  fixtures or end-to-end tests yet.
+- Parsers are implemented and probe fixtures exist, but metadata-based
+  deleted-file recovery has no deterministic end-to-end test yet.
 - APFS/Btrfs snapshot trees are not enumerated as separate recovery sources.
 - APFS clone extents and FileVault-encrypted volumes are not decoded.
 - HFS+ journal replay and hardlink/alias resolution are not implemented.

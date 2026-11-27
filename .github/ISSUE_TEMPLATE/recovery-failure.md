@@ -7,7 +7,7 @@ labels: ["recovery-failure"]
 
 ## Recovery Failure Report
 
-**⚠️ PRIVACY WARNING**: Do NOT upload private recovered files or expose sensitive device identifiers (serial numbers, volume labels with personal info). Redact sensitive paths in logs.
+**⚠️ PRIVACY WARNING**: Do NOT upload private recovered files, disk images containing personal data, or expose sensitive device identifiers (serial numbers, volume labels with personal info). Redact sensitive paths in logs. Work only with sanitized synthetic fixtures or non-sensitive data.
 
 ### Required Information
 
@@ -36,13 +36,11 @@ labels: ["recovery-failure"]
 - [ ] External USB HDD
 - [ ] External USB SSD
 - [ ] SD/microSD Card
-- [ ] Disk Image (.img/.dd/.E01/.vhd/.vmdk)
+- [ ] Disk Image (.img/.dd/.raw)
 
 **Scan Mode Used**:
 - [ ] quick (metadata)
 - [ ] deep (metadata + carve)
-- [ ] formatted
-- [ ] lost-partition
 
 ### What Happened
 

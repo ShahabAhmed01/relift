@@ -792,6 +792,5 @@ fn hfs_time_to_iso(mac_time: u32) -> String {
     if unix_time <= 0 {
         return "1970-01-01T00:00:00Z".to_string();
     }
-    let dt = chrono::DateTime::from_timestamp(unix_time, 0).unwrap_or_default();
-    dt.to_rfc3339()
+    crate::util::unix_to_iso(unix_time).unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
 }

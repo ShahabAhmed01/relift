@@ -1,46 +1,91 @@
-﻿# Relift
+# Relift
 
-Read-only deleted-file recovery for disk images and drives.
+**Read-only deleted-file recovery for raw disk images and drives.**
 
 Relift scans disk images and raw devices without writing to them, records what it finds in a session directory, and recovers validated byte ranges only to a separate destination. Unsupported filesystems and unvalidated carves are reported, never silently presented as recovered.
 
-## Canonical identity
+> **Status: v0.1.0 preview.** Validation is limited to deterministic synthetic fixtures. No real drive, deleted volume, or representative recovery corpus has been validated. Release binaries are unsigned and not notarized. Do not rely on Relift as the only copy or recovery method for important data.
 
-- **Name:** Relift (binary `relift`)
-- **License:** GPL-3.0-or-later
-- **Stack:** Rust 1.90+; the Windows release target uses MSVC
-- **Crates:** `relift-core`, `relift-cli`, `relift-testkit`, `relift-gui`, `relift-bench`
+[![CI](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/badge/release-v0.1.0%20preview-orange)](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![MSRV](https://img.shields.io/badge/rust-1.90%2B-blue)](Cargo.toml)
 
-## Features
+## Why Relift
 
-- **Read-only-by-construction:** `ReadOnlySource` exposes no write method; the engine cannot modify the source device.
-- **Byte-for-byte recovery verified against synthetic fixtures with SHA-256.**
-- **Filesystem metadata recovery:** FAT12/16/32, exFAT, NTFS, ext2/3/4 (fixture-validated); HFS+, APFS, Btrfs and XFS parsers are implemented but only lightly exercised (experimental).
-- **Signature carving:** structurally validated formats listed in [`docs/support-matrix.md`](docs/support-matrix.md); unvalidated formats such as ZIP64 are not emitted.
-- **Sparse-file segment preservation:** holes and unwritten extents keep byte offsets.
-- **Destination safety:** output proven separate from evidence before any write.
-- **SHA-256 verification** of every recovered file (on by default).
-- **Session-based workflow:** scan â†’ session â†’ recover â†’ report (JSON/HTML/CSV). Completed scan results persist in the session, and a cancelled or crashed scan can be continued with `--resume` after the source identity is revalidated.
-- **`devices` and `doctor`** report device accessibility and run local self-tests; they do not diagnose SMART health or TRIM status.
-- **No telemetry;** default offline.
-- **GUI (Tauri 2 + Svelte 5):** source selection, scan progress, result filtering and preview, and recovery to a selected destination. Imaging and report export remain CLI-only.
-- **CLI:** scriptable commands, JSON output, and shell completions. See [`docs/CLI.md`](docs/CLI.md) for the implemented command set.
+- **Read-only by construction.** `ReadOnlySource` exposes no write method, so the recovery engine cannot modify the source. Imaging and recovery write only to an explicitly selected destination.
+- **Destination separation is checked before any write.** Relift refuses a destination that resolves to the same physical device as the source, including partition and stacked-device ancestry on Linux.
+- **Recovery is verified, not assumed.** Recovered files are hashed with SHA-256 by default. The check proves the destination bytes match what was read back; it does not prove they match an unknown original file.
+- **Carving requires structural validation.** A magic-byte match alone is never emitted as a candidate. The 36 registered formats are listed in the [support matrix](docs/src/support-matrix.md).
+- **Sessions are inspectable and resumable.** Scan results are stored as JSON/JSONL, and an interrupted scan can continue with `relift scan --resume` after the source identity is revalidated.
+
+## What it does
+
+| Area | Implemented | Evidence status |
+|---|---|---|
+| Filesystem metadata recovery | FAT12/16/32, exFAT, NTFS, ext2/3/4 | Fixture-validated end to end with SHA-256 |
+| Filesystem detection | HFS+, APFS, Btrfs, XFS, ReFS, F2FS, ZFS, ReiserFS, ISO 9660, UDF | HFS+/APFS/Btrfs/XFS have probe fixtures; the rest are detection-only |
+| Signature carving | 36 formats with structural validators | Unit-tested valid, truncated, and random inputs |
+| Sparse files | Holes and unwritten extents keep byte offsets | Fixture-tested |
+| CLI | scan, recover, image, devices, doctor, report, completions | Process-level contract tests |
+| GUI | source selection, scan progress, filtering, preview, recovery | Tauri 2 + Svelte 5; see [GUI docs](docs/src/GUI.md) |
+
+HFS+, APFS, Btrfs, and XFS parsers are implemented and wired into scanning, but metadata-based deleted-file recovery on those filesystems is experimental. Only probe detection has deterministic fixtures. See the [support matrix](docs/src/support-matrix.md) for the exact boundary.
+
+## Install
+
+### Prebuilt preview
+
+Download the bundle for your platform from the [v0.1.0 preview release](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0):
+
+- Windows: `.msi` or `-setup.exe`
+- macOS: `.dmg` (universal)
+- Linux: `.AppImage`, `.deb`, or `.rpm`
+- CLI-only archives for Windows x86_64, macOS x86_64/ARM64, and Linux x86_64/ARM64
+
+The release includes `SHA256SUMS`. On Linux or macOS, verify a download with:
+
+```sh
+sha256sum --check SHA256SUMS
+```
+
+All assets are unsigned and not notarized. Checksums detect byte mismatches; they do not authenticate the publisher. Package-manager manifests in `packaging/` are drafts and have not been submitted.
+
+### From source
+
+Requires Rust 1.90 or newer. On Windows the MSVC toolchain is recommended:
+
+```sh
+rustup default stable-x86_64-pc-windows-msvc
+cargo build --release --workspace
+```
+
+The CLI binary is `target/release/relift` (`relift.exe` on Windows). The GUI needs Node.js 22.17 or newer and the Tauri CLI:
+
+```sh
+cd crates/relift-gui
+npm ci
+npm run tauri build
+```
 
 ## Quick start
 
-Image a raw device, then scan the image (recommended over scanning a mounted volume):
+Work on an image, not a live volume, whenever possible:
 
 ```sh
-relift image \\.\PhysicalDrive1 --dest D:\images\evidence.dd
-relift scan D:\images\evidence.dd --session D:\session
-relift recover D:\session --dest D:\recovered
+relift image /dev/sdX --dest /mnt/backup/evidence.dd
+relift scan /mnt/backup/evidence.dd --session ./session
+relift recover ./session --dest /mnt/recovery --dry-run
+relift recover ./session --dest /mnt/recovery
 ```
 
-Scan an image directly:
+`--dry-run` prints what would be written without writing it. Always recover to a different physical volume from the source.
+
+Scan an existing raw image with carving:
 
 ```sh
-relift scan image.dd --session ./session --live --carve
-relift recover ./session --dest ./out
+relift scan image.dd --session ./session --mode deep
+relift recover ./session --dest ./out --filter 'ext:jpg,png,pdf' --min-confidence verified
 ```
 
 Continue an interrupted scan (the source must be unchanged):
@@ -49,22 +94,20 @@ Continue an interrupted scan (the source must be unchanged):
 relift scan image.dd --session ./session --resume
 ```
 
-List devices:
+Other commands:
 
 ```sh
-relift devices
+relift devices      # list visible devices and access status
+relift doctor       # run local self-tests
+relift report ./session --format html --dest report.html
 ```
 
-Run self-tests:
-
-```sh
-relift doctor
-```
+See the [CLI reference](docs/src/CLI.md) for every option and the exit-code contract.
 
 ## Exit codes
 
 | Code | Meaning |
-|------|---------|
+|---|---|
 | 0 | OK |
 | 1 | RUNTIME |
 | 2 | USAGE |
@@ -72,118 +115,75 @@ relift doctor
 | 4 | MISMATCH (source != session) |
 | 5 | PARTIAL |
 
-See `docs/CLI.md` for the full command reference.
-
 ## GUI
 
-Relift includes a desktop GUI built with Tauri 2 and Svelte 5:
+The desktop app uses Tauri 2 and Svelte 5. It supports source selection, quick and deep scans with real progress events, result filtering and preview, destination selection, and recovery with hash verification. Imaging, report export, and checkpoint resume remain CLI-only.
 
-| Screen | Description |
-|--------|-------------|
-| ![Source picker](docs/assets/screenshots/gui-home.png) | **Source picker** - visible devices and raw images with access status |
-| ![Scan in progress](docs/assets/screenshots/gui-scan.png) | **Scan** - live progress and a stop action that keeps partial results |
-| ![Results](docs/assets/screenshots/gui-results.png) | **Results** - filterable table, candidate metadata |
-| ![Recovery](docs/assets/screenshots/gui-recover.png) | **Recovery** - destination selection and recovery summary |
+Genuine screenshots of the running application are not yet checked in. The files under `docs/assets/screenshots/` are placeholder captures and do not show the Relift GUI. To capture real screenshots, build the GUI and follow the procedure in [docs/GUI_CAPTURE.md](docs/GUI_CAPTURE.md) using a deterministic synthetic fixture.
 
-The [v0.1.0 preview release](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) includes desktop bundles for Windows, macOS, and Linux plus CLI archives for five targets. The attached `SHA256SUMS` manifest matches the uploaded assets. All assets are unsigned; hashes detect byte mismatches but do not authenticate the publisher. The preview is tested on synthetic images only; no real drive or representative recovery corpus has been validated.
+## Evidence and limitations
+
+- **Validation boundary:** FAT32, exFAT, NTFS, and ext4 recovery is proven on deterministic synthetic images with byte-exact SHA-256 comparison. HFS+/APFS/Btrfs/XFS detection is proven on probe fixtures. No physical media has been validated.
+- **Not tested:** SSD TRIM/garbage collection, failing drives, hardware encryption, RAID/multi-device volumes, E01/AFF4/VHD/VMDK/QCOW2/DMG containers, and real-world fragmentation.
+- **Unsigned:** no Authenticode certificate, Apple Developer ID, or notarization credentials are configured.
+- **No telemetry:** Relift makes no network calls during scanning or recovery.
+
+Full detail: [verification record](docs/src/VERIFICATION.md), [support matrix](docs/src/support-matrix.md), [known gaps](docs/src/GAP_REPORT.md), [limitations](docs/src/limitations.md), and [threat model](docs/src/threat-model.md).
 
 ## Comparison
 
-No reproducible, head-to-head recovery or performance comparison has been run.
-Relift's filesystem and format claims are limited to the evidence in the
-[support matrix](docs/support-matrix.md) and [verification record](docs/VERIFICATION.md).
-Choose a tool based on its tested support for your filesystem and recovery case;
-Relift is not a replacement for partition repair, RAID reconstruction, or a
-certified forensic suite.
+No reproducible head-to-head recovery or performance comparison has been run. Relift's claims are limited to the evidence in the [support matrix](docs/src/support-matrix.md) and [verification record](docs/src/VERIFICATION.md). Choose a tool based on its tested support for your filesystem and recovery case. Relift is not a replacement for partition repair, RAID reconstruction, or a certified forensic suite.
 
 ## Benchmarks
 
-Performance targets are tracked in `docs/benches/METHODOLOGY.md`. Published measurements are not yet available; run `cargo bench -p relift-bench` locally and record the machine details before quoting numbers.
+Targets and measured results are kept separate. The latest recorded run (2026-11-26, Windows 11 x86_64, Rust 1.100) is documented in [`docs/benches/METHODOLOGY.md`](docs/benches/METHODOLOGY.md). Raw benchmark output is generated locally with `cargo bench -p relift-bench` and is not committed to the repository:
 
-| Metric | Target | Method |
-|--------|--------|--------|
-| Cold start (CLI) | < 50 ms | `hyperfine` median of 100 runs |
-| GUI cold start | < 400 ms | Tauri `window_created` â†’ first paint |
-| Deep scan sweep | â‰¥ 4 GB/s | 64 MB test buffer, `memchr` SIMD |
-| Deep scan full | â‰¥ 1.5 GB/s | Real fixtures, all carvers |
-| Quick scan (1 TB NTFS) | < 90 s | 1M MFT records, NVMe |
-| Memory (4 TB scan) | < 350 MB RSS | Bounded streaming, no full buffering |
-| Binary size (release) | < 30 MB | `strip`, LTO, single codegen unit |
+| Metric | Target | Latest measured |
+|---|---|---|
+| Signature sweep (64 MiB buffer) | >= 4 GB/s | 3.74-4.00 GiB/s |
+| JPEG validation (1 MiB) | - | 6.20-6.52 ms |
+| ZIP validation (1 MiB) | - | 6.26-6.59 ms |
+| FAT32 metadata scan | - | 212-223 us |
+| NTFS metadata scan | - | 1.01-1.07 ms |
+| ext4 metadata scan | - | 786-802 us |
+| Filesystem probes | - | 49-72 us |
+| Quick scan (1 TB NTFS) | < 90 s | not measured |
+| Memory (4 TB scan) | < 350 MB RSS | not measured |
 
-See `docs/benches/METHODOLOGY.md` for full methodology.
+The sweep result is below its 4 GB/s target and regressed against the previous local baseline. See [`docs/benches/METHODOLOGY.md`](docs/benches/METHODOLOGY.md) before quoting numbers.
 
 ## Documentation
 
-- [Docs site](https://shahabahmed01.github.io/relift/) — full documentation site
-
-- `docs/CLI.md` â€” command and exit-code reference
-- `docs/architecture.md` â€” system design
-- `docs/support-matrix.md` â€” tested/untested filesystem and platform matrix
-- `docs/threat-model.md` â€” threats and mitigations
-- `docs/limitations.md` â€” known gaps and exclusions
-- `docs/GAP_REPORT.md` â€” tracked gaps
-- `docs/VERIFICATION.md` â€” how recovery is validated
-- `docs/decisions/CONFLICT_REGISTER.md` â€” reconciled names/stacks/licenses
-- `docs/decisions/ADR-0001â€¦0006` â€” architecture decision records
-- `docs/research/landscape.md` â€” pre-architecture research
-- `docs/benches/METHODOLOGY.md` â€” benchmark methodology
-- `docs/benches/results/` â€” published benchmark CSVs
-
-## Building
-
-Requires Rust 1.90+ via rustup. On Windows the MSVC toolchain is recommended (`rustup default stable-x86_64-pc-windows-msvc`):
-
-```sh
-cargo build --release --workspace
-```
-
-The CLI binary is `target/release/relift.exe` (Windows) or `target/release/relift` (Unix). The GUI is a Tauri application that requires Node.js 22.17 or newer; build it through the Tauri CLI so the frontend is embedded:
-
-```sh
-cd crates/relift-gui
-npm ci
-npm run tauri build
-```
+- [Documentation site](https://shahabahmed01.github.io/relift/)
+- [CLI reference](docs/src/CLI.md)
+- [Architecture](docs/src/architecture.md)
+- [Support matrix](docs/src/support-matrix.md)
+- [Threat model](docs/src/threat-model.md)
+- [Limitations](docs/src/limitations.md)
+- [Gap report](docs/src/GAP_REPORT.md)
+- [Verification record](docs/src/VERIFICATION.md)
+- [Architecture decision records](docs/decisions/)
+- [Benchmark methodology](docs/benches/METHODOLOGY.md)
 
 ## Tests
 
 ```sh
-cargo test -p relift-core
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
+cargo doc --workspace --no-deps
 ```
 
-The current suite has 93 passing tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit tests, CLI process-level contract tests, GUI DTO contract tests, carver validation tests (JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, PDF, DOCX, XLSX, PPTX, MP4, MKV, WAV, MP3, OGG, SQLite, PST, LNK, EVTX, ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, tar, FLAC, OLE, MPEG-TS, RAR5, ISO 9660), probe detection tests (HFS+, APFS, Btrfs, XFS), fuzz targets for carver and filesystem parsers, and end-to-end resume tests. These use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes. cargo-fuzz harnesses are checked in under `fuzz/` and run in CI on Linux runners.
-
-## Honesty policy
-
-Relift publishes only what is actually verified. No simulated results, no faked benchmarks/screenshots/stars/reviews/release claims, no telemetry. Unsupported filesystems are identified and reported, never silently claimed.
-
-## Limitations
-
-See `docs/limitations.md` and `docs/GAP_REPORT.md` for details. Notable gaps:
-
-- NTFS: `$ATTRIBUTE_LIST`, named ADS, compression, EFS, `$UsnJrnl` not recovered.
-- ext4: inline data >60 bytes, encryption, bigalloc, journal replay not implemented.
-- Carving: ZIP64 not validated (handled by the ZIP validator).
-- No real NTFS/ext4 volumes available locally; only synthetic fixtures tested.
-- The v0.1.0 preview is published; no stable release has been published.
-- No signing certificates/notarization credentials; release artifacts are unsigned. `SHA256SUMS` is attached but does not authenticate the publisher.
-- macOS raw-device destination safety intentionally fails closed; macOS raw paths untested.
-- Desktop GUI requires WebView2 on Windows.
-
-## License
-
-GPL-3.0-or-later. See `LICENSE`.
-
-## Contributing
-
-See `CONTRIBUTING.md`. Architecture overview, carver contribution guide, test fixture workflow.
+The suite has 93 tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit and process-level contract tests, GUI DTO contract tests, carver validation tests, filesystem probe tests, and resume tests. CI runs the same suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
 
 ## Security
 
-See `SECURITY.md`. Threat model, vulnerability disclosure, signed-release verification.
+See [SECURITY.md](SECURITY.md) for vulnerability disclosure and the security model. Relift opens sources read-only and refuses unsafe destinations; it does not sandbox a hostile local process that already has write access to the destination.
 
-## Acknowledgements
+## Contributing
 
-Built with Rust crates including `serde`, `serde_json`, `clap`, `memchr`, `crc32fast`, `flate2`, `sha2`, `thiserror`, `anyhow`, `chrono`, `tauri`, and `criterion`; the GUI uses Svelte 5 and TypeScript.
+See [CONTRIBUTING.md](CONTRIBUTING.md). New carvers need valid, truncated, and malformed fixtures before registration.
 
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).

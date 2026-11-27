@@ -131,6 +131,30 @@ pub fn unix_to_iso(secs: i64) -> Option<String> {
     Some(format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z"))
 }
 
+/// Convert Unix seconds plus nanoseconds to a civil UTC timestamp.
+///
+/// Fractional seconds use 0, 3, 6, or 9 digits, matching the precision policy
+/// of the RFC 3339 formatter this replaced, so session output stays stable.
+pub fn unix_to_iso_nanos(secs: i64, nsec: u32) -> Option<String> {
+    let base = unix_to_iso(secs)?;
+    if nsec == 0 {
+        return Some(base);
+    }
+    let digits = if nsec.is_multiple_of(1_000_000) {
+        3
+    } else if nsec.is_multiple_of(1_000) {
+        6
+    } else {
+        9
+    };
+    let frac = match digits {
+        3 => format!("{:03}", nsec / 1_000_000),
+        6 => format!("{:06}", nsec / 1_000),
+        _ => format!("{nsec:09}"),
+    };
+    Some(format!("{}.{frac}Z", &base[..base.len() - 1]))
+}
+
 /// Howard Hinnant's `civil_from_days` algorithm.
 pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;

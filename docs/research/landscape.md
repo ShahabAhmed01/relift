@@ -12,7 +12,7 @@ filesystem-specification review, or hands-on comparison.
 
 No competing tool was run against a shared labeled recovery corpus. No
 head-to-head accuracy, speed, or safety comparison is available. See
-[`comparison.md`](../comparison.md) for the comparison policy.
+[`comparison.md`](../src/comparison.md) for the comparison policy.
 
 ## Current project architecture
 
@@ -27,8 +27,8 @@ and architecture decision records for the repository's decisions.
 The current parser modules are FAT, exFAT, NTFS, ext, HFS+, APFS, Btrfs, and
 XFS. The first four groups have deterministic synthetic fixture tests; HFS+,
 APFS, Btrfs, and XFS remain experimental. The implementation and its gaps are
-documented in [`support-matrix.md`](../support-matrix.md) and
-[`GAP_REPORT.md`](../GAP_REPORT.md).
+documented in [`support-matrix.md`](../src/support-matrix.md) and
+[`GAP_REPORT.md`](../src/GAP_REPORT.md).
 
 This repository does not yet contain a sourced specification review for every
 parser. In particular, APFS, HFS+, Btrfs, XFS, partitioning, encryption, RAID,
