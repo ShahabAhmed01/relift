@@ -17,6 +17,6 @@ harness = false
 [dependencies]
 relift-core = { path = "../relift-core" }
 relift-testkit = { path = "../relift-testkit" }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 tempfile = "3"
 memchr = { workspace = true }
