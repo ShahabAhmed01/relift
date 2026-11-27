@@ -10,7 +10,7 @@ SD). It uses:
 
 - **Filesystem metadata recovery** (NTFS $MFT, FAT/exFAT directories, ext4
   inodes, APFS B-trees) for original names/paths/timestamps
-- **Validating signature carving** (25+ formats with structural checks: CRC,
+- **Validating signature carving** (36 formats with structural checks: CRC,
   Huffman, box tree, etc.)
 - **Strict read-only** on source; recovery only to a different physical volume
 

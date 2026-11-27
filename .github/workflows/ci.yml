@@ -37,6 +37,9 @@ jobs:
       - name: Check encoding and BOMs
         run: node scripts/check-encoding.mjs
 
+      - name: Check documentation consistency
+        run: node scripts/check-docs-consistency.mjs
+
   gui:
     name: GUI frontend
     runs-on: ubuntu-latest
