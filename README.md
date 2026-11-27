@@ -127,6 +127,29 @@ relift report ./session --format html --dest report.html
 
 See the [CLI reference](docs/src/CLI.md) for every option and the exit-code contract.
 
+## Demo
+
+A demonstration of Relift recovering deleted files from a synthetic FAT32
+image is captured in `docs/assets/demo/`. It covers the CLI flow
+(`scan --mode deep` → `list` → `recover --dry-run` → `recover` → independent
+SHA-256 check against a pre-deletion manifest) and documents the result.
+
+- Scripts (reproducible): `docs/assets/demo/scripts/` (genimg generator,
+  run-demo, verify)
+- Evidence: `docs/assets/demo/manifest.sha256` (pre-deletion hashes) and
+  `docs/assets/demo/session/` (scan JSON/JSONL)
+- Full record: `docs/assets/demo/PROVENANCE.md` (commit SHA, environment,
+  every command with exit code, hash-match table, limits)
+
+> Captured from commit `c9978317c82038ca38772b83ea3e3d7845ea16ca` on Windows 10
+> using synthetic test images; see `docs/assets/demo/PROVENANCE.md`.
+
+Note: genuine screenshots and a demo video could not be captured in this
+agent's environment (no ffmpeg encoder obtainable, non-interactive shell with
+no visible console window). They remain pending; see PROVENANCE.md §9 and the
+human handoff there. The placeholder files under `docs/assets/screenshots/`
+are not real GUI captures (see GUI_CAPTURE.md).
+
 ## Exit codes
 
 | Code | Meaning |

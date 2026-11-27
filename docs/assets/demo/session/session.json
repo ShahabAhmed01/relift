@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "tool": "relift",
+  "tool_version": "0.1.0",
+  "session_id": "20261127161640-3286f2a7",
+  "created": "2026-11-27T16:16:40Z",
+  "finished": "2026-11-27T16:21:13Z",
+  "status": "recovered",
+  "source": {
+    "kind": "image",
+    "path": "evidence.img",
+    "device_id": null,
+    "size": 134217728,
+    "fingerprint": "aeeac9d96012063ad4132ebf668efed18e4d492e9df96f19f0094aec262ab77a"
+  },
+  "options": {
+    "include_live": false,
+    "carve": true,
+    "max_candidates": 1000000,
+    "volume_indices": [],
+    "manual_volume": null
+  },
+  "checkpoint": {
+    "completed_volumes": [
+      0
+    ],
+    "candidates_len": 59187
+  },
+  "partition_table": {
+    "scheme": "none",
+    "volumes": [],
+    "warnings": []
+  },
+  "filesystems": [
+    {
+      "volume_index": 0,
+      "offset": 0,
+      "length": 134217728,
+      "label": "FAT32",
+      "kind": "fat32",
+      "info": {
+        "kind": "fat32",
+        "label": "FAT32",
+        "cluster_size": 512,
+        "details": {
+          "bytes_per_sector": "512",
+          "cluster_count": "258078",
+          "cluster_size": "512",
+          "fat_copies": "2",
+          "fat_type": "fat32",
+          "sectors_per_cluster": "1",
+          "serial": "00000000"
+        },
+        "warnings": []
+      },
+      "scan": {
+        "kind": "fat32",
+        "label": "FAT32",
+        "live_entries": 4,
+        "deleted_entries": 11,
+        "emitted": 11,
+        "truncated": false,
+        "warnings": []
+      },
+      "carving": {
+        "emitted": 75,
+        "signature_hits": 21615,
+        "validated": 75,
+        "bytes_scanned": 134217728,
+        "truncated": false,
+        "by_format": {
+          "sqlite": 75
+        },
+        "warnings": [
+          "Carving validates container structure and checksums where the format provides them; embedded compressed or encrypted payloads are recovered as bytes, not decoded.",
+          "Every registered format carries a structural validator and is carved. ZIP64 shares the PK\\x03\\x04 local-header magic with ZIP and is validated by the ZIP validator; it is not reported as a separate format."
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "candidates": 86,
+    "deleted": 11,
+    "live": 0,
+    "with_content": 86,
+    "metadata_only": 0,
+    "by_method": {
+      "carved": 75,
+      "fat-directory": 11
+    },
+    "by_category": {
+      "archive": 2,
+      "audio": 2,
+      "database": 76,
+      "document": 3,
+      "image": 3
+    },
+    "by_confidence": {
+      "likely": 4,
+      "partial": 7,
+      "verified": 75
+    },
+    "by_format": {
+      "db": 1,
+      "doc": 1,
+      "pdf": 1,
+      "png": 3,
+      "sqlite": 75,
+      "wav": 2,
+      "xls": 1,
+      "zip": 2
+    }
+  },
+  "destination": "\\\\?\\C:\\relift-demo\\demo\\out",
+  "recovery": {
+    "attempted": 86,
+    "succeeded": 86,
+    "partial": 0,
+    "failed": 0,
+    "skipped": 0,
+    "bytes_written": 30429315,
+    "started": "2026-11-27T16:21:13Z",
+    "finished": "2026-11-27T16:21:13Z"
+  },
+  "warnings": [
+    "Carving validates container structure and checksums where the format provides them; embedded compressed or encrypted payloads are recovered as bytes, not decoded.",
+    "Every registered format carries a structural validator and is carved. ZIP64 shares the PK\\x03\\x04 local-header magic with ZIP and is validated by the ZIP validator; it is not reported as a separate format."
+  ],
+  "error": null
+}
