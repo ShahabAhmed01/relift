@@ -1,6 +1,3 @@
-# TEMPLATE ONLY. Verify the publisher, asset URL, checksum, and installer
-# behavior against a published stable release before submission.
-
 PackageIdentifier: relift.vestige
 PackageName: Relift
 PackageVersion: 0.1.0
@@ -30,8 +27,8 @@ CopyrightUrl: https://github.com/ShahabAhmed01/relift/blob/main/LICENSE
 Installers:
   - Architecture: x64
     InstallerType: msi
-    InstallerUrl: REPLACE_WITH_PUBLISHED_MSI_URL
-    InstallerSha256: REPLACE_WITH_VERIFIED_SHA256
+    InstallerUrl: https://github.com/ShahabAhmed01/relift/releases/download/v1.0.0/Relift_0.1.0_x64_en-US.msi
+    InstallerSha256: 4b719fe397dc8e46e1b75176c88d9e18780dd3f515edad87d0816408054cda94
     Scope: machine
     InstallerSwitches:
       Silent: /quiet /norestart

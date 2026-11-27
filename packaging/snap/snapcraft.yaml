@@ -25,7 +25,7 @@ parts:
     plugin: rust
     source: .
     source-type: git
-    source-tag: v0.1.0
+    source-tag: v1.0.0
     source-depth: 1
     cargo-features: []
     build-packages:

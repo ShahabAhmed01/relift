@@ -76,13 +76,13 @@ jobs:
         run: npm ci
 
       - name: Build and publish GUI bundles
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: crates/relift-gui
           tagName: ${{ github.ref_name }}
-          releaseName: "Relift ${{ github.ref_name }} Preview"
+          releaseName: ${{ startsWith(github.ref_name, 'v0.') || contains(github.ref_name, '-') && format('Relift {0} Preview', github.ref_name) || format('Relift {0}', github.ref_name) }}
           releaseBody: |
             Relift ${{ github.ref_name }} is an early preview of deleted-file recovery for disk images and drives.
 
