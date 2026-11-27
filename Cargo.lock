@@ -3280,7 +3280,7 @@ dependencies = [
  "relift-core",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.2",
 ]
 
 [[package]]
@@ -3298,7 +3298,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.2",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
 ]
@@ -3327,7 +3327,7 @@ dependencies = [
 name = "relift-testkit"
 version = "0.1.0"
 dependencies = [
- "sha2 0.10.9",
+ "sha2 0.11.2",
 ]
 
 [[package]]
