@@ -1,4 +1,4 @@
-# Relift
+﻿# Relift
 
 Read-only deleted-file recovery for disk images and drives.
 
@@ -20,7 +20,7 @@ Relift scans disk images and raw devices without writing to them, records what i
 - **Sparse-file segment preservation:** holes and unwritten extents keep byte offsets.
 - **Destination safety:** output proven separate from evidence before any write.
 - **SHA-256 verification** of every recovered file (on by default).
-- **Session-based workflow:** scan → session → recover → report (JSON/HTML/CSV). Completed scan results persist in the session, and a cancelled or crashed scan can be continued with `--resume` after the source identity is revalidated.
+- **Session-based workflow:** scan â†’ session â†’ recover â†’ report (JSON/HTML/CSV). Completed scan results persist in the session, and a cancelled or crashed scan can be continued with `--resume` after the source identity is revalidated.
 - **`devices` and `doctor`** report device accessibility and run local self-tests; they do not diagnose SMART health or TRIM status.
 - **No telemetry;** default offline.
 - **GUI (Tauri 2 + Svelte 5):** source selection, scan progress, result filtering and preview, and recovery to a selected destination. Imaging and report export remain CLI-only.
@@ -78,9 +78,12 @@ See `docs/CLI.md` for the full command reference.
 
 Relift includes a desktop GUI built with Tauri 2 and Svelte 5:
 
-1. **Source picker** — visible devices and raw images with access status
-2. **Scan** — live progress and a stop action that keeps partial results
-3. **Results and recovery** — filterable table, candidate metadata, destination selection, recovery summary
+| Screen | Description |
+|--------|-------------|
+| ![Source picker](docs/assets/screenshots/gui-home.png) | **Source picker** - visible devices and raw images with access status |
+| ![Scan in progress](docs/assets/screenshots/gui-scan.png) | **Scan** - live progress and a stop action that keeps partial results |
+| ![Results](docs/assets/screenshots/gui-results.png) | **Results** - filterable table, candidate metadata |
+| ![Recovery](docs/assets/screenshots/gui-recover.png) | **Recovery** - destination selection and recovery summary |
 
 The [v0.1.0 preview release](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) includes desktop bundles for Windows, macOS, and Linux plus CLI archives for five targets. The attached `SHA256SUMS` manifest matches the uploaded assets. All assets are unsigned; hashes detect byte mismatches but do not authenticate the publisher. The preview is tested on synthetic images only; no real drive or representative recovery corpus has been validated.
 
@@ -100,9 +103,9 @@ Performance targets are tracked in `docs/benches/METHODOLOGY.md`. Published meas
 | Metric | Target | Method |
 |--------|--------|--------|
 | Cold start (CLI) | < 50 ms | `hyperfine` median of 100 runs |
-| GUI cold start | < 400 ms | Tauri `window_created` → first paint |
-| Deep scan sweep | ≥ 4 GB/s | 64 MB test buffer, `memchr` SIMD |
-| Deep scan full | ≥ 1.5 GB/s | Real fixtures, all carvers |
+| GUI cold start | < 400 ms | Tauri `window_created` â†’ first paint |
+| Deep scan sweep | â‰¥ 4 GB/s | 64 MB test buffer, `memchr` SIMD |
+| Deep scan full | â‰¥ 1.5 GB/s | Real fixtures, all carvers |
 | Quick scan (1 TB NTFS) | < 90 s | 1M MFT records, NVMe |
 | Memory (4 TB scan) | < 350 MB RSS | Bounded streaming, no full buffering |
 | Binary size (release) | < 30 MB | `strip`, LTO, single codegen unit |
@@ -111,18 +114,20 @@ See `docs/benches/METHODOLOGY.md` for full methodology.
 
 ## Documentation
 
-- `docs/CLI.md` — command and exit-code reference
-- `docs/architecture.md` — system design
-- `docs/support-matrix.md` — tested/untested filesystem and platform matrix
-- `docs/threat-model.md` — threats and mitigations
-- `docs/limitations.md` — known gaps and exclusions
-- `docs/GAP_REPORT.md` — tracked gaps
-- `docs/VERIFICATION.md` — how recovery is validated
-- `docs/decisions/CONFLICT_REGISTER.md` — reconciled names/stacks/licenses
-- `docs/decisions/ADR-0001…0006` — architecture decision records
-- `docs/research/landscape.md` — pre-architecture research
-- `docs/benches/METHODOLOGY.md` — benchmark methodology
-- `docs/benches/results/` — published benchmark CSVs
+- [Docs site](https://shahabahmed01.github.io/relift/) — full documentation site
+
+- `docs/CLI.md` â€” command and exit-code reference
+- `docs/architecture.md` â€” system design
+- `docs/support-matrix.md` â€” tested/untested filesystem and platform matrix
+- `docs/threat-model.md` â€” threats and mitigations
+- `docs/limitations.md` â€” known gaps and exclusions
+- `docs/GAP_REPORT.md` â€” tracked gaps
+- `docs/VERIFICATION.md` â€” how recovery is validated
+- `docs/decisions/CONFLICT_REGISTER.md` â€” reconciled names/stacks/licenses
+- `docs/decisions/ADR-0001â€¦0006` â€” architecture decision records
+- `docs/research/landscape.md` â€” pre-architecture research
+- `docs/benches/METHODOLOGY.md` â€” benchmark methodology
+- `docs/benches/results/` â€” published benchmark CSVs
 
 ## Building
 
@@ -147,7 +152,7 @@ cargo test -p relift-core
 cargo test --workspace --all-targets
 ```
 
-The current suite has 74 passing tests: 59 core unit tests, 6 end-to-end recovery tests, 2 fixture tests, 2 CLI unit tests, 3 CLI process-level contract tests, and 2 GUI DTO contract tests. These use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes. No `cargo-fuzz` harness is checked in yet.
+The current suite has 93 passing tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit tests, CLI process-level contract tests, GUI DTO contract tests, carver validation tests (JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, PDF, DOCX, XLSX, PPTX, MP4, MKV, WAV, MP3, OGG, SQLite, PST, LNK, EVTX, ZIP, 7z, RAR4, gzip, bzip2, xz, zstd, tar, FLAC, OLE, MPEG-TS, RAR5, ISO 9660), probe detection tests (HFS+, APFS, Btrfs, XFS), fuzz targets for carver and filesystem parsers, and end-to-end resume tests. These use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes. cargo-fuzz harnesses are checked in under `fuzz/` and run in CI on Linux runners.
 
 ## Honesty policy
 
@@ -181,3 +186,4 @@ See `SECURITY.md`. Threat model, vulnerability disclosure, signed-release verifi
 ## Acknowledgements
 
 Built with Rust crates including `serde`, `serde_json`, `clap`, `memchr`, `crc32fast`, `flate2`, `sha2`, `thiserror`, `anyhow`, `chrono`, `tauri`, and `criterion`; the GUI uses Svelte 5 and TypeScript.
+
