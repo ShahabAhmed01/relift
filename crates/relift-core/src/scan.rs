@@ -453,6 +453,10 @@ fn resolve_volumes(
             scheme: crate::partitions::PartitionScheme::None,
             type_hint: "manual range".into(),
             label: None,
+            filesystem: None,
+            bootable: false,
+            partition_type: None,
+            partition_guid: None,
         };
         return Ok((PartitionTable::none(), vec![volume]));
     }
@@ -467,6 +471,10 @@ fn resolve_volumes(
             scheme: crate::partitions::PartitionScheme::None,
             type_hint: "whole source".into(),
             label: None,
+            filesystem: None,
+            bootable: false,
+            partition_type: None,
+            partition_guid: None,
         });
     }
     if !request.volume_indices.is_empty() {

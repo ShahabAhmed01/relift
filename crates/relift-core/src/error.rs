@@ -44,6 +44,9 @@ pub enum Error {
     #[error("scan cancelled")]
     Cancelled,
 
+    #[error("not implemented: {0}")]
+    NotImplemented(String),
+
     #[error("{0}")]
     Other(String),
 }
@@ -65,6 +68,10 @@ impl Error {
 
     pub fn unsupported(msg: impl Into<String>) -> Self {
         Self::Unsupported(msg.into())
+    }
+
+    pub fn not_implemented(msg: impl Into<String>) -> Self {
+        Self::NotImplemented(msg.into())
     }
 }
 

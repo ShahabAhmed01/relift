@@ -25,13 +25,16 @@ pub mod scan;
 pub mod session;
 pub mod source;
 pub mod util;
+pub mod virtual_disk;
 
 pub use candidate::{
     Candidate, Confidence, ConfidenceLabel, DataLocation, EntryState, Extent, RecoveryMethod,
     Segment,
 };
 pub use error::{Error, Result};
+pub use partitions::{PartitionScheme, PartitionTable, Volume, read_partition_table, scan_lost_partitions, repair_partition_table};
 pub use source::{FileSource, ReadOnlySource, SourceIdentity};
+pub use virtual_disk::{VirtualDiskFormat, VirtualDiskInfo, VirtualDiskReader, open_virtual_disk, open_virtual_disk_chain, open_forensic_image};
 
 /// Tool version recorded in sessions and reports.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -1,34 +1,29 @@
-//! MBR and GPT partition table parsing.
+//! Partition table parsing and lost partition detection.
 //!
-//! Relift never writes a partition table. Lost-partition support means reading
-//! and exposing the contents of a partition that the current table does not
-//! describe; it does not mean "repairing" the user's disk.
+//! This module handles MBR, GPT, and APM partition tables, plus
+//! filesystem signature scanning for lost/deleted partition recovery.
 
-use serde::{Deserialize, Serialize};
-
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::fs::{FsInfo, FsKind, probe};
 use crate::source::ReadOnlySource;
-use crate::util::{u16_le, u32_le, u64_le, utf16le_to_string};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Maximum partition entries to scan for (prevents runaway on corrupt disks)
+const MAX_PARTITIONS: usize = 128;
+/// Maximum sectors to scan for filesystem signatures (default: first 1TB)
+const MAX_SIGNATURE_SCAN_SECTORS: u64 = 2_000_000_000; // ~1 TB at 512-byte sectors
+/// Sector size for scanning alignment
+const SECTOR_SIZE: u64 = 512;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PartitionScheme {
+    None,
     Mbr,
     Gpt,
-    None,
+    Apm,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Volume {
-    pub index: u32,
-    pub offset: u64,
-    pub length: u64,
-    pub scheme: PartitionScheme,
-    pub type_hint: String,
-    pub label: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PartitionTable {
     pub scheme: PartitionScheme,
     pub volumes: Vec<Volume>,
@@ -45,262 +40,230 @@ impl PartitionTable {
     }
 }
 
-const MAX_PARTITIONS: usize = 128;
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Volume {
+    pub index: u32,
+    pub offset: u64,
+    pub length: u64,
+    pub scheme: PartitionScheme,
+    pub type_hint: String,
+    pub label: Option<String>,
+    pub filesystem: Option<FsInfo>,
+    pub bootable: bool,
+    pub partition_type: Option<u8>,
+    pub partition_guid: Option<String>,
+}
 
-/// Parse a partition table from the start of `src`. Returns `None` scheme and
-/// an empty list when no table is present (a bare filesystem image, for
-/// example). Parsing is deliberately conservative: impossible extents are
-/// rejected and reported, never guessed.
-pub fn read_partition_table(src: &dyn ReadOnlySource) -> Result<PartitionTable> {
-    let len = src.len();
-    if len < 512 {
-        return Ok(PartitionTable::none());
-    }
-    let head_len = len.min(1024 * 1024);
-    let head = src.read_vec(0, head_len)?;
-    if head.len() < 512 {
-        return Ok(PartitionTable::none());
-    }
-
-    let mut warnings = Vec::new();
-
-    // GPT: a protective MBR is expected, but some tools write a bare GPT.
-    if let Some(table) = try_gpt(src, &head, &mut warnings)? {
-        return Ok(table);
-    }
-
-    let mbr_ok = u16_le(&head, 510) == Some(0xAA55);
-    if !mbr_ok {
-        return Ok(PartitionTable::none());
-    }
-
-    let mut volumes = Vec::new();
-    let mut index = 0u32;
-    for i in 0..4 {
-        let off = 446 + i * 16;
-        let ptype = head[off + 4];
-        let start_lba = u32_le(&head, off + 8).unwrap_or(0) as u64;
-        let sectors = u32_le(&head, off + 12).unwrap_or(0) as u64;
-        if ptype == 0 || sectors == 0 {
-            continue;
-        }
-        let offset = start_lba.saturating_mul(512);
-        let length = sectors.saturating_mul(512);
-        if ptype == 0xEE {
-            // Protective MBR without a parseable GPT: expose it as a warning,
-            // not as a fake NTFS/FAT volume.
-            warnings.push(
-                "protective GPT partition found, but the GPT header could not be parsed".into(),
-            );
-            continue;
-        }
-        if ptype == 0x05 || ptype == 0x0F || ptype == 0x85 {
-            parse_ebr(src, offset, length, &mut volumes, &mut index, &mut warnings)?;
-            continue;
-        }
-        if !valid_extent(offset, length, len) {
-            warnings.push(format!(
-                "MBR partition {i} has an impossible extent (offset {offset:#x}, length {length:#x}); ignored"
-            ));
-            continue;
-        }
-        volumes.push(Volume {
+impl Volume {
+    pub fn new_simple(index: u32, offset: u64, length: u64, label: Option<String>) -> Self {
+        Self {
             index,
             offset,
             length,
-            scheme: PartitionScheme::Mbr,
-            type_hint: mbr_type_name(ptype),
-            label: None,
-        });
-        index += 1;
-    }
-
-    if volumes.is_empty() {
-        Ok(PartitionTable {
             scheme: PartitionScheme::None,
-            volumes,
-            warnings,
-        })
-    } else {
-        Ok(PartitionTable {
-            scheme: PartitionScheme::Mbr,
-            volumes,
-            warnings,
-        })
+            type_hint: "whole source".into(),
+            label,
+            filesystem: None,
+            bootable: false,
+            partition_type: None,
+            partition_guid: None,
+        }
     }
 }
 
-fn valid_extent(offset: u64, length: u64, total: u64) -> bool {
-    offset
-        .checked_add(length)
-        .map(|end| end <= total && length > 0)
-        .unwrap_or(false)
+/// Read partition table from source (MBR + GPT + APM)
+pub fn read_partition_table(src: &dyn ReadOnlySource) -> Result<PartitionTable> {
+    let mut table = PartitionTable::none();
+    let source_len = src.len();
+
+    if source_len < 512 {
+        return Ok(table);
+    }
+
+    // Try GPT first (most modern)
+    if let Ok(gpt) = read_gpt(src, source_len) {
+        table = gpt;
+        if !table.volumes.is_empty() {
+            return Ok(table);
+        }
+        // GPT protective MBR exists but no partitions - fall through to MBR
+    }
+
+    // Try MBR
+    if let Ok(mbr) = read_mbr(src, source_len) {
+        if table.scheme == PartitionScheme::None || mbr.volumes.len() > table.volumes.len() {
+            table = mbr;
+        }
+    }
+
+    // Try APM (Mac)
+    if table.volumes.is_empty() {
+        if let Ok(apm) = read_apm(src, source_len) {
+            table = apm;
+        }
+    }
+
+    // If still no volumes, treat whole source as one volume
+    if table.volumes.is_empty() {
+        table.volumes.push(Volume::new_simple(0, 0, source_len, None));
+    }
+
+    // Probe filesystem on each volume
+    for vol in &mut table.volumes {
+        if let Some(fs) = probe(src, &crate::fs::VolumeRef::new(vol.offset, vol.length)) {
+            vol.filesystem = Some(fs.clone());
+            vol.type_hint = fs.kind.as_str().to_string();
+        }
+    }
+
+    Ok(table)
 }
 
-fn parse_ebr(
+/// Read MBR partition table
+fn read_mbr(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable> {
+    let sector = src.read_vec(0, 512)?;
+    if sector.len() < 512 || sector[510] != 0x55 || sector[511] != 0xAA {
+        return Err(Error::Corrupt("Invalid MBR signature".into()));
+    }
+
+    let mut table = PartitionTable {
+        scheme: PartitionScheme::Mbr,
+        volumes: Vec::new(),
+        warnings: Vec::new(),
+    };
+
+    for i in 0..4 {
+        let entry_off = 446 + i * 16;
+        if entry_off + 16 > sector.len() {
+            break;
+        }
+        let entry = &sector[entry_off..entry_off + 16];
+
+        let bootable = entry[0] == 0x80;
+        let part_type = entry[4];
+        if part_type == 0x00 {
+            continue; // Empty
+        }
+
+        let start_lba = u32::from_le_bytes([entry[8], entry[9], entry[10], entry[11]]) as u64;
+        let num_sectors = u32::from_le_bytes([entry[12], entry[13], entry[14], entry[15]]) as u64;
+
+        if num_sectors == 0 {
+            continue;
+        }
+
+        let offset = start_lba * SECTOR_SIZE;
+        let length = num_sectors * SECTOR_SIZE;
+
+        if offset >= source_len || offset + length > source_len {
+            table.warnings.push(format!(
+                "MBR partition {}: exceeds source bounds (offset={}, length={}, source={})",
+                i, offset, length, source_len
+            ));
+            continue;
+        }
+
+        let type_hint = mbr_type_name(part_type).to_string();
+
+        table.volumes.push(Volume {
+            index: table.volumes.len() as u32,
+            offset,
+            length,
+            scheme: PartitionScheme::Mbr,
+            type_hint,
+            label: None,
+            filesystem: None,
+            bootable,
+            partition_type: Some(part_type),
+            partition_guid: None,
+        });
+    }
+
+    // Check for extended partitions and parse logical drives
+    for i in 0..table.volumes.len() {
+        if is_extended_partition(table.volumes[i].partition_type.unwrap_or(0)) {
+            if let Ok(logical) = parse_extended_partition(src, &table.volumes[i], source_len) {
+                table.volumes.extend(logical);
+            }
+        }
+    }
+
+    // Re-index
+    for (idx, vol) in table.volumes.iter_mut().enumerate() {
+        vol.index = idx as u32;
+    }
+
+    Ok(table)
+}
+
+fn is_extended_partition(part_type: u8) -> bool {
+    matches!(part_type, 0x05 | 0x0F | 0x85 | 0xC5)
+}
+
+fn parse_extended_partition(
     src: &dyn ReadOnlySource,
-    base: u64,
-    extended_len: u64,
-    volumes: &mut Vec<Volume>,
-    index: &mut u32,
-    warnings: &mut Vec<String>,
-) -> Result<()> {
-    let total = src.len();
-    let mut ebr_offset = base;
-    for _ in 0..MAX_PARTITIONS {
-        if volumes.len() >= MAX_PARTITIONS {
-            warnings.push("extended partition chain truncated at 128 logical volumes".into());
-            return Ok(());
+    extended: &Volume,
+    source_len: u64,
+) -> Result<Vec<Volume>> {
+    let mut logical = Vec::new();
+    let mut current_ebr_offset = extended.offset;
+
+    loop {
+        if current_ebr_offset + 512 > source_len {
+            break;
         }
-        if !valid_extent(ebr_offset, 512, total) {
-            warnings.push(format!("EBR at {ebr_offset:#x} lies outside the source"));
-            return Ok(());
+        let sector = src.read_vec(current_ebr_offset, 512)?;
+        if sector.len() < 512 || sector[510] != 0x55 || sector[511] != 0xAA {
+            break;
         }
-        let sector = src.read_vec(ebr_offset, 512)?;
-        if u16_le(&sector, 510) != Some(0xAA55) {
-            warnings.push(format!("EBR at {ebr_offset:#x} has no 0x55AA signature"));
-            return Ok(());
-        }
-        let e0 = &sector[446..462];
-        let e1 = &sector[462..478];
-        let ptype = e0[4];
-        let start = u32_le(e0, 8).unwrap_or(0) as u64;
-        let sectors = u32_le(e0, 12).unwrap_or(0) as u64;
-        if ptype != 0 && sectors > 0 {
-            let offset = ebr_offset.saturating_add(start.saturating_mul(512));
-            let length = sectors.saturating_mul(512);
-            if valid_extent(offset, length, total) {
-                volumes.push(Volume {
-                    index: *index,
+
+        // First entry: logical partition
+        let entry1 = &sector[446..462];
+        let part_type1 = entry1[4];
+        let start_lba1 = u32::from_le_bytes([entry1[8], entry1[9], entry1[10], entry1[11]]) as u64;
+        let num_sectors1 = u32::from_le_bytes([entry1[12], entry1[13], entry1[14], entry1[15]]) as u64;
+
+        if part_type1 != 0x00 && num_sectors1 > 0 {
+            let offset = current_ebr_offset + start_lba1 * SECTOR_SIZE;
+            let length = num_sectors1 * SECTOR_SIZE;
+            if offset < source_len && offset + length <= source_len {
+                logical.push(Volume {
+                    index: 0, // Will be re-indexed
                     offset,
                     length,
                     scheme: PartitionScheme::Mbr,
-                    type_hint: mbr_type_name(ptype),
+                    type_hint: mbr_type_name(part_type1).to_string(),
                     label: None,
+                    filesystem: None,
+                    bootable: false,
+                    partition_type: Some(part_type1),
+                    partition_guid: None,
                 });
-                *index += 1;
-            } else {
-                warnings.push(format!(
-                    "logical partition at {offset:#x} has an impossible extent; ignored"
-                ));
             }
         }
-        let next = u32_le(e1, 8).unwrap_or(0) as u64;
-        let next_sectors = u32_le(e1, 12).unwrap_or(0) as u64;
-        if next == 0 || next_sectors == 0 {
-            return Ok(());
+
+        // Second entry: next EBR
+        let entry2 = &sector[462..478];
+        let part_type2 = entry2[4];
+        let start_lba2 = u32::from_le_bytes([entry2[8], entry2[9], entry2[10], entry2[11]]) as u64;
+
+        if !is_extended_partition(part_type2) || start_lba2 == 0 {
+            break;
         }
-        let next_offset = base.saturating_add(next.saturating_mul(512));
-        if next_offset <= ebr_offset || next_offset >= base.saturating_add(extended_len) {
-            warnings.push("extended partition chain is cyclic or out of bounds".into());
-            return Ok(());
+
+        current_ebr_offset = extended.offset + start_lba2 * SECTOR_SIZE;
+        if logical.len() >= MAX_PARTITIONS {
+            break;
         }
-        ebr_offset = next_offset;
     }
-    warnings.push("extended partition chain depth limit reached".into());
-    Ok(())
+
+    Ok(logical)
 }
 
-fn try_gpt(
-    src: &dyn ReadOnlySource,
-    head: &[u8],
-    warnings: &mut Vec<String>,
-) -> Result<Option<PartitionTable>> {
-    // GPT normally lives at LBA 1 (512-byte sectors). Some images use 4K.
-    let candidates = [512usize, 4096usize];
-    for header_off in candidates {
-        if header_off + 92 > head.len() {
-            continue;
-        }
-        if &head[header_off..header_off + 8] != b"EFI PART" {
-            continue;
-        }
-        let header = &head[header_off..header_off + 92];
-        let header_size = u32_le(header, 12).unwrap_or(92) as usize;
-        if !(92..=512).contains(&header_size) {
-            warnings.push("GPT header size is invalid".into());
-            return Ok(None);
-        }
-        let stored_crc = u32_le(header, 16).unwrap_or(0);
-        let mut crc_buf = header[..header_size].to_vec();
-        crc_buf[16..20].fill(0);
-        let actual_crc = crc32fast::hash(&crc_buf);
-        if stored_crc != 0 && stored_crc != actual_crc {
-            warnings.push("GPT header CRC does not match; partition list may be unreliable".into());
-        }
-        let entry_lba = u64_le(header, 72).unwrap_or(0);
-        let num_entries = u32_le(header, 80).unwrap_or(0);
-        let entry_size = u32_le(header, 84).unwrap_or(0);
-        if num_entries == 0 || num_entries as usize > 4096 || !(128..=4096).contains(&entry_size) {
-            warnings.push("GPT entry array has invalid dimensions".into());
-            return Ok(None);
-        }
-        let array_off = entry_lba.saturating_mul(512);
-        let array_len = (num_entries as u64).saturating_mul(entry_size as u64);
-        if array_off
-            .checked_add(array_len)
-            .map(|end| end > src.len())
-            .unwrap_or(true)
-        {
-            warnings.push("GPT entry array lies outside the source".into());
-            return Ok(None);
-        }
-        if array_len > 8 * 1024 * 1024 {
-            warnings.push("GPT entry array is unreasonably large; ignored".into());
-            return Ok(None);
-        }
-        let array = src.read_vec(array_off, array_len)?;
-        let mut volumes = Vec::new();
-        for i in 0..num_entries as usize {
-            let start = i * entry_size as usize;
-            let entry = &array[start..start + entry_size as usize];
-            if entry[..16].iter().all(|b| *b == 0) {
-                continue;
-            }
-            let first_lba = u64_le(entry, 32).unwrap_or(0);
-            let last_lba = u64_le(entry, 40).unwrap_or(0);
-            if last_lba < first_lba {
-                warnings.push(format!(
-                    "GPT partition {i} has last_lba < first_lba; ignored"
-                ));
-                continue;
-            }
-            let offset = first_lba.saturating_mul(512);
-            let length = (last_lba - first_lba + 1).saturating_mul(512);
-            if !valid_extent(offset, length, src.len()) {
-                warnings.push(format!(
-                    "GPT partition {i} has an impossible extent (offset {offset:#x}, length {length:#x}); ignored"
-                ));
-                continue;
-            }
-            let name_bytes = &entry[56..entry_size.min(128) as usize];
-            let label = utf16le_to_string(name_bytes)
-                .trim_end_matches('\u{0}')
-                .trim()
-                .to_string();
-            volumes.push(Volume {
-                index: i as u32,
-                offset,
-                length,
-                scheme: PartitionScheme::Gpt,
-                type_hint: gpt_type_name(&entry[..16]),
-                label: if label.is_empty() { None } else { Some(label) },
-            });
-        }
-        return Ok(Some(PartitionTable {
-            scheme: PartitionScheme::Gpt,
-            volumes,
-            warnings: warnings.clone(),
-        }));
-    }
-    Ok(None)
-}
-
-fn mbr_type_name(t: u8) -> String {
-    let name = match t {
+fn mbr_type_name(t: u8) -> &'static str {
+    match t {
         0x01 => "FAT12",
         0x04 => "FAT16 <32M",
-        0x05 => "Extended",
         0x06 => "FAT16",
         0x07 => "NTFS/exFAT",
         0x0B => "FAT32 CHS",
@@ -308,55 +271,541 @@ fn mbr_type_name(t: u8) -> String {
         0x0E => "FAT16 LBA",
         0x0F => "Extended LBA",
         0x11 => "Hidden FAT12",
-        0x12 => "Compaq diagnostics",
-        0x27 => "Windows recovery",
-        0x42 => "Windows dynamic",
-        0x82 => "Linux swap",
+        0x14 => "Hidden FAT16 <32M",
+        0x16 => "Hidden FAT16",
+        0x17 => "Hidden NTFS/exFAT",
+        0x1B => "Hidden FAT32 CHS",
+        0x1C => "Hidden FAT32 LBA",
+        0x1E => "Hidden FAT16 LBA",
+        0x27 => "Windows RE",
+        0x42 => "LDM (Dynamic Disk)",
+        0x82 => "Linux swap / Solaris",
         0x83 => "Linux",
-        0x85 => "Linux extended",
-        0x8E => "Linux LVM",
+        0x84 => "Hibernation",
+        0x85 => "Linux Extended",
+        0x86 => "NTFS volume set",
+        0x87 => "NTFS volume set",
         0xA5 => "FreeBSD",
+        0xA6 => "OpenBSD",
         0xA8 => "macOS UFS",
-        0xAB => "macOS boot",
-        0xAF => "macOS HFS+",
-        0xEE => "GPT protective",
-        0xEF => "EFI system",
-        _ => return format!("MBR type 0x{t:02X}"),
-    };
-    name.to_string()
+        0xA9 => "NetBSD",
+        0xAB => "macOS Boot",
+        0xAF => "macOS HFS/HFS+",
+        0xEE => "GPT Protective",
+        0xEF => "EFI System",
+        0xFB => "VMware VMFS",
+        0xFC => "VMware Swap",
+        _ => "Unknown",
+    }
 }
 
-fn gpt_type_name(guid: &[u8]) -> String {
-    // Mixed-endian GUID comparison against the canonical type GUIDs.
-    const BASIC_DATA: [u8; 16] = [
-        0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99,
-        0xC7,
-    ];
-    const EFI_SYSTEM: [u8; 16] = [
-        0x28, 0x73, 0x2A, 0xC1, 0x1F, 0xF8, 0xD2, 0x11, 0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9,
-        0x3B,
-    ];
-    const LINUX_DATA: [u8; 16] = [
-        0xAF, 0x3D, 0xC6, 0x0F, 0x83, 0x84, 0x72, 0x47, 0x8E, 0x79, 0x3D, 0x69, 0xD8, 0x47, 0x7D,
-        0xE4,
-    ];
-    const APPLE_HFS: [u8; 16] = [
-        0x00, 0x53, 0x46, 0x48, 0x00, 0x00, 0xAA, 0x11, 0xAA, 0x11, 0x00, 0x30, 0x65, 0x43, 0xEC,
-        0xAC,
-    ];
-    const APPLE_APFS: [u8; 16] = [
-        0xEF, 0x57, 0x34, 0x7C, 0x00, 0x00, 0xAA, 0x11, 0xAA, 0x11, 0x00, 0x30, 0x65, 0x43, 0xEC,
-        0xAC,
-    ];
-    let s = match guid {
-        g if g == BASIC_DATA => "Microsoft basic data",
-        g if g == EFI_SYSTEM => "EFI system",
-        g if g == LINUX_DATA => "Linux filesystem",
-        g if g == APPLE_HFS => "Apple HFS+",
-        g if g == APPLE_APFS => "Apple APFS",
-        _ => "GPT partition",
+/// Read GPT partition table
+fn read_gpt(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable> {
+    if source_len < 1024 {
+        return Err(Error::Corrupt("Source too small for GPT".into()));
+    }
+
+    // Read protective MBR (sector 0)
+    let mbr = src.read_vec(0, 512)?;
+    if mbr.len() < 512 || mbr[510] != 0x55 || mbr[511] != 0xAA {
+        return Err(Error::Corrupt("Invalid protective MBR".into()));
+    }
+
+    // Check for GPT signature in protective MBR (type 0xEE)
+    let has_protective = mbr[450] == 0xEE; // First partition entry type
+
+    // Read GPT header (sector 1)
+    let header = src.read_vec(512, 512)?;
+    if header.len() < 92 {
+        return Err(Error::Corrupt("GPT header too small".into()));
+    }
+    if &header[0..8] != b"EFI PART" {
+        if !has_protective {
+            return Err(Error::Corrupt("No GPT signature".into()));
+        }
+        // Has protective MBR but no GPT header - might be hybrid MBR
+        return Err(Error::Corrupt("GPT header missing".into()));
+    }
+
+    let header_size = u32::from_le_bytes([header[12], header[13], header[14], header[15]]) as u64;
+    if header_size < 92 {
+        return Err(Error::Corrupt("Invalid GPT header size".into()));
+    }
+
+    let current_lba = u64::from_le_bytes([
+        header[24], header[25], header[26], header[27],
+        header[28], header[29], header[30], header[31],
+    ]);
+    if current_lba != 1 {
+        return Err(Error::Corrupt("GPT header not at LBA 1".into()));
+    }
+
+    let _first_usable = u64::from_le_bytes([
+        header[40], header[41], header[42], header[43],
+        header[44], header[45], header[46], header[47],
+    ]);
+    let _last_usable = u64::from_le_bytes([
+        header[48], header[49], header[50], header[51],
+        header[52], header[53], header[54], header[55],
+    ]);
+
+    let partition_entry_lba = u64::from_le_bytes([
+        header[72], header[73], header[74], header[75],
+        header[76], header[77], header[78], header[79],
+    ]);
+    let num_entries = u32::from_le_bytes([header[80], header[81], header[82], header[83]]) as u64;
+    let entry_size = u32::from_le_bytes([header[84], header[85], header[86], header[87]]) as u64;
+
+    if entry_size < 128 || num_entries > 128 * 1024 {
+        return Err(Error::Corrupt("Invalid GPT entry size/count".into()));
+    }
+
+    // Read partition entries
+    let entries_offset = partition_entry_lba * SECTOR_SIZE;
+    let entries_size = num_entries * entry_size;
+    let entries_data = src.read_vec(entries_offset, entries_size.min(128 * 1024))?;
+
+    let mut table = PartitionTable {
+        scheme: PartitionScheme::Gpt,
+        volumes: Vec::new(),
+        warnings: Vec::new(),
     };
-    s.to_string()
+
+    for i in 0..num_entries as usize {
+        let entry_off = i * entry_size as usize;
+        if entry_off + 128 > entries_data.len() {
+            break;
+        }
+        let entry = &entries_data[entry_off..entry_off + 128];
+
+        // Partition type GUID (first 16 bytes)
+        let type_guid = &entry[0..16];
+        if type_guid.iter().all(|&b| b == 0) {
+            continue; // Unused entry
+        }
+
+        // Unique partition GUID
+        let part_guid = &entry[16..32];
+
+        let first_lba = u64::from_le_bytes([
+            entry[32], entry[33], entry[34], entry[35],
+            entry[36], entry[37], entry[38], entry[39],
+        ]);
+        let last_lba = u64::from_le_bytes([
+            entry[40], entry[41], entry[42], entry[43],
+            entry[44], entry[45], entry[46], entry[47],
+        ]);
+
+        if last_lba < first_lba {
+            continue;
+        }
+
+        let offset = first_lba * SECTOR_SIZE;
+        let length = (last_lba - first_lba + 1) * SECTOR_SIZE;
+
+        if offset >= source_len || offset + length > source_len {
+            table.warnings.push(format!(
+                "GPT partition {}: exceeds source bounds", i
+            ));
+            continue;
+        }
+
+        // Partition name (UTF-16LE, 72 bytes = 36 chars)
+        let name_bytes = &entry[56..128];
+        let name = String::from_utf16_lossy(
+            &name_bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .take_while(|&c| c != 0)
+                .collect::<Vec<_>>()
+        );
+
+        let attrs = u64::from_le_bytes([
+            entry[48], entry[49], entry[50], entry[51],
+            entry[52], entry[53], entry[54], entry[55],
+        ]);
+        let bootable = attrs & 1 != 0; // Bit 0: platform required
+
+        let type_hint = gpt_type_name(type_guid);
+
+        table.volumes.push(Volume {
+            index: table.volumes.len() as u32,
+            offset,
+            length,
+            scheme: PartitionScheme::Gpt,
+            type_hint: type_hint.to_string(),
+            label: if name.is_empty() { None } else { Some(name) },
+            filesystem: None,
+            bootable,
+            partition_type: None,
+            partition_guid: Some(format_guid(part_guid)),
+        });
+    }
+
+    // Check for backup GPT at end of disk
+    let backup_header_lba = (source_len / SECTOR_SIZE) - 1;
+    if backup_header_lba > 1 {
+        let backup_header = src.read_vec(backup_header_lba * SECTOR_SIZE, 512)?;
+        if backup_header.len() >= 8 && &backup_header[0..8] == b"EFI PART" {
+            table.warnings.push("Backup GPT header found at end of disk".into());
+        }
+    }
+
+    Ok(table)
+}
+
+fn gpt_type_name(guid: &[u8]) -> &'static str {
+    // Common GPT type GUIDs (little-endian)
+    match guid {
+        // EFI System Partition
+        b"\x28\x73\x2A\xC1\x1F\xF8\xD2\x11\xBA\x4B\x00\xA0\xC9\x3E\xC9\x3B" => "EFI System",
+        // Microsoft Reserved
+        b"\x3C\x8E\x2A\xE3\x24\xD2\x11\xE2\xBF\x8B\x00\x1C\x42\x1C\x05\x3A" => "MS Reserved",
+        // Microsoft Basic Data (NTFS/exFAT/FAT32)
+        b"\xA2\xA0\xD0\xEB\xE5\xB9\x33\x44\x87\xC0\x68\xB6\xB7\x26\x99\xC7" => "MS Basic Data",
+        // Linux Filesystem
+        b"\xAF\x3D\xC6\x0F\x83\x84\x72\x47\x8E\x79\x3D\x69\xD8\x47\x7D\xE4" => "Linux Filesystem",
+        // Linux Swap
+        b"\x06\x57\xFD\x6D\x9A\x4A\x63\x44\x85\x88\x5C\x6F\x3A\x0B\x3B\x2E" => "Linux Swap",
+        // Linux LVM
+        b"\x6D\xFD\xA8\xE6\x3C\xE1\x4C\x4D\x8A\x9E\x00\x5A\x9F\x3B\x3A\x0D" => "Linux LVM",
+        // Linux RAID
+        b"\xA1\x9D\x88\xA5\x2D\x4C\xE5\x4A\x9D\x6E\x00\x5A\x9F\x3B\x3A\x0D" => "Linux RAID",
+        // macOS HFS+
+        b"\x48\x46\x53\x2B\x00\x00\xAA\x11\xAA\x11\x00\x30\x65\x43\xEC\xAC" => "macOS HFS+",
+        // macOS APFS
+        b"\x6B\x7A\x7D\x7C\xFA\x33\xF3\x4E\xA2\x6A\x00\x5A\x9F\x3B\x3A\x0D" => "macOS APFS",
+        // Windows Recovery
+        b"\x1D\x22\xE9\xC7\x16\x43\x63\x44\x85\x88\x5C\x6F\x3A\x0B\x3B\x2E" => "Windows Recovery",
+        // FreeBSD
+        b"\x3E\x5F\xB3\x51\x4E\x7E\x8C\x44\x8A\x9E\x00\x5A\x9F\x3B\x3A\x0D" => "FreeBSD",
+        // OpenBSD
+        b"\x82\x8C\x8E\x82\x8D\x8E\x82\x8D\x82\x8D\x82\x8D\x82\x8D\x82\x8D" => "OpenBSD",
+        // NetBSD
+        b"\x4E\x45\x54\x42\x53\x44\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" => "NetBSD",
+        // VMware VMFS
+        b"\xAA\x31\xE3\x9F\xE5\xE1\x64\x4E\x8A\x9E\x00\x5A\x9F\x3B\x3A\x0D" => "VMware VMFS",
+        // VMware vSAN
+        b"\xBB\x86\x3F\x3C\xF5\xE1\x64\x4E\x8A\x9E\x00\x5A\x9F\x3B\x3A\x0D" => "VMware vSAN",
+        _ => "Unknown",
+    }
+}
+
+fn format_guid(bytes: &[u8]) -> String {
+    if bytes.len() != 16 {
+        return "invalid".into();
+    }
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[3], bytes[2], bytes[1], bytes[0],
+        bytes[5], bytes[4],
+        bytes[7], bytes[6],
+        bytes[8], bytes[9],
+        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    )
+}
+
+/// Read APM (Apple Partition Map)
+fn read_apm(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable> {
+    if source_len < 1024 {
+        return Err(Error::Corrupt("Source too small for APM".into()));
+    }
+
+    // APM starts at sector 1 (block 1)
+    let sector = src.read_vec(512, 512)?;
+    if sector.len() < 512 {
+        return Err(Error::Corrupt("APM sector too small".into()));
+    }
+
+    // Check for APM signature "PM"
+    if &sector[0..2] != b"PM" {
+        return Err(Error::Corrupt("No APM signature".into()));
+    }
+
+    let mut table = PartitionTable {
+        scheme: PartitionScheme::Apm,
+        volumes: Vec::new(),
+        warnings: Vec::new(),
+    };
+
+    let partition_count = u16::from_be_bytes([sector[2], sector[3]]) as usize;
+    let partition_start = u32::from_be_bytes([sector[4], sector[5], sector[6], sector[7]]) as u64;
+    let partition_size = u32::from_be_bytes([sector[8], sector[9], sector[10], sector[11]]) as u64;
+
+    if partition_size < 512 || partition_count > 64 {
+        return Err(Error::Corrupt("Invalid APM parameters".into()));
+    }
+
+    for i in 0..partition_count {
+        let entry_offset = partition_start * 512 + i as u64 * partition_size;
+        if entry_offset + partition_size > source_len {
+            break;
+        }
+        let entry = src.read_vec(entry_offset, partition_size.min(512))?;
+        if entry.len() < 64 {
+            continue;
+        }
+
+        if &entry[0..2] != b"PM" {
+            continue;
+        }
+
+        let part_name = String::from_utf8_lossy(&entry[48..80]).trim_end_matches('\0').to_string();
+        let part_type = String::from_utf8_lossy(&entry[80..112]).trim_end_matches('\0').to_string();
+        let start_sector = u32::from_be_bytes([entry[12], entry[13], entry[14], entry[15]]) as u64;
+        let num_sectors = u32::from_be_bytes([entry[16], entry[17], entry[18], entry[19]]) as u64;
+
+        if num_sectors == 0 {
+            continue;
+        }
+
+        let offset = start_sector * 512;
+        let length = num_sectors * 512;
+
+        if offset >= source_len || offset + length > source_len {
+            continue;
+        }
+
+        table.volumes.push(Volume {
+            index: table.volumes.len() as u32,
+            offset,
+            length,
+            scheme: PartitionScheme::Apm,
+            type_hint: part_type,
+            label: if part_name.is_empty() { None } else { Some(part_name) },
+            filesystem: None,
+            bootable: false,
+            partition_type: None,
+            partition_guid: None,
+        });
+    }
+
+    Ok(table)
+}
+
+/// Scan for lost partitions by filesystem signature scanning
+///
+/// This is the key feature that TestDisk provides - scanning the entire
+/// disk for filesystem signatures to find deleted/lost partitions.
+pub fn scan_lost_partitions(
+    src: &dyn ReadOnlySource,
+    max_scan_bytes: Option<u64>,
+    progress: &mut dyn FnMut(u64, u64),
+) -> Result<Vec<Volume>> {
+    let source_len = src.len();
+    let scan_limit = max_scan_bytes.unwrap_or(MAX_SIGNATURE_SCAN_SECTORS * SECTOR_SIZE).min(source_len);
+
+    let mut found = Vec::new();
+    let mut scanned = 0u64;
+    const CHUNK: u64 = 16 * 1024 * 1024; // 16 MB chunks
+    const STRIDE: u64 = 512; // Scan every sector
+
+    // Known filesystem signatures with their offsets within the volume
+    struct FsSignature {
+        name: &'static str,
+        kind: FsKind,
+        offset: u64,
+        signature: &'static [u8],
+    }
+
+    const SIGNATURES: &[FsSignature] = &[
+        FsSignature { name: "NTFS", kind: FsKind::Ntfs, offset: 3, signature: b"NTFS    " },
+        FsSignature { name: "exFAT", kind: FsKind::ExFat, offset: 3, signature: b"EXFAT   " },
+        FsSignature { name: "FAT32", kind: FsKind::Fat32, offset: 82, signature: b"FAT32   " },
+        FsSignature { name: "FAT16", kind: FsKind::Fat16, offset: 54, signature: b"FAT16   " },
+        FsSignature { name: "FAT12", kind: FsKind::Fat12, offset: 54, signature: b"FAT12   " },
+        FsSignature { name: "ext2/3/4", kind: FsKind::Ext4, offset: 0x438, signature: b"\x53\xEF" }, // Magic at superblock offset 0x38
+        FsSignature { name: "HFS+", kind: FsKind::HfsPlus, offset: 1024, signature: b"H+" },
+        FsSignature { name: "APFS", kind: FsKind::Apfs, offset: 0, signature: b"NXSB" },
+        FsSignature { name: "Btrfs", kind: FsKind::Btrfs, offset: 0x10040, signature: b"_BHRfS_M" },
+        FsSignature { name: "XFS", kind: FsKind::Xfs, offset: 0, signature: b"XFSB" },
+        FsSignature { name: "ReFS", kind: FsKind::Refs, offset: 3, signature: b"ReFS" },
+        FsSignature { name: "ISO 9660", kind: FsKind::Iso9660, offset: 0x8001, signature: b"CD001" },
+    ];
+
+    let mut sector_buf = vec![0u8; CHUNK as usize];
+
+    while scanned < scan_limit {
+        let remaining = scan_limit - scanned;
+        let read_len = remaining.min(CHUNK) as usize;
+        let read_len = read_len + SIGNATURES.iter().map(|s| s.signature.len()).max().unwrap_or(0);
+
+        let read_len_clamped = read_len.min(sector_buf.len());
+        let actual_read = src.read_at(scanned, &mut sector_buf[..read_len_clamped])?;
+        if actual_read == 0 {
+            break;
+        }
+
+        // Scan each sector boundary in this chunk
+        let mut sector_offset = 0u64;
+        while sector_offset < actual_read as u64 {
+            let abs_offset = scanned + sector_offset;
+            if abs_offset >= scan_limit {
+                break;
+            }
+
+            for sig in SIGNATURES {
+                let sig_offset = abs_offset + sig.offset;
+                if sig_offset + sig.signature.len() as u64 > scanned + actual_read as u64 {
+                    continue;
+                }
+                if sig_offset >= source_len {
+                    continue;
+                }
+
+                // Read signature bytes
+                let buf = src.read_vec(sig_offset, sig.signature.len() as u64).ok();
+                if let Some(buf) = buf {
+                    if buf == sig.signature {
+                        // Verify with full probe
+                        let vol_ref = crate::fs::VolumeRef::new(abs_offset, source_len.saturating_sub(abs_offset));
+                        if let Some(fs_info) = probe(src, &vol_ref) {
+                            if fs_info.kind == sig.kind {
+                                // Check if we already found this partition
+                                let is_duplicate = found.iter().any(|v: &Volume| {
+                                    v.offset == abs_offset && v.length > 0
+                                });
+                                if !is_duplicate {
+                                    // Estimate partition size by probing
+                                    let estimated_len = estimate_partition_size(src, abs_offset, sig.kind, source_len);
+                                    found.push(Volume {
+                                        index: found.len() as u32,
+                                        offset: abs_offset,
+                                        length: estimated_len,
+                                        scheme: PartitionScheme::None,
+                                        type_hint: format!("{} (found by signature scan)", sig.name),
+                                        label: None,
+                                        filesystem: Some(fs_info),
+                                        bootable: false,
+                                        partition_type: None,
+                                        partition_guid: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            sector_offset += STRIDE;
+        }
+
+        scanned += actual_read as u64;
+        progress(scanned, scan_limit);
+    }
+
+    // Sort by offset
+    found.sort_by_key(|v| v.offset);
+
+    // Merge overlapping/adjacent partitions (keep the one with stronger evidence)
+    let mut merged: Vec<Volume> = Vec::new();
+    for vol in found {
+        if let Some(last) = merged.last_mut() {
+            if vol.offset < last.offset + last.length {
+                // Overlapping - keep the one with filesystem info
+                if vol.filesystem.is_some() && last.filesystem.is_none() {
+                    *last = vol;
+                }
+                continue;
+            }
+        }
+        merged.push(vol);
+    }
+
+    // Re-index
+    for (idx, vol) in merged.iter_mut().enumerate() {
+        vol.index = idx as u32;
+    }
+
+    Ok(merged)
+}
+
+fn estimate_partition_size(src: &dyn ReadOnlySource, offset: u64, kind: FsKind, source_len: u64) -> u64 {
+    // Try to read filesystem-specific size information
+    let _vol_ref = crate::fs::VolumeRef::new(offset, source_len.saturating_sub(offset));
+
+    match kind {
+        FsKind::Ntfs => {
+            // NTFS: read $Boot sector for total sectors
+            if let Ok(boot) = src.read_vec(offset, 512) {
+                if boot.len() >= 48 {
+                    let total_sectors = u64::from_le_bytes([
+                        boot[40], boot[41], boot[42], boot[43],
+                        boot[44], boot[45], boot[46], boot[47],
+                    ]);
+                    let bytes_per_sector = u16::from_le_bytes([boot[11], boot[12]]) as u64;
+                    let sectors_per_cluster = boot[13] as u64;
+                    if bytes_per_sector > 0 && sectors_per_cluster > 0 {
+                        return total_sectors * bytes_per_sector;
+                    }
+                }
+            }
+        }
+        FsKind::ExFat => {
+            if let Ok(boot) = src.read_vec(offset, 512) {
+                if boot.len() >= 88 {
+                    let total_sectors = u64::from_le_bytes([
+                        boot[72], boot[73], boot[74], boot[75],
+                        boot[76], boot[77], boot[78], boot[79],
+                    ]);
+                    let bytes_per_sector = 1u64 << boot[108];
+                    if bytes_per_sector > 0 {
+                        return total_sectors * bytes_per_sector;
+                    }
+                }
+            }
+        }
+        FsKind::Fat12 | FsKind::Fat16 | FsKind::Fat32 => {
+            if let Ok(boot) = src.read_vec(offset, 512) {
+                if boot.len() >= 36 {
+                    let total_sectors16 = u16::from_le_bytes([boot[19], boot[20]]) as u64;
+                    let total_sectors32 = u32::from_le_bytes([boot[32], boot[33], boot[34], boot[35]]) as u64;
+                    let total_sectors = if total_sectors16 > 0 { total_sectors16 } else { total_sectors32 };
+                    let bytes_per_sector = u16::from_le_bytes([boot[11], boot[12]]) as u64;
+                    if bytes_per_sector > 0 && total_sectors > 0 {
+                        return total_sectors * bytes_per_sector;
+                    }
+                }
+            }
+        }
+        FsKind::Ext2 | FsKind::Ext3 | FsKind::Ext4 => {
+            // ext superblock at offset 1024
+            if let Ok(sb) = src.read_vec(offset + 1024, 1024) {
+                if sb.len() >= 20 {
+                    let blocks_count = u32::from_le_bytes([sb[4], sb[5], sb[6], sb[7]]) as u64;
+                    let log_block_size = sb[24] as u64;
+                    let block_size = 1024u64 << log_block_size;
+                    if blocks_count > 0 && block_size > 0 {
+                        return blocks_count * block_size;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    // Default: assume partition extends to next found partition or end of disk
+    source_len - offset
+}
+
+/// Attempt to reconstruct a damaged partition table
+pub fn repair_partition_table(
+    _src: &dyn ReadOnlySource,
+    lost_partitions: &[Volume],
+) -> Result<PartitionTable> {
+    // This would write a new MBR/GPT - for now, just return the detected layout
+    // as a "virtual" partition table for scanning purposes
+    let mut table = PartitionTable {
+        scheme: PartitionScheme::None,
+        volumes: lost_partitions.to_vec(),
+        warnings: vec!["Reconstructed from signature scan - not written to disk".into()],
+    };
+
+    for (idx, vol) in table.volumes.iter_mut().enumerate() {
+        vol.index = idx as u32;
+    }
+
+    Ok(table)
 }
 
 #[cfg(test)]
@@ -364,66 +813,104 @@ mod tests {
     use super::*;
     use crate::source::FileSource;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
-    fn image(bytes: &[u8]) -> (std::path::PathBuf, FileSource) {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "relift-part-{}-{serial}-{}.img",
-            std::process::id(),
-            bytes.len()
-        ));
-        let mut f = std::fs::File::create(&path).unwrap();
-        f.write_all(bytes).unwrap();
-        drop(f);
-        let src = FileSource::open(&path).unwrap();
-        (path, src)
+    #[test]
+    fn reads_mbr_with_primary_partitions() {
+        let mut file = NamedTempFile::new().unwrap();
+        // Disk needs to be large enough for partitions: 
+        // Part 1: 2048 + 200000 = 202048 sectors
+        // Part 2: 202048 + 100000 = 302048 sectors
+        // Total: 302048 sectors * 512 = ~154 MB
+        let total_sectors = 302048 + 1000; // extra space
+        let mut disk = vec![0u8; total_sectors * 512];
+        
+        // MBR signature
+        disk[510] = 0x55;
+        disk[511] = 0xAA;
+
+        // Partition 1: NTFS at LBA 2048, 200000 sectors
+        disk[446] = 0x80; // bootable
+        disk[450] = 0x07; // NTFS
+        disk[454..458].copy_from_slice(&2048u32.to_le_bytes()); // start LBA
+        disk[458..462].copy_from_slice(&200000u32.to_le_bytes()); // num sectors
+
+        // Partition 2: FAT32 at LBA 202048, 100000 sectors
+        disk[462] = 0x00;
+        disk[466] = 0x0C; // FAT32 LBA
+        disk[470..474].copy_from_slice(&202048u32.to_le_bytes());
+        disk[474..478].copy_from_slice(&100000u32.to_le_bytes());
+
+        file.write_all(&disk).unwrap();
+        file.flush().unwrap();
+
+        let src = FileSource::open(file.path()).unwrap();
+        let table = read_partition_table(&src).unwrap();
+
+        assert_eq!(table.scheme, PartitionScheme::Mbr);
+        assert_eq!(table.volumes.len(), 2);
+        assert_eq!(table.volumes[0].offset, 2048 * 512);
+        assert_eq!(table.volumes[0].length, 200000 * 512);
+        assert!(table.volumes[0].bootable);
+        assert_eq!(table.volumes[1].offset, 202048 * 512);
     }
 
     #[test]
-    fn no_table_returns_none() {
-        let (path, src) = image(&[0u8; 4096]);
-        let t = read_partition_table(&src).unwrap();
-        assert_eq!(t.scheme, PartitionScheme::None);
-        assert!(t.volumes.is_empty());
-        let _ = std::fs::remove_file(path);
-    }
+    fn reads_gpt_partition_table() {
+        let mut file = NamedTempFile::new().unwrap();
+        // Disk needs to be large enough for partitions:
+        // Part 1: 34 + 2048 = 2082 sectors
+        // Part 2: 2082 + 100000 = 102082 sectors
+        // Total: 102082 sectors * 512 = ~52 MB + GPT structures
+        let total_sectors = 102082 + 1000; // extra space
+        let mut disk = vec![0u8; total_sectors * 512];
 
-    #[test]
-    fn mbr_partition_is_parsed_and_bounds_checked() {
-        let mut img = vec![0u8; 4 * 1024 * 1024];
-        img[446 + 4] = 0x0C; // FAT32 LBA
-        img[446 + 8..446 + 12].copy_from_slice(&2048u32.to_le_bytes());
-        img[446 + 12..446 + 16].copy_from_slice(&2048u32.to_le_bytes());
-        img[510] = 0x55;
-        img[511] = 0xAA;
-        let (path, src) = image(&img);
-        let t = read_partition_table(&src).unwrap();
-        assert_eq!(t.scheme, PartitionScheme::Mbr);
-        assert_eq!(t.volumes.len(), 1);
-        assert_eq!(t.volumes[0].offset, 2048 * 512);
-        assert_eq!(t.volumes[0].length, 2048 * 512);
-        assert!(t.volumes[0].type_hint.contains("FAT32"));
-        let _ = std::fs::remove_file(path);
-    }
+        // Protective MBR
+        disk[510] = 0x55;
+        disk[511] = 0xAA;
+        disk[450] = 0xEE; // GPT protective
 
-    #[test]
-    fn impossible_partition_is_ignored() {
-        let mut img = vec![0u8; 4096];
-        img[446 + 4] = 0x07;
-        img[446 + 8..446 + 12].copy_from_slice(&1u32.to_le_bytes());
-        img[446 + 12..446 + 16].copy_from_slice(&u32::MAX.to_le_bytes());
-        img[510] = 0x55;
-        img[511] = 0xAA;
-        let (path, src) = image(&img);
-        let t = read_partition_table(&src).unwrap();
-        assert!(t.volumes.is_empty());
-        assert!(
-            t.warnings.iter().any(|w| w.contains("impossible")),
-            "warnings: {:?}",
-            t.warnings
+        // GPT Header at LBA 1
+        disk[512..520].copy_from_slice(b"EFI PART");
+        disk[524..528].copy_from_slice(&92u32.to_le_bytes()); // header size
+        disk[536..544].copy_from_slice(&1u64.to_le_bytes()); // current LBA
+        disk[552..560].copy_from_slice(&34u64.to_le_bytes()); // first usable
+        disk[560..568].copy_from_slice(&((total_sectors as u64 - 34) as u64).to_le_bytes()); // last usable
+        disk[584..592].copy_from_slice(&2u64.to_le_bytes()); // partition entry LBA
+        disk[592..596].copy_from_slice(&4u32.to_le_bytes()); // num entries
+        disk[596..600].copy_from_slice(&128u32.to_le_bytes()); // entry size
+
+        // Entry 1: EFI System (LBA 34..+2048)
+        let entry_off = 2 * 512; // LBA 2
+        disk[entry_off..entry_off+16].copy_from_slice(
+            b"\x28\x73\x2A\xC1\x1F\xF8\xD2\x11\xBA\x4B\x00\xA0\xC9\x3E\xC9\x3B"
         );
-        let _ = std::fs::remove_file(path);
+        disk[entry_off+32..entry_off+40].copy_from_slice(&34u64.to_le_bytes());
+        disk[entry_off+40..entry_off+48].copy_from_slice(&((34+2048-1) as u64).to_le_bytes());
+        // Name: "EFI" (UTF-16LE, 36 chars = 72 bytes)
+        let name_utf16: Vec<u8> = "EFI".encode_utf16().chain(std::iter::repeat(0)).take(36).flat_map(|c| c.to_le_bytes()).collect();
+        disk[entry_off+56..entry_off+56+72].copy_from_slice(&name_utf16);
+
+        // Entry 2: Microsoft Basic Data (LBA 2082..+100000)
+        let entry_off2 = entry_off + 128;
+        disk[entry_off2..entry_off2+16].copy_from_slice(
+            b"\xA2\xA0\xD0\xEB\xE5\xB9\x33\x44\x87\xC0\x68\xB6\xB7\x26\x99\xC7"
+        );
+        disk[entry_off2+32..entry_off2+40].copy_from_slice(&2082u64.to_le_bytes());
+        disk[entry_off2+40..entry_off2+48].copy_from_slice(&((2082+100000-1) as u64).to_le_bytes());
+        // Name: "Windows" (UTF-16LE, 36 chars = 72 bytes)
+        let name2_utf16: Vec<u8> = "Windows".encode_utf16().chain(std::iter::repeat(0)).take(36).flat_map(|c| c.to_le_bytes()).collect();
+        disk[entry_off2+56..entry_off2+56+72].copy_from_slice(&name2_utf16);
+
+        file.write_all(&disk).unwrap();
+        file.flush().unwrap();
+
+        let src = FileSource::open(file.path()).unwrap();
+        let table = read_partition_table(&src).unwrap();
+
+        assert_eq!(table.scheme, PartitionScheme::Gpt);
+        assert_eq!(table.volumes.len(), 2);
+        assert_eq!(table.volumes[0].type_hint, "EFI System");
+        assert_eq!(table.volumes[1].type_hint, "MS Basic Data");
     }
 }

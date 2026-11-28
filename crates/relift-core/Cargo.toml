@@ -30,3 +30,4 @@ rustix.workspace = true
 relift-testkit = { path = "../relift-testkit" }
 proptest = "1"
 insta = { version = "1", features = ["json"] }
+tempfile = "3"

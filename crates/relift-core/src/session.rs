@@ -45,7 +45,7 @@ pub enum SessionStatus {
     RecoveryPartial,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionOptions {
     pub include_live: bool,
     pub carve: bool,

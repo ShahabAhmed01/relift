@@ -17,12 +17,14 @@ use relift_core::devices::{doctor, list_devices, CheckStatus};
 use relift_core::error::Error;
 use relift_core::filter::CandidateFilter;
 use relift_core::imaging::{create_image, ImageOptions};
+use relift_core::partitions::{read_partition_table, scan_lost_partitions};
 use relift_core::recover::{run_recovery, RecoverOptions, RecoveryStatus, RecoverySummary};
 use relift_core::report::{write_report, ReportFormat};
 use relift_core::scan::{run_scan, ScanProgress, ScanRequest};
 use relift_core::session::{load_header, ManualVolume, SessionHeader, SessionStatus};
 use relift_core::source::open_source;
 use relift_core::util::{human_bytes, human_duration};
+use relift_core::virtual_disk::{open_virtual_disk, open_forensic_image};
 use relift_core::{SCHEMA_VERSION, VERSION};
 use serde::Serialize;
 
@@ -74,6 +76,14 @@ enum Command {
     Completions(CompletionsArgs),
     /// Print version and schema information.
     Version,
+    /// Show partition table (MBR/GPT/APM) and probe filesystems.
+    Partitions(PartitionsArgs),
+    /// Scan for lost/deleted partitions by filesystem signature.
+    PartitionsScan(PartitionsScanArgs),
+    /// Inspect virtual disk image (VHD/VHDX/VMDK/QCOW/VDI).
+    VirtualDisk(VirtualDiskArgs),
+    /// Inspect forensic image (E01/Ex01/AFF4).
+    ForensicImage(ForensicImageArgs),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -218,6 +228,50 @@ struct ReportArgs {
     limit: usize,
 }
 
+#[derive(Debug, Args)]
+struct PartitionsArgs {
+    /// Disk image or raw device path.
+    source: PathBuf,
+
+    /// Also probe filesystem on each partition.
+    #[arg(long)]
+    probe: bool,
+}
+
+#[derive(Debug, Args)]
+struct PartitionsScanArgs {
+    /// Disk image or raw device path.
+    source: PathBuf,
+
+    /// Maximum bytes to scan (default: 1 TB).
+    #[arg(long, value_name = "BYTES")]
+    max_bytes: Option<String>,
+
+    /// Output session directory for found partitions (optional).
+    #[arg(long, value_name = "DIR")]
+    session: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct VirtualDiskArgs {
+    /// Virtual disk image path.
+    source: PathBuf,
+
+    /// Show detailed info.
+    #[arg(long)]
+    verbose: bool,
+}
+
+#[derive(Debug, Args)]
+struct ForensicImageArgs {
+    /// Forensic image path.
+    source: PathBuf,
+
+    /// Show detailed info.
+    #[arg(long)]
+    verbose: bool,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match run(cli) {
@@ -240,6 +294,10 @@ fn run(cli: Cli) -> anyhow::Result<u8> {
         Command::Report(args) => cmd_report(args, cli.json),
         Command::Completions(args) => cmd_completions(args),
         Command::Version => cmd_version(cli.json),
+        Command::Partitions(args) => cmd_partitions(args, cli.json),
+        Command::PartitionsScan(args) => cmd_partitions_scan(args, cli.json),
+        Command::VirtualDisk(args) => cmd_virtual_disk(args, cli.json),
+        Command::ForensicImage(args) => cmd_forensic_image(args, cli.json),
     }
 }
 
@@ -476,6 +534,218 @@ fn cmd_version(json: bool) -> anyhow::Result<u8> {
     } else {
         println!("relift {VERSION} (session schema {SCHEMA_VERSION})");
     }
+    Ok(EXIT_OK)
+}
+
+fn cmd_partitions(args: PartitionsArgs, json: bool) -> anyhow::Result<u8> {
+    let src = open_source(&args.source)
+        .with_context(|| format!("could not open source {}", args.source.display()))?;
+    
+    let table = read_partition_table(src.as_ref())?;
+    
+    if json {
+        print_json(&table)?;
+        return Ok(EXIT_OK);
+    }
+    
+    println!("source:     {}", args.source.display());
+    println!("scheme:     {:?}", table.scheme);
+    println!("partitions: {}", table.volumes.len());
+    
+    for warning in &table.warnings {
+        println!("warning:    {warning}");
+    }
+    
+    if table.volumes.is_empty() {
+        println!("no partitions found");
+        return Ok(EXIT_OK);
+    }
+    
+    println!();
+    println!("{:<4} {:<12} {:>14} {:>14} {:<10} {:<20} {}",
+        "NUM", "SCHEME", "OFFSET", "SIZE", "BOOT", "TYPE", "FS");
+    println!("{}", "-".repeat(100));
+    
+    for vol in &table.volumes {
+        let boot = if vol.bootable { "*" } else { "" };
+        let fs = vol.filesystem.as_ref()
+            .map(|f| f.kind.as_str())
+            .unwrap_or("-");
+        println!("{:<4} {:<12} {:>14} {:>14} {:<10} {:<20} {}",
+            vol.index,
+            format!("{:?}", vol.scheme).to_lowercase(),
+            human_bytes(vol.offset),
+            human_bytes(vol.length),
+            boot,
+            vol.type_hint,
+            fs
+        );
+        if let Some(label) = &vol.label {
+            println!("      label: {label}");
+        }
+        if args.probe {
+            if let Some(fs) = &vol.filesystem {
+                println!("      fs: {} (label: {})", fs.kind.as_str(), fs.label.as_deref().unwrap_or("-"));
+                for (k, v) in &fs.details {
+                    println!("        {k}: {v}");
+                }
+                for w in &fs.warnings {
+                    println!("        warning: {w}");
+                }
+            }
+        }
+    }
+    
+    Ok(EXIT_OK)
+}
+
+fn cmd_partitions_scan(args: PartitionsScanArgs, json: bool) -> anyhow::Result<u8> {
+    let src = open_source(&args.source)
+        .with_context(|| format!("could not open source {}", args.source.display()))?;
+    
+    let max_bytes = args.max_bytes.as_deref().map(|s| parse_bytes(s, "max-bytes")).transpose()?;
+    
+    let mut progress = |done: u64, total: u64| {
+        if !json {
+            let percent = if total == 0 { 100 } else { ((done as u128 * 100) / total as u128) as u32 };
+            eprint!("\rscan: {:>3}%  {} / {}", percent, human_bytes(done), human_bytes(total));
+            let _ = std::io::stderr().flush();
+        }
+    };
+    
+    let volumes = scan_lost_partitions(src.as_ref(), max_bytes, &mut progress)?;
+    
+    if !json {
+        eprintln!();
+    }
+    
+    if json {
+        print_json(&volumes)?;
+        return Ok(EXIT_OK);
+    }
+    
+    println!("source:       {}", args.source.display());
+    println!("found:        {} potential partition(s)", volumes.len());
+    
+    if volumes.is_empty() {
+        println!("no lost partitions found");
+        return Ok(EXIT_OK);
+    }
+    
+    println!();
+    println!("{:<4} {:>14} {:>14} {:<20} {}",
+        "NUM", "OFFSET", "SIZE", "TYPE", "FS");
+    println!("{}", "-".repeat(80));
+    
+    for vol in &volumes {
+        let fs = vol.filesystem.as_ref()
+            .map(|f| f.kind.as_str())
+            .unwrap_or("-");
+        println!("{:<4} {:>14} {:>14} {:<20} {}",
+            vol.index,
+            human_bytes(vol.offset),
+            human_bytes(vol.length),
+            vol.type_hint,
+            fs
+        );
+        if let Some(label) = &vol.label {
+            println!("      label: {label}");
+        }
+        if let Some(fs_info) = &vol.filesystem {
+            for (k, v) in &fs_info.details {
+                println!("        {k}: {v}");
+            }
+            for w in &fs_info.warnings {
+                println!("        warning: {w}");
+            }
+        }
+    }
+    
+    if let Some(session_dir) = &args.session {
+        // Create a session with the found volumes
+        use relift_core::scan::{run_scan, ScanRequest, ScanProgress};
+        use relift_core::session::Session;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+        
+        let mut session = Session::create(session_dir, src.identity(), Default::default())?;
+        session.header_mut().partition_table = Some(relift_core::partitions::PartitionTable {
+            scheme: relift_core::partitions::PartitionScheme::None,
+            volumes: volumes.clone(),
+            warnings: vec!["Reconstructed from signature scan".into()],
+        });
+        session.finish(relift_core::session::SessionStatus::Complete)?;
+        println!();
+        println!("session:      {}", session_dir.display());
+        println!("next:         relift scan {} --resume", session_dir.display());
+    }
+    
+    Ok(EXIT_OK)
+}
+
+fn cmd_virtual_disk(args: VirtualDiskArgs, json: bool) -> anyhow::Result<u8> {
+    let reader = open_virtual_disk(&args.source)
+        .with_context(|| format!("could not open virtual disk {}", args.source.display()))?;
+    
+    let info = reader.info();
+    
+    if json {
+        print_json(info)?;
+        return Ok(EXIT_OK);
+    }
+    
+    println!("source:        {}", args.source.display());
+    println!("format:        {:?}", info.format);
+    println!("virtual size:  {} ({})", info.virtual_size, human_bytes(info.virtual_size));
+    println!("physical size: {} ({})", info.physical_size, human_bytes(info.physical_size));
+    println!("block size:    {} ({})", info.block_size, human_bytes(info.block_size));
+    println!("sector size:   {}", info.sector_size);
+    println!("sparse:        {}", if info.is_sparse { "yes" } else { "no" });
+    println!("compressed:    {}", if info.is_compressed { "yes" } else { "no" });
+    println!("encrypted:     {}", if info.is_encrypted { "yes" } else { "no" });
+    println!("description:   {}", info.description);
+    
+    if let Some(uuid) = &info.uuid {
+        println!("uuid:          {uuid}");
+    }
+    if let Some(parent) = &info.parent {
+        println!("parent:        {}", parent.display());
+    }
+    if !info.children.is_empty() {
+        println!("children:      {}", info.children.len());
+        for c in &info.children {
+            println!("  - {}", c.display());
+        }
+    }
+    
+    if args.verbose {
+        println!("description:   {}", info.description);
+    }
+    
+    Ok(EXIT_OK)
+}
+
+fn cmd_forensic_image(args: ForensicImageArgs, json: bool) -> anyhow::Result<u8> {
+    let reader = open_forensic_image(&args.source)
+        .with_context(|| format!("could not open forensic image {}", args.source.display()))?;
+    
+    let info = reader.info();
+    
+    if json {
+        print_json(info)?;
+        return Ok(EXIT_OK);
+    }
+    
+    println!("source:        {}", args.source.display());
+    println!("format:        {:?}", info.format);
+    println!("virtual size:  {} ({})", info.virtual_size, human_bytes(info.virtual_size));
+    println!("physical size: {} ({})", info.physical_size, human_bytes(info.physical_size));
+    println!("description:   {}", info.description);
+    
+    if args.verbose {
+        println!("uuid:          {:?}", info.uuid);
+    }
+    
     Ok(EXIT_OK)
 }
 
