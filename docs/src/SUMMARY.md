@@ -18,6 +18,7 @@
 - [Benchmarks](benchmarks.md)
 - [Threat Model](threat-model.md)
 - [Limitations](limitations.md)
+- [Claims Ledger](claims-ledger.md)
 
 ## Project
 - [Comparison](comparison.md)

@@ -896,6 +896,145 @@ fn data_location(
     }
 }
 
+/// Read the volume's `$Bitmap` attribute from MFT record 6 and return its raw
+/// allocation bits. Bit `lcn` of the bitmap is 1 when cluster `lcn` is currently
+/// allocated and 0 when it is free. Returns `Ok(None)` when the bitmap cannot be
+/// located or parsed, so callers can report "reuse status unknown" instead of
+/// guessing.
+///
+/// The bitmap can be large (volume size / cluster size / 8 bytes). Reads are
+/// bounded so a corrupt or enormous `$DATA` attribute cannot exhaust memory.
+fn read_volume_bitmap(
+    src: &dyn ReadOnlySource,
+    volume: &VolumeRef,
+    boot: &NtfsBoot,
+) -> Result<Option<Vec<u8>>> {
+    let mft_offset = volume
+        .offset
+        .checked_add(
+            boot.cluster_offset(boot.mft_lcn)
+                .ok_or_else(|| Error::Corrupt("NTFS MFT offset overflow".into()))?,
+        )
+        .ok_or_else(|| Error::Corrupt("NTFS MFT absolute offset overflow".into()))?;
+    let record6_off = mft_offset
+        .checked_add(
+            6u64.checked_mul(boot.record_size)
+                .ok_or_else(|| Error::Corrupt("NTFS record 6 offset overflow".into()))?,
+        )
+        .ok_or_else(|| Error::Corrupt("NTFS record 6 absolute offset overflow".into()))?;
+    let record_size = boot.record_size as usize;
+    let mut record = vec![0u8; record_size];
+    if src.read_exact_at(record6_off, &mut record).is_err() {
+        return Ok(None);
+    }
+    let Some(parsed) = parse_record(record, 6, boot, volume) else {
+        return Ok(None);
+    };
+    let Some(data) = parsed.data else {
+        return Ok(None);
+    };
+    if data.encrypted || data.compressed {
+        return Ok(None);
+    }
+    const MAX_BITMAP_BYTES: u64 = 256 * 1024 * 1024;
+    if data.real_size > MAX_BITMAP_BYTES {
+        return Ok(None);
+    }
+    let bytes = if data.resident {
+        data.resident_bytes
+    } else {
+        let (segments, _complete, _note) = segments_from_data(&data, boot, volume);
+        if segments.is_empty() {
+            return Ok(None);
+        }
+        let mut out = Vec::with_capacity(data.real_size.min(MAX_BITMAP_BYTES) as usize);
+        let mut filled = 0u64;
+        for segment in &segments {
+            if filled >= data.real_size {
+                break;
+            }
+            let remaining = data.real_size - filled;
+            match segment {
+                Segment::Data { offset, length } => {
+                    let take = (*length).min(remaining) as usize;
+                    let mut buf = vec![0u8; take];
+                    src.read_exact_at(*offset, &mut buf)?;
+                    out.extend_from_slice(&buf);
+                    filled += take as u64;
+                }
+                Segment::Zero { length } => {
+                    let take = (*length).min(remaining) as usize;
+                    out.extend(std::iter::repeat_n(0u8, take));
+                    filled += take as u64;
+                }
+            }
+        }
+        out.resize(data.real_size as usize, 0);
+        out
+    };
+    Ok(Some(bytes))
+}
+
+/// Assess whether a deleted file's data clusters have been reallocated.
+///
+/// NTFS marks a deleted file's clusters free in `$Bitmap` immediately after
+/// deletion. If any of those clusters are currently allocated, another object
+/// has probably taken them over, so the bytes at those LCNs are no longer the
+/// original file's content. Reports the finding through `reasons` and adjusts
+/// `label`/`score`. A bitmap that cannot be read is reported as unknown and does
+/// not by itself change the classification.
+fn assess_cluster_reuse(
+    bitmap: &Option<Vec<u8>>,
+    data: &NtfsData,
+    reasons: &mut Vec<String>,
+    label: &mut ConfidenceLabel,
+    score: &mut u8,
+) {
+    let Some(bitmap) = bitmap else {
+        reasons.push(
+            "could not read the volume allocation bitmap; cluster-reuse status unknown".into(),
+        );
+        return;
+    };
+    const LIMIT: u64 = 4096;
+    let mut reused = 0u64;
+    let mut inspected = 0u64;
+    for run in &data.runs {
+        let Some(lcn) = run.lcn else {
+            continue;
+        };
+        let end = lcn.saturating_add(run.clusters);
+        let mut cluster = lcn;
+        while cluster < end && inspected < LIMIT {
+            let byte = cluster / 8;
+            let bit = cluster % 8;
+            let allocated = bitmap
+                .get(byte as usize)
+                .map(|b| b & (1u8 << bit) != 0)
+                .unwrap_or(false);
+            if allocated {
+                reused += 1;
+            }
+            inspected += 1;
+            cluster += 1;
+        }
+        if inspected >= LIMIT {
+            break;
+        }
+    }
+    if reused > 0 {
+        reasons.push(format!(
+            "allocation bitmap marks {reused} of {inspected} inspected data clusters as currently allocated; the clusters were likely reallocated to another object, so recovered bytes may not be the original content",
+        ));
+        *label = ConfidenceLabel::Partial;
+        *score = (*score).min(45);
+    } else if inspected > 0 {
+        reasons.push(
+            "allocation bitmap shows all inspected data clusters are free; original content is likely intact but unprotected".into(),
+        );
+    }
+}
+
 fn resolve_parent_path(
     record: u64,
     summaries: &HashMap<u64, RecordSummary>,
@@ -1004,6 +1143,11 @@ pub fn scan(
         );
     }
 
+    // Read the volume allocation bitmap once. It tells us whether a deleted
+    // file's data clusters have been reallocated by another object, which is
+    // the single most important correctness signal for deleted-file recovery.
+    let bitmap = read_volume_bitmap(src, volume, &boot).ok().flatten();
+
     let mut path_memo: HashMap<u64, String> = HashMap::new();
     let mut visiting = HashSet::new();
     for index in 0..scan_records {
@@ -1101,6 +1245,12 @@ pub fn scan(
                 if d.resident {
                     reasons.push("data is resident inside the MFT record".into());
                     score = score.saturating_add(3);
+                } else if !parsed.in_use {
+                    // Deleted non-resident data: check whether its clusters have
+                    // been reallocated by another object. This is the decisive
+                    // signal for whether the recovered bytes are original content.
+                    reasons.push("data is described by non-resident runs".into());
+                    assess_cluster_reuse(&bitmap, d, &mut reasons, &mut label, &mut score);
                 } else {
                     reasons.push("data is described by non-resident runs".into());
                 }
@@ -1258,5 +1408,89 @@ mod tests {
         assert_eq!(record_size_from(-10, 4096).unwrap(), 1024);
         assert_eq!(record_size_from(2, 4096).unwrap(), 8192);
         assert!(record_size_from(0, 4096).is_err());
+    }
+
+    /// A deleted non-resident file whose clusters are all free in the bitmap
+    /// stays Likely; reallocated clusters downgrade it to Partial.
+    fn make_runs(lcns: &[(u64, u64)]) -> Vec<Run> {
+        lcns.iter()
+            .map(|(lcn, clusters)| Run {
+                vcn: 0,
+                clusters: *clusters,
+                lcn: Some(*lcn),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn cluster_reuse_downgrades_to_partial() {
+        let mut label = ConfidenceLabel::Likely;
+        let mut score = 86u8;
+        let mut reasons = Vec::new();
+        // Cluster 10 is allocated in the bitmap (byte 1, bit 2).
+        let mut bitmap = vec![0u8; 16];
+        bitmap[1] |= 1 << 2;
+        let data = NtfsData {
+            resident: false,
+            resident_bytes: Vec::new(),
+            real_size: 4096,
+            allocated_size: 4096,
+            initialized_size: 4096,
+            runs: make_runs(&[(10, 8)]),
+            compressed: false,
+            encrypted: false,
+            sparse: false,
+            named: false,
+        };
+        assess_cluster_reuse(&Some(bitmap), &data, &mut reasons, &mut label, &mut score);
+        assert_eq!(label, ConfidenceLabel::Partial);
+        assert!(score <= 45);
+        assert!(reasons.iter().any(|r| r.contains("allocated")));
+    }
+
+    #[test]
+    fn cluster_free_keeps_likely() {
+        let mut label = ConfidenceLabel::Likely;
+        let mut score = 86u8;
+        let mut reasons = Vec::new();
+        // All-zero bitmap: clusters are free.
+        let bitmap = vec![0u8; 16];
+        let data = NtfsData {
+            resident: false,
+            resident_bytes: Vec::new(),
+            real_size: 4096,
+            allocated_size: 4096,
+            initialized_size: 4096,
+            runs: make_runs(&[(10, 8)]),
+            compressed: false,
+            encrypted: false,
+            sparse: false,
+            named: false,
+        };
+        assess_cluster_reuse(&Some(bitmap), &data, &mut reasons, &mut label, &mut score);
+        assert_eq!(label, ConfidenceLabel::Likely);
+        assert!(reasons.iter().any(|r| r.contains("free")));
+    }
+
+    #[test]
+    fn bitmap_unavailable_reports_unknown() {
+        let mut label = ConfidenceLabel::Likely;
+        let mut score = 86u8;
+        let mut reasons = Vec::new();
+        let data = NtfsData {
+            resident: false,
+            resident_bytes: Vec::new(),
+            real_size: 4096,
+            allocated_size: 4096,
+            initialized_size: 4096,
+            runs: make_runs(&[(10, 8)]),
+            compressed: false,
+            encrypted: false,
+            sparse: false,
+            named: false,
+        };
+        assess_cluster_reuse(&None, &data, &mut reasons, &mut label, &mut score);
+        assert_eq!(label, ConfidenceLabel::Likely);
+        assert!(reasons.iter().any(|r| r.contains("unknown")));
     }
 }

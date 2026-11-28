@@ -16,7 +16,7 @@ Relift scans disk images and raw devices without writing to them, records what i
 [![Release](https://img.shields.io/badge/release-v0.1.0%20preview-orange)](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.90%2B-blue)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-94%20passing-brightgreen)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-100%20passing-brightgreen)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
 
 ## Why Relift
 
@@ -222,7 +222,7 @@ cargo test --workspace --all-targets
 cargo doc --workspace --no-deps
 ```
 
-The suite has 94 tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit and process-level contract tests, GUI DTO contract tests, carver validation tests, filesystem probe tests, and resume tests. CI runs the same suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
+The suite has 100 tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit and process-level contract tests, GUI DTO contract tests, carver validation tests, filesystem probe tests, and resume tests. CI runs the same suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
 
 ## Security
 

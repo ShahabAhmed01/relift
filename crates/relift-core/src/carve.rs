@@ -28,7 +28,6 @@ use crate::source::ReadOnlySource;
 use crate::util::{u16_be, u16_le, u32_be, u32_le, u64_be, u64_le};
 
 const CHUNK: u64 = 4 * 1024 * 1024;
-const OVERLAP: u64 = 16;
 const MAX_READ: u64 = 16 * 1024 * 1024;
 const MAX_JPEG: u64 = 1024 * 1024 * 1024;
 const MAX_PNG: u64 = 1024 * 1024 * 1024;
@@ -375,6 +374,28 @@ const MARKERS: &[Marker] = &[
         adjust: -1,
     },
 ];
+
+/// The overlap between consecutive scan chunks, in bytes.
+///
+/// It is derived from the longest registered signature so that a signature
+/// spanning a chunk boundary is never split in two. The overlap must be at
+/// least `max_signature_length - 1`. The LNK marker is currently the longest
+/// at 21 bytes, so the overlap is 20. This constant is recomputed whenever
+/// MARKERS changes.
+const fn max_signature_len() -> usize {
+    let mut max = 0usize;
+    let mut i = 0;
+    while i < MARKERS.len() {
+        let len = MARKERS[i].magic.len();
+        if len > max {
+            max = len;
+        }
+        i += 1;
+    }
+    max
+}
+
+const OVERLAP: u64 = (max_signature_len() - 1) as u64;
 
 struct Validated {
     length: u64,
@@ -2360,40 +2381,66 @@ fn validate_ole(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
 // MPEG-TS — validates 0x47 sync bytes at 188-byte packet intervals
 // ---------------------------------------------------------------------------
 
+/// Minimum consecutive valid MPEG-TS packets required to emit a candidate.
+/// A single `0x47` byte (or a short run) appears frequently in unrelated disk
+/// structures and must not be treated as a video stream.
+const MPEGTS_MIN_PACKETS: u32 = 4;
+
 fn validate_mpegts(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
     const PACKET: u64 = 188;
     let mut pos = start;
     let mut packets = 0u32;
+    let mut first_pid: Option<u16> = None;
     while pos + PACKET <= limit {
         if pos - start > MAX_MPEGTS {
             return None;
         }
         let sync = read_bounded(src, pos, 1, limit)?;
         if sync[0] != 0x47 {
-            if packets == 0 {
-                return None;
-            }
             break;
         }
-        // Check PID and adaptation field presence for basic validity.
-        if pos + 4 <= limit {
-            let hdr = read_bounded(src, pos + 1, 3, limit)?;
-            let _pid = ((hdr[0] as u16 & 0x1F) << 8) | hdr[1] as u16;
-            let _adaptation = hdr[2] >> 5;
+        if pos + 4 > limit {
+            break;
+        }
+        let hdr = read_bounded(src, pos + 1, 3, limit)?;
+        // Byte 1-2: transport_error_indicator (bit 15), PID (bits 14-0).
+        let tei = (hdr[0] & 0x80) != 0;
+        let pid = ((hdr[0] as u16 & 0x1F) << 8) | hdr[1] as u16;
+        // Byte 3: adaptation_field_control (bits 5-4). 0b00 is reserved/invalid.
+        let afc = (hdr[2] >> 4) & 0x03;
+        if tei || afc == 0 {
+            // Structurally invalid packet: stop the run.
+            break;
+        }
+        // Record the first PID; a real stream typically uses consistent or
+        // deliberately chosen PIDs. We do not require all packets to share one
+        // PID (multi-program streams are normal), but we record it for notes.
+        if first_pid.is_none() {
+            first_pid = Some(pid);
         }
         pos = pos.checked_add(PACKET)?;
         packets += 1;
-        if packets > 100_000 {
+        if packets >= 10_000 {
             break;
         }
     }
-    if packets == 0 {
+    if packets < MPEGTS_MIN_PACKETS {
         return None;
     }
-    Some(
-        Validated::new(pos - start, 82)
-            .note(format!("MPEG-TS: {} packets with 0x47 sync", packets)),
-    )
+    // A run that ends mid-stream because the next packet lacks sync is still a
+    // plausible fragment; bound the length to the valid run.
+    let length = pos - start;
+    // Score rises with run length but caps well below 100: sync bytes alone
+    // cannot prove the bytes are a complete, original video file.
+    let score = 60u8.saturating_add((packets / 10).min(30) as u8);
+    let mut v = Validated::new(length, score).note(format!(
+        "MPEG-TS: {} consecutive valid 188-byte packets",
+        packets
+    ));
+    if let Some(pid) = first_pid {
+        v = v.note(format!("first packet PID {pid}"));
+    }
+    Some(v)
 }
 
 // ---------------------------------------------------------------------------
@@ -2621,10 +2668,14 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("video.ts");
         let mut data = Vec::new();
-        // Three 188-byte packets with 0x47 sync at the start of each.
-        for _ in 0..3 {
+        // Six valid 188-byte packets with 0x47 sync at the start of each.
+        // AFC = 0b11 (adaptation field + payload), no TEI, PID 0x100.
+        for _ in 0..6 {
             data.push(0x47);
-            data.extend(std::iter::repeat_n(0u8, 187));
+            data.push(0x10); // PID high byte + TEI=0
+            data.push(0x00); // PID low byte
+            data.push(0x30); // AFC = 0b11, no discontinuity, etc.
+            data.extend(std::iter::repeat_n(0u8, 184));
         }
         std::fs::write(&path, &data).unwrap();
         let src = FileSource::open(&path).unwrap();
@@ -2646,6 +2697,59 @@ mod tests {
         assert!(
             sink.items.iter().any(|c| c.format == "ts"),
             "TS format should be emitted"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Repeated `0x47` bytes at non-188 intervals (or short runs) must not be
+    /// mistaken for a valid MPEG-TS stream.
+    #[test]
+    fn mpegts_rejects_random_sync_bytes() {
+        let dir = std::env::temp_dir().join(format!("relift-carve-ts-fp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("noise.ts");
+        // Build an image with `0x47` at positions that are NOT 188 apart, plus
+        // some short runs of valid sync. The carver should reject all of them.
+        let mut data = vec![0u8; 4096];
+        for i in 0..data.len() / 100 {
+            data[i * 100] = 0x47; // sync every 100 bytes, not 188
+        }
+        // A short run of 3 valid packets (below the 4-packet minimum).
+        data[2000] = 0x47;
+        data[2001] = 0x10;
+        data[2002] = 0x00;
+        data[2003] = 0x30;
+        data[2188] = 0x47;
+        data[2189] = 0x10;
+        data[2190] = 0x00;
+        data[2191] = 0x30;
+        data[2376] = 0x47;
+        data[2377] = 0x10;
+        data[2378] = 0x00;
+        data[2379] = 0x30;
+        std::fs::write(&path, &data).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = VolumeRef::new(0, src.len());
+        let mut sink = VecSink::default();
+        let mut progress = |_a: u64, _b: u64| {};
+        let summary = scan_volume(
+            &src,
+            &volume,
+            &CarveOptions {
+                min_size: 16,
+                ..Default::default()
+            },
+            &mut sink,
+            &mut progress,
+        )
+        .unwrap();
+        assert_eq!(
+            summary.emitted, 0,
+            "random 0x47 bytes must not produce MPEG-TS candidates: {summary:?}"
+        );
+        assert!(
+            !sink.items.iter().any(|c| c.format == "ts"),
+            "no TS candidates from noise"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2758,6 +2862,116 @@ mod tests {
         )
         .unwrap();
         assert_eq!(summary.emitted, 0, "noise should produce no valid carves");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The overlap must be at least the longest signature length minus one, so
+    /// no signature can be split across two chunks.
+    #[test]
+    fn overlap_covers_longest_signature() {
+        let max_len = MARKERS.iter().map(|m| m.magic.len()).max().unwrap_or(1);
+        assert!(
+            OVERLAP as usize >= max_len.saturating_sub(1),
+            "OVERLAP {} is smaller than max signature length - 1 ({})",
+            OVERLAP,
+            max_len
+        );
+    }
+
+    /// Build a minimal valid SQLite database (one 4096-byte page) and copy it
+    /// into `buf` at `offset`.
+    fn write_minimal_sqlite(buf: &mut [u8], offset: usize) {
+        let page_size: u16 = 4096;
+        let header = b"SQLite format 3\0";
+        buf[offset..offset + header.len()].copy_from_slice(header);
+        buf[offset + 16..offset + 18].copy_from_slice(&page_size.to_be_bytes());
+        buf[offset + 18] = 1; // write version
+        buf[offset + 19] = 1; // read version
+        buf[offset + 20] = 0;
+        buf[offset + 21] = 64;
+        buf[offset + 22] = 32;
+        buf[offset + 23] = 32;
+        buf[offset + 28..offset + 32].copy_from_slice(&1u32.to_be_bytes()); // page count
+                                                                            // Zero-fill the rest of the page.
+        for b in buf
+            .iter_mut()
+            .skip(offset + 32)
+            .take(page_size as usize - 32)
+        {
+            *b = 0;
+        }
+    }
+
+    /// Signatures placed at chunk boundaries (start, end overlap, next chunk
+    /// start) must all be discovered. The overlap ensures a signature whose
+    /// magic starts within the last `OVERLAP` bytes of a chunk is still fully
+    /// visible in the read buffer.
+    #[test]
+    fn signatures_at_chunk_boundaries_are_found() {
+        let dir =
+            std::env::temp_dir().join(format!("relift-carve-boundary-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("boundary.img");
+
+        // Image larger than one CHUNK (4 MiB) so we cross a boundary.
+        let mut data = vec![0u8; CHUNK as usize + 8192 * 2];
+
+        // SQLite at the very start of the image (start of chunk 0).
+        write_minimal_sqlite(&mut data, 0);
+
+        // SQLite whose magic starts one byte before the end of chunk 0. Its
+        // 16-byte magic spans into the overlap region, so without an overlap
+        // at least `max_signature_len - 1` it would be split across chunks.
+        let near_end = (CHUNK as usize) - 1;
+        write_minimal_sqlite(&mut data, near_end);
+
+        // SQLite at the start of chunk 1, well clear of the previous one's
+        // page data (which extends 4096 bytes past its header).
+        write_minimal_sqlite(&mut data, CHUNK as usize + 8192);
+
+        std::fs::write(&path, &data).unwrap();
+        let src = FileSource::open(&path).unwrap();
+        let volume = VolumeRef::new(0, src.len());
+        let mut sink = VecSink::default();
+        let mut progress = |_a: u64, _b: u64| {};
+        let summary = scan_volume(
+            &src,
+            &volume,
+            &CarveOptions {
+                min_size: 16,
+                ..Default::default()
+            },
+            &mut sink,
+            &mut progress,
+        )
+        .unwrap();
+
+        let found: Vec<u64> = sink
+            .items
+            .iter()
+            .filter(|c| c.format == "sqlite")
+            .map(|c| match &c.data {
+                crate::candidate::DataLocation::Raw { offset, .. } => *offset,
+                _ => 0,
+            })
+            .collect();
+        assert!(
+            found.contains(&0),
+            "SQLite at chunk start (offset 0) not found: {found:?}"
+        );
+        assert!(
+            found.contains(&(near_end as u64)),
+            "SQLite whose magic starts at chunk end (offset {near_end}) not found: {found:?}"
+        );
+        assert!(
+            found.contains(&(CHUNK + 8192)),
+            "SQLite at chunk 1 start not found: {found:?}"
+        );
+        assert_eq!(
+            summary.emitted, 3,
+            "expected 3 boundary SQLite files, got {}: {found:?}",
+            summary.emitted
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
