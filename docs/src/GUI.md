@@ -59,7 +59,7 @@ Recovery destination safety is still subject to the platform limits in
 - No pause/resume for a running scan, and no resume control in the GUI; the
   backend supports `relift scan --resume` from the CLI.
 - No device-health, SMART, or TRIM diagnosis.
-- Visual captures are unverified: the provenance record is contradictory, CLI images expose a local Windows profile path, and at least one supposed GUI screenshot shows an editor/agent conversation. Re-capture from the current build before publishing images. See [asset provenance](../assets/demo/PROVENANCE.md).
+- The older screenshots in `docs/assets/screenshots/` remain unverified and are not product evidence. A separate real-app capture set is recorded in [GUI_CAPTURE.md](../GUI_CAPTURE.md) and [its provenance](../assets/demo/verified-2026-11-28/PROVENANCE.md). Those captures use generated synthetic data; they do not establish recovery accuracy on real media.
 
 The GUI is built in the release workflow, but platform runtime behavior,
 accessibility, cold-start time, and large-result performance have not been

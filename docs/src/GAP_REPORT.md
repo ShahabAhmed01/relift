@@ -106,9 +106,8 @@ deliberate, and tracked.
 
 - No simulated or mock results; every fixture-validated recovery is compared
   byte-for-byte with SHA-256.
-- Unverified screenshot/video assets remain in `docs/assets/`; their provenance
-  is contradictory, one supposed GUI image is an editor/agent conversation, and
-  CLI screenshots expose a local Windows profile path. Do not publish or use
-  them as evidence; current-build recapture and privacy review are pending.
+- Legacy screenshot/video assets remain unverified under `docs/assets/` and are
+  not used in the README. A separate real-app capture set using only synthetic
+  data is documented at `docs/assets/demo/verified-2026-11-28/`.
 - No telemetry; default offline.
 - Unsupported filesystems are identified and reported, never silently claimed.

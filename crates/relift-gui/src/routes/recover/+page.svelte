@@ -114,6 +114,7 @@
       <button class="btn-ghost p-2" onclick={goHome} aria-label="Home">
         <RotateCcw class="w-5 h-5" />
       </button>
+      <img src="/brand/relift-mark.svg" alt="" class="w-8 h-8 rounded-lg" />
       <div>
         <h1 class="text-lg font-semibold text-text">Recovery</h1>
         <p class="text-xs text-text-muted">Select destination and recover files</p>

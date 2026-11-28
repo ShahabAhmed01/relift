@@ -336,6 +336,7 @@
       <button class="btn-ghost p-2" onclick={() => goto('/')} aria-label="Back">
         <RotateCcw class="w-5 h-5" />
       </button>
+      <img src="/brand/relift-mark.svg" alt="" class="w-8 h-8 rounded-lg" />
       <div>
         <h1 class="text-lg font-semibold text-text">Results</h1>
         <p class="text-xs text-text-muted">

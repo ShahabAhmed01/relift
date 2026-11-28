@@ -6,3 +6,6 @@ title = "Relift Documentation"
 
 [build]
 build-dir = "../book"
+
+[output.html]
+favicon = "assets/brand/relift-mark.svg"

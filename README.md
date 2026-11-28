@@ -1,7 +1,7 @@
 # Relift
 
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="Relift logo" width="96" height="96" />
+  <img src="docs/assets/logo.svg" alt="Relift" width="260" />
 </p>
 
 **Read-only deleted-file recovery for raw disk images and drives.**
@@ -17,6 +17,24 @@ Relift scans disk images and raw devices without writing to them, records what i
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.90%2B-blue)](Cargo.toml)
 [![Tests](https://img.shields.io/badge/tests-112%20passing-brightgreen)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
+
+<p align="center">
+  <img src="docs/assets/demo/verified-2026-11-28/walkthrough.gif" alt="Real Relift desktop app scan, results, and recovery safety screens using a synthetic FAT32 image" width="960" />
+</p>
+
+<p align="center"><sub>Captured from the running Windows app. The demo scans generated synthetic data and stops before any recovery write.</sub></p>
+
+<details>
+<summary>View real app screenshots</summary>
+
+![Source selection and safety notice](docs/assets/demo/verified-2026-11-28/source-selection.png)
+
+![Completed synthetic scan](docs/assets/demo/verified-2026-11-28/scan-complete.png)
+
+![Recovered-file candidates](docs/assets/demo/verified-2026-11-28/results.png)
+
+![Recovery destination safety screen](docs/assets/demo/verified-2026-11-28/recovery-destination.png)
+</details>
 
 ## Why Relift
 
@@ -139,12 +157,11 @@ See the [CLI reference](docs/src/CLI.md) for every option and the exit-code cont
 
 ## Synthetic demo
 
-Synthetic demo data, scripts, and scan-session artifacts are kept in
-`docs/assets/demo/`. The accompanying screenshots and video have contradictory
-provenance and are not product evidence: CLI images expose a local Windows
-profile path, and at least one supposed GUI screenshot shows an editor/agent
-conversation rather than Relift. They are not embedded here. See
-[`PROVENANCE.md`](docs/assets/demo/PROVENANCE.md) before using any demo artifact.
+Synthetic demo data and scripts are kept in `docs/assets/demo/`. The new GIF
+and screenshots under `verified-2026-11-28/` are captures of the running Tauri
+app against a generated FAT32 image. Older flat demo media and files under
+`docs/assets/screenshots/` retain contradictory provenance and are not used in
+the README. See the [capture record](docs/assets/demo/verified-2026-11-28/PROVENANCE.md).
 
 On Windows, the PowerShell runner creates a fresh synthetic image, scans it,
 and shows a dry run. It requires an existing destination on a different

@@ -120,9 +120,7 @@
   <!-- Header -->
   <header class="border-b border-border px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-        <Database class="w-5 h-5 text-bg" />
-      </div>
+      <img src="/brand/relift-mark.svg" alt="" class="w-9 h-9 rounded-xl" />
       <div>
         <h1 class="text-lg font-semibold text-text">Relift</h1>
         <p class="text-xs text-text-muted">Read-only deleted-file recovery</p>

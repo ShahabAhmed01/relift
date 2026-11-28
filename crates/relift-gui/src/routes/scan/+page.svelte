@@ -8,6 +8,7 @@
     StopCircle, 
     ChevronRight,
     AlertTriangle,
+    CheckCircle,
     XCircle,
     Loader2
   } from '@lucide/svelte';
@@ -225,6 +226,7 @@
         <button class="btn-ghost p-2" onclick={() => scanning ? void stopScan() : goto('/')} aria-label="Back" disabled={stopping}>
         <ArrowLeft class="w-5 h-5" />
       </button>
+      <img src="/brand/relift-mark.svg" alt="" class="w-8 h-8 rounded-lg" />
       <div>
         <h1 class="text-lg font-semibold text-text">Scanning</h1>
         <p class="text-xs text-text-muted">{session?.source_path || 'Unknown source'}</p>
@@ -241,7 +243,11 @@
     <section class="card p-4">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-base font-medium text-text flex items-center gap-2">
-          <Loader2 class="w-4 h-4 animate-spin text-accent" />
+          {#if progress.phase === 'done'}
+            <CheckCircle class="w-4 h-4 text-success" />
+          {:else}
+            <Loader2 class="w-4 h-4 animate-spin text-accent" />
+          {/if}
           {getPhaseLabel(progress.phase)} <span class="text-text-muted">({progressPercent}%)</span>
         </h2>
         <div class="flex items-center gap-2 text-sm text-text-muted">
@@ -264,7 +270,7 @@
         </div>
         <div class="flex flex-col">
           <span class="text-text-muted">ETA</span>
-          <span class="font-mono text-text">{eta > 0 ? formatDuration(eta) : 'calculating…'}</span>
+          <span class="font-mono text-text">{progress.phase === 'done' ? '—' : eta > 0 ? formatDuration(eta) : 'calculating…'}</span>
         </div>
         <div class="flex flex-col">
           <span class="text-text-muted">Found</span>
@@ -293,9 +299,11 @@
     <!-- Live Results Preview (if any) -->
     {#if candidatesFound > 0}
       <section class="card p-4">
-        <h2 class="text-base font-medium text-text mb-3">Candidates saved so far</h2>
+        <h2 class="text-base font-medium text-text mb-3">
+          {scanning ? 'Candidates saved so far' : 'Scan complete'}
+        </h2>
         <p class="text-sm text-text-muted">
-          Review candidates after the scan completes or after stopping it.
+          {scanning ? 'Review candidates after the scan completes or after stopping it.' : 'Review the saved candidates on the results screen.'}
         </p>
       </section>
     {/if}

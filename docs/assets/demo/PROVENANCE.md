@@ -1,16 +1,22 @@
 # Provenance — Relift demo assets
 
-> **Audit status (2026-11-28): visual assets are unverified and must not be
-> presented as product evidence.** The original record contradicts itself
-> about whether capture succeeded. A CLI image exposes a local Windows profile
-> and repository path. At least one image labeled as a GUI capture shows an
-> editor/agent conversation, not the Relift GUI. The visual files remain in the
-> repository, but the README no longer embeds them.
+## Current README captures
 
-This page preserves the audit finding and the scope of the earlier claims. It
-does not authenticate the screenshots, video, session, or hash table. Re-run
-the synthetic workflow on the current checkout and record fresh outputs before
-using any of them as evidence.
+The current README uses the fresh, separately documented set in
+[`verified-2026-11-28/`](verified-2026-11-28/PROVENANCE.md). Those screenshots
+and the GIF were captured from the running Relift Tauri application against a
+new synthetic image. The older files documented below remain unverified and
+are not used by the README.
+
+> **Historical audit status (2026-11-27):** the older flat visual assets have
+> contradictory provenance. A CLI image exposes a local Windows profile and
+> repository path. At least one image labeled as a GUI capture shows an
+> editor/agent conversation, not the Relift GUI. Do not present those legacy
+> files as product evidence.
+
+The numbered sections below preserve the historical audit of the older flat
+assets and are not provenance for the current README captures. Use the new
+capture-set record above for the assets in the README.
 
 ## 1. Commit and date
 

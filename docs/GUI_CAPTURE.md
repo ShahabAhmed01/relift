@@ -1,8 +1,23 @@
 # GUI screenshot capture procedure
 
-**Status:** OWNER TASK — requires a graphical desktop environment.
+**Status:** Genuine app captures added on 2026-11-28. The historical screenshots
+under `docs/assets/screenshots/` remain unverified; the README uses the separate
+verified capture set described below.
 
-The screenshots under `docs/assets/screenshots/` are **not verified captures of the running Relift GUI**. Audit found that `gui-home.png` shows an editor/agent conversation rather than Relift, while CLI images expose a local Windows profile path. Their capture history is unavailable. Do not use any of these files as product evidence; re-capture from the current build and review them for private paths.
+The older screenshots under `docs/assets/screenshots/` are **not verified captures of the running Relift GUI**. Audit found that `gui-home.png` shows an editor/agent conversation rather than Relift, while CLI images expose a local Windows profile path. Their capture history is unavailable. Do not use those files as product evidence.
+
+## Current capture record
+
+- **Capture set:** `docs/assets/demo/verified-2026-11-28/`
+- **Application:** Running Windows Tauri app, 1280 × 800 viewport
+- **Source:** Fresh 128 MiB synthetic FAT32 image from `docs/assets/demo/scripts/genimg.rs`
+- **Workflow:** Quick metadata scan, saved results, and recovery destination screen
+- **Results:** 11 deleted-file candidates; the scan source hash remained unchanged
+- **Writes:** No recovered files were written; no physical device was scanned
+- **Privacy:** The source-selection image is cropped above the host device list. Other images show only the synthetic path under `C:\Users\Public`.
+- **GIF:** `walkthrough.gif` is encoded from the actual app captures; it has no added UI or mock results.
+
+See the set's [`PROVENANCE.md`](assets/demo/verified-2026-11-28/PROVENANCE.md) for the image hash and exact capture details.
 
 ## What to capture
 
