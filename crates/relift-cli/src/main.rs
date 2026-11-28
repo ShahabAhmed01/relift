@@ -237,6 +237,10 @@ struct ImageArgs {
     /// Do not re-read the finished image to verify its hash.
     #[arg(long)]
     no_verify: bool,
+
+    /// Resume from the last durable checkpoint in the existing `.partial` image.
+    #[arg(long)]
+    resume: bool,
 }
 
 #[derive(Debug, Args)]
@@ -531,6 +535,7 @@ fn cmd_image(args: ImageArgs, json: bool) -> anyhow::Result<u8> {
     let mut printer = Progress::new(!json);
     let options = ImageOptions {
         verify: !args.no_verify,
+        resume: args.resume,
         ..ImageOptions::default()
     };
     let result = {
@@ -550,6 +555,9 @@ fn cmd_image(args: ImageArgs, json: bool) -> anyhow::Result<u8> {
         );
         println!("sha256:    {}", result.sha256);
         println!("verified:  {}", if result.verified { "yes" } else { "no" });
+        if result.resumed {
+            println!("resumed:   yes");
+        }
         if let Some(manifest) = &result.manifest_path {
             println!("manifest:  {}", manifest.display());
         }

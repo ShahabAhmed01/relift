@@ -17,14 +17,14 @@ Relift is a Rust command-line and Tauri desktop application for scanning raw dis
 
 The current support and verification boundaries are maintained in docs/support-matrix.md and docs/VERIFICATION.md. FAT, exFAT, NTFS and ext2/3/4 have synthetic fixture coverage. HFS+, APFS, Btrfs and XFS parsers are experimental. Signature carving emits only candidates accepted by registered validators. ZIP64
 is not separately emitted (it shares the `PK\x03\x04` local-header magic with ZIP
-and is validated by the existing ZIP validator); every other registered format
-carries its own structural validator.
+and is validated by the existing ZIP validator). The registry includes
+marker-only entries; validator coverage and maturity vary by format.
 
-Only raw images are supported. Imaging is a single copy pass; there is no map-file resume. Sessions use JSON and JSONL files; a cancelled or crashed scan can be continued with `relift scan --resume` (volume-level checkpoint). The GUI supports source selection, scan progress, result filtering and recovery; imaging, report export, and resume remain CLI-only.
+Only raw images are supported. Imaging can resume from durable prefix checkpoints with `relift image --resume`; it does not retry unreadable sectors. Sessions use JSON and JSONL files; a cancelled or crashed scan can be continued with `relift scan --resume` (volume-level checkpoint). The GUI supports source selection, scan progress, result filtering and recovery; imaging, report export, and resume remain CLI-only.
 
 ## Verification
 
-The current Rust workspace has 112 tests; the full workspace suite passed on 2026-11-28 on Windows. Earlier checks on stable and Rust 1.90.0, the Svelte and TypeScript checks, the production build, and a local Windows Tauri installer build were recorded on 2026-11-15. Carving registers 153 format identifiers, but only structurally validated entries can emit candidates; see docs/src/formats.md for coverage details.
+The current Rust workspace has 121 tests; the full workspace suite passed on 2026-11-28 on Windows. Earlier checks on stable and Rust 1.90.0, the Svelte and TypeScript checks, the production build, and a local Windows Tauri installer build were recorded on 2026-11-15. Carving registers 153 format identifiers, including marker-only entries; see docs/src/formats.md for validator coverage details.
 
 All recovery accuracy evidence is synthetic. No physical drive or representative real-media corpus has been validated. Open release gates are listed in docs/GAP_REPORT.md.
 

@@ -58,6 +58,14 @@ pub trait ReadOnlySource: Send + Sync {
     }
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize>;
     fn identity(&self) -> SourceIdentity;
+
+    /// Whether `file` refers to the same underlying file as this source.
+    /// Implementations that can identify their open handle should override
+    /// this so resume writers cannot modify a source through a hard link.
+    fn is_same_file(&self, _file: &File) -> Result<bool> {
+        Ok(false)
+    }
+
     fn description(&self) -> SourceDescription {
         SourceDescription {
             identity: self.identity(),
@@ -255,6 +263,72 @@ impl ReadOnlySource for FileSource {
 
     fn identity(&self) -> SourceIdentity {
         self.identity.clone()
+    }
+
+    fn is_same_file(&self, file: &File) -> Result<bool> {
+        files_are_same(&self.file, file)
+    }
+}
+
+pub(crate) fn files_are_same(a: &File, b: &File) -> Result<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let a = a
+            .metadata()
+            .map_err(|source| Error::Io { offset: 0, source })?;
+        let b = b
+            .metadata()
+            .map_err(|source| Error::Io { offset: 0, source })?;
+        Ok(a.dev() == b.dev() && a.ino() == b.ino())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+
+        let mut a_info =
+            windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION::default();
+        let mut b_info =
+            windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: both handles come from live `File` values, and each output
+        // pointer refers to a writable structure of the API's required type.
+        let a_ok = unsafe {
+            windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(
+                a.as_raw_handle(),
+                &mut a_info,
+            )
+        };
+        if a_ok == 0 {
+            return Err(Error::Io {
+                offset: 0,
+                source: std::io::Error::last_os_error(),
+            });
+        }
+        // SAFETY: both handles come from live `File` values, and each output
+        // pointer refers to a writable structure of the API's required type.
+        let b_ok = unsafe {
+            windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(
+                b.as_raw_handle(),
+                &mut b_info,
+            )
+        };
+        if b_ok == 0 {
+            return Err(Error::Io {
+                offset: 0,
+                source: std::io::Error::last_os_error(),
+            });
+        }
+        Ok(a_info.dwVolumeSerialNumber == b_info.dwVolumeSerialNumber
+            && a_info.nFileIndexHigh == b_info.nFileIndexHigh
+            && a_info.nFileIndexLow == b_info.nFileIndexLow)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (a, b);
+        Err(Error::UnsafeDestination(
+            "cannot verify source and partial-file identity on this platform; refusing resume"
+                .into(),
+        ))
     }
 }
 

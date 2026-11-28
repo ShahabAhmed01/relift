@@ -16,7 +16,7 @@ Relift scans disk images and raw devices without writing to them, records what i
 [![Release](https://img.shields.io/badge/release-v0.1.0%20preview-orange)](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.90%2B-blue)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-112%20passing-brightgreen)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-121%20passing-brightgreen)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
 
 <p align="center">
   <img src="docs/assets/demo/verified-2026-11-28/walkthrough.gif" alt="Real Relift desktop app scan, results, and recovery safety screens using a synthetic FAT32 image" width="960" />
@@ -60,6 +60,10 @@ the safety of the evidence over the speed of the recovery.
 - **Sessions are inspectable and resumable.** Scan results are stored as
   JSON/JSONL, and an interrupted scan can continue with `relift scan --resume`
   after the source identity is revalidated.
+- **Interrupted imaging can resume.** `relift image --resume` validates the
+  source identity and checks the last durable output checkpoint against both
+  the saved image prefix and the current source bytes before continuing. It
+  does not retry unreadable sectors.
 - **Offline by default.** Relift contains no network client and sends no
   telemetry.
 
@@ -118,6 +122,8 @@ Work on an image, not a live volume, whenever possible:
 
 ```sh
 relift image /dev/sdX --dest /mnt/backup/evidence.dd
+# If interrupted, resume from the last durable checkpoint:
+relift image /dev/sdX --dest /mnt/backup/evidence.dd --resume
 relift scan /mnt/backup/evidence.dd --session ./session
 relift recover ./session --dest /mnt/recovery --dry-run
 relift recover ./session --dest /mnt/recovery
@@ -249,7 +255,7 @@ cargo test --workspace --all-targets
 cargo doc --workspace --no-deps
 ```
 
-The current workspace run passed 112 tests across core, CLI, GUI, testkit, and end-to-end targets. CI runs the suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
+The current workspace run passed 121 tests across core, CLI, GUI, testkit, and end-to-end targets. CI runs the suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
 
 ## Security
 

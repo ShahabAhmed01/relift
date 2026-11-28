@@ -56,8 +56,9 @@ tracked work list.
   the existing ZIP validator rather than a separate carver. A dedicated ZIP64
   end-of-central-directory validator is not yet implemented.
 
-Every other registered format carries its own structural validator, and an
-unvalidated carve is never emitted.
+The registry also contains marker-only entries that do not emit candidates.
+Available validators must accept the structure before any carve is emitted;
+validator coverage and maturity vary by format.
 
 ### Fragmentation
 - Bifragment gap carving is not implemented for most formats.
@@ -98,6 +99,14 @@ are not carved. See the constants in `crates/relift-core/src/carve.rs`.
 - Failed-output handling differs by platform: Windows removes a failed output;
   Linux and macOS retain a collision-safe `.partial` file when possible.
 - Sparse holes are written as zeroes and included in the hash.
+
+### Imaging
+- Interrupted copies can resume from a durable prefix checkpoint with
+  `relift image --resume`. Checkpoints are 256 MiB apart by default; uncommitted
+  bytes are recopied. Resume hashes the saved prefix and re-reads the same
+  source range to ensure the bytes still match.
+- Imaging stops on unreadable source ranges. It does not record bad-sector
+  ranges, retry sectors, or run multiple passes.
 
 ### Sessions
 - Sessions are directories with `session.json`, `candidates.jsonl`, and

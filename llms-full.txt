@@ -4,11 +4,11 @@ Relift is a GPL-3.0-or-later Rust workspace with a CLI and a Tauri desktop front
 
 ## Interfaces
 
-The CLI supports scanning, recovery, imaging, device listing, candidate listing, reports, diagnostics, and shell completions. Consult docs/src/CLI.md for exact flags, JSON shapes, and exit codes. The desktop GUI supports source selection, scan progress, candidate filtering, metadata preview, and recovery. Imaging, report export, and checkpoint resume remain CLI-only.
+The CLI supports scanning, recovery, imaging, device listing, candidate listing, reports, diagnostics, and shell completions. Consult docs/src/CLI.md for exact flags, JSON shapes, and exit codes. The desktop GUI supports source selection, scan progress, candidate filtering, metadata preview, and recovery. Imaging, report export, and checkpoint resume remain CLI-only. Scans resume at volume boundaries; imaging resumes from durable prefix checkpoints. Imaging does not retry unreadable sectors.
 
 ## Data and sessions
 
-Sessions use a JSON header and JSONL records. A completed session can be reused. An interrupted scan can be resumed with `relift scan --resume`; the source size and fingerprint are revalidated and completed volumes are skipped. Imaging is a single copy pass without a bad-sector map or multi-pass retry.
+Sessions use a JSON header and JSONL records. A completed session can be reused. An interrupted scan can be resumed with `relift scan --resume`; the source size and fingerprint are revalidated and completed volumes are skipped. Interrupted imaging can be resumed with `relift image --resume`; a JSONL map records durable prefix hashes. It does not provide a bad-sector map or multi-pass retry.
 
 ## Evidence boundaries
 

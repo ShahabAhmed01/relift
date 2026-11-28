@@ -98,8 +98,9 @@ its start; candidates written after the last completed volume are discarded.
 The session's recorded options (carving, live entries, volume selection, manual
 range, candidate limit) are reused. The source is re-opened read-only and its
 size and sampled fingerprint must match the session, otherwise resume is
-refused with exit code 4. Live pause/resume is not supported, and imaging has
-no resumable map-file workflow.
+refused with exit code 4. Live pause/resume is not supported. Interrupted image
+copies can continue with `relift image --resume`; unreadable-sector retries and
+multi-pass recovery are not implemented.
 
 ### `relift list`
 
@@ -193,6 +194,7 @@ relift image <SOURCE> --dest <FILE> [OPTIONS]
 |--------|-------------|
 | `<SOURCE>` | Disk image or raw device path |
 | `--dest <FILE>` | New image file to create (never overwrites existing) |
+| `--resume` | Resume from the last durable checkpoint in the existing `.partial` image and `.relift-map.jsonl` file |
 | `--no-verify` | Do not re-read the finished image to verify its hash |
 | `--json` | Machine-readable JSON output |
 
@@ -201,6 +203,14 @@ relift image <SOURCE> --dest <FILE> [OPTIONS]
 ```sh
 relift image /dev/sdb --dest /mnt/backup/drive.img
 ```
+
+If imaging is interrupted, rerun the same command with `--resume`. Relift
+revalidates the source identity and checks the saved image prefix against the
+current source bytes before continuing. This re-reads the checkpointed prefix.
+Checkpoints are synced every 256 MiB by default; an interruption may require
+recopying bytes since the last checkpoint. `--resume` only applies to a Relift
+partial image and its matching map file. It does not retry unreadable sectors
+or provide ddrescue-style multi-pass recovery.
 
 ### `relift doctor`
 
@@ -308,4 +318,4 @@ The following options and services are not part of the current CLI:
 - `--map`, `--passes`, `--rate-limit` on `image`
 - Filter expressions: `mime:`, `size:`, `date:`, `conf:`, `hash:`
 - JSON Schema files (`docs/schemas/`)
-- Resumable, bad-sector-aware image mapfiles and retry passes
+- Bad-sector-aware image maps, retry passes, and ddrescue map import/export

@@ -1,4 +1,11 @@
-# S-TIER Transformation Plan — Relift
+# Archived S-tier plan draft — superseded
+
+> Do not use this draft as a description of the current project. Its 36-format
+> count is obsolete, and its “zero false positives” and competitor-dominance
+> targets were not evidence-based. The current implementation and realistic
+> priorities are documented in [S_TIER_ROADMAP.md](S_TIER_ROADMAP.md), the
+> [support matrix](docs/src/support-matrix.md), and the
+> [competitive analysis](docs/research/COMPETITIVE_ANALYSIS.md).
 
 ## Current state (audit)
 - Rust workspace: relift-core, relift-cli, relift-testkit, relift-gui (Tauri+Svelte), relift-bench

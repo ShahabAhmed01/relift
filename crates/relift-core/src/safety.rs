@@ -16,7 +16,7 @@ use std::fs;
 use std::fs::File;
 use std::path::{Component, Path, PathBuf};
 
-use cap_fs_ext::DirExt;
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, OpenOptions as CapabilityOpenOptions};
 #[cfg(any(target_os = "linux", test))]
@@ -253,6 +253,46 @@ impl DestinationDirectory {
             .open_with(name, &options)
             .map_err(|source| Error::Io { offset: 0, source })?
             .into_std();
+        Ok(DestinationFile {
+            path: self.path.join(relative),
+            file: Some(file),
+            parent,
+            _parent_ancestors: parent_ancestors,
+            name: name.to_os_string(),
+        })
+    }
+
+    /// Open an existing leaf file relative to this anchored destination
+    /// directory without following a final symlink. Used only for resuming
+    /// Relift-owned partial outputs and their checkpoint files.
+    pub(crate) fn open_existing_file(&self, relative: &Path) -> Result<DestinationFile> {
+        validate_leaf_path(relative)?;
+        let name = relative
+            .file_name()
+            .ok_or_else(|| Error::UnsafeDestination("output path does not name a file".into()))?;
+        let parent = self
+            .handle
+            .try_clone()
+            .map_err(|source| Error::Io { offset: 0, source })?;
+        let parent_ancestors = vec![parent
+            .try_clone()
+            .map_err(|source| Error::Io { offset: 0, source })?];
+        let mut options = CapabilityOpenOptions::new();
+        options.read(true).write(true).follow(FollowSymlinks::No);
+        let file = parent
+            .open_with(name, &options)
+            .map_err(|source| Error::Io { offset: 0, source })?
+            .into_std();
+        if !file
+            .metadata()
+            .map_err(|source| Error::Io { offset: 0, source })?
+            .is_file()
+        {
+            return Err(Error::UnsafeDestination(format!(
+                "resume target {} is not a regular file",
+                self.path.join(relative).display()
+            )));
+        }
         Ok(DestinationFile {
             path: self.path.join(relative),
             file: Some(file),

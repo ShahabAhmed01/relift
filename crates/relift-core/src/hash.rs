@@ -37,6 +37,11 @@ impl Hasher {
         self.bytes
     }
 
+    /// Snapshot the digest without consuming the streaming hasher.
+    pub fn snapshot_hex(&self) -> String {
+        hex(&self.inner.clone().finalize())
+    }
+
     pub fn finish_hex(self) -> String {
         hex(&self.inner.finalize())
     }

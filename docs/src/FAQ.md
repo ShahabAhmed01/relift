@@ -56,10 +56,10 @@ are supported directly.
 ### How do I handle a failing drive?
 
 Stop using it. If it is clicking, beeping, disconnecting, or returning repeated
-read errors, consider professional recovery. Relift's `image` command makes a
-single-pass raw copy; it does not provide ddrescue-style maps, retries, or
-multi-pass resume. Image to a different physical volume before scanning when
-the device is stable enough to read.
+read errors, consider professional recovery. Relift's `image` command can
+resume from durable checkpoints, but it does not provide unreadable-sector
+maps, retries, or multi-pass recovery. Image to a different physical volume
+before scanning when the device is stable enough to read.
 
 ### Can I pause or resume a scan?
 

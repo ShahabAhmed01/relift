@@ -5,6 +5,12 @@ Commit: 0a75615
 Base: main a7cb3e0
 Date: 2026-11-27
 
+> Historical report from 2026-11-27. Its stated 36-format registry count was
+> incorrect: the code registered 153 identifiers, including marker-only
+> entries. Its 94-test total reflects that earlier test suite. Current counts
+> and support status are in the [verification record](src/VERIFICATION.md) and
+> [support matrix](src/support-matrix.md).
+
 ## Summary of changes
 
 All changes are on branch fix/ci-and-claim-reconciliation, committed as 0a75615. No changes were pushed to main. No PRs were opened or merged. No packages were published. No releases were created or overwritten.

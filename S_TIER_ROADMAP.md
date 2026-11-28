@@ -13,7 +13,7 @@ This is an aspirational engineering roadmap, not a ranking or a claim of parity.
 | Filesystem recovery | Fixture-tested metadata recovery for FAT, exFAT, NTFS, and ext2/3/4. Other parsers are experimental or detection-only. |
 | Partition handling | Reads existing MBR/GPT/APM tables and scans for lost-partition signatures. It does not repair a partition table or restore one to disk. |
 | Virtual/forensic images | Some virtual-disk formats have inspection code, but scanning is not integrated. QCOW reads and DMG, Parallels, E01, and AFF/AFF4 support are not implemented. |
-| Recovery workflow | Scan sessions can resume. Recovery reports SHA-256 when verification is enabled; recovery itself is not resumable. |
+| Recovery workflow | Scan sessions resume at volume checkpoints. CLI imaging resumes from durable prefix checkpoints after checking the saved prefix against the current source. Recovery reports SHA-256 when verification is enabled; recovery itself is not resumable. |
 | Distribution and validation | Preview release is unsigned. Evidence is synthetic; no representative real-media corpus has been validated. |
 
 ## Phase 1: Critical Gaps (Must Have for Parity)
@@ -43,10 +43,10 @@ This is an aspirational engineering roadmap, not a ranking or a claim of parity.
 
 ### 1.4 Multi-pass Imaging with Bad Sector Handling
 **Priority: HIGH** - Essential for failing drives
-- Multi-pass with retry logic
-- Bad sector map (bitmap)
+- Multi-pass with bounded retry logic
+- Bad-sector range map (prefix checkpoint resume is implemented)
 - Sparse image output
-- Resume from map
+- Import/export interoperable maps and resume retry passes from the map
 - Integration with DeepSpar/MRT hardware (future)
 
 ## Phase 2: Filesystem Completeness
@@ -117,7 +117,7 @@ Priority additions:
 
 ## Phase 4: Advanced Features (Differentiators)
 
-### 4.1 Search Index Integration (UNIQUE - Only Recover has this)
+### 4.1 Search Index Integration (Potential differentiator; confirm market coverage first)
 - Windows Search Index (Windows.edb)
 - macOS Spotlight (.Spotlight-V100)
 - Linux Tracker (tracker-store)

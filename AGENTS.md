@@ -82,6 +82,8 @@ relift recover ./session --dest /mnt/recovery \
 
 ```bash
 relift image /dev/sdX --dest /mnt/backup/drive.img
+# If the command is interrupted, rerun the same command with --resume:
+relift image /dev/sdX --dest /mnt/backup/drive.img --resume
 relift scan /mnt/backup/drive.img --session ./session --carve
 relift recover ./session --dest /mnt/recovery
 ```
@@ -185,8 +187,9 @@ The following are tracked in `docs/src/GAP_REPORT.md`:
   with `scan`. Convert E01/AFF4/VHD/VMDK/QCOW2/DMG to raw before scanning.
 - **Lost-partition recovery**: `relift partitions-scan` reports signature-based
   candidate ranges but does not repair a partition table or scan those ranges.
-- **Resumable imaging**: `relift image` is single-pass and has no ddrescue-style
-  mapfile, bad-sector retry, or resume.
+- **Bad-sector-aware imaging**: `relift image --resume` uses durable prefix
+  checkpoints, but does not retry unreadable sectors or provide ddrescue-style
+  multi-pass recovery.
 - **Code signing / notarization**: release artifacts are unsigned.
 
 ### MCP server (planned, not implemented)

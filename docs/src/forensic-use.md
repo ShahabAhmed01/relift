@@ -18,8 +18,9 @@ qualified examiner review the acquisition and analysis plan.
 2. Confirm the source and destination with the operator. The destination must
    be a different physical volume.
 3. If appropriate, create a raw image on the separate destination. Relift's
-   image command makes a single-pass copy and writes a SHA-256 manifest; it
-   does not provide bad-sector maps, retries, or multi-pass resume.
+   image command writes a SHA-256 manifest and can resume from durable prefix
+   checkpoints; it does not provide bad-sector maps, read retries, or
+   multi-pass recovery, and is not a forensic acquisition substitute.
 4. Scan the image, review candidates, and run a dry-run recovery.
 5. Recover only after confirming the dry-run and destination. Keep the image,
    session directory, report, and recovered output under controlled storage.

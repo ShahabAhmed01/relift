@@ -83,14 +83,14 @@ retracted or corrected when the code or tests no longer support it.
 |---|---|---|---|---|---|
 | I1 | Image is opened with `create_new` (existing file never overwritten) | Unit tests: `existing_manifest_is_never_overwritten`, `final_image_name_collision_does_not_replace_existing_file` | unit-tested | `crates/relift-core/src/imaging.rs` | Yes |
 | I2 | Image SHA-256 verified by re-read | Unit test: `image_roundtrip_and_manifest` | unit-tested | `crates/relift-core/src/imaging.rs` | Yes |
-| I3 | Imaging is a single copy pass (no mapfile resume) | Code: single `while at < total` loop; no mapfile support | implemented | `crates/relift-core/src/imaging.rs` | Yes |
+| I3 | Interrupted imaging resumes from a durable prefix checkpoint | Synthetic tests cover cancellation, torn map tail, changed source bytes, partial-image tampering, source/output hard-link refusal, and manifest finalization after rename | unit-tested | `crates/relift-core/src/imaging.rs` | Yes |
 
 ## Not yet implemented (documented as gaps)
 
 | ID | Claim | Status | Location |
 |---|---|---|---|
 | G1 | E01/AFF4/VHD/VMDK/QCOW2/DMG container support | Not implemented; convert to raw first | `docs/src/GAP_REPORT.md` |
-| G2 | Persistent imaging mapfile / multi-pass resume | Not implemented; `relift image` is single-pass | `docs/src/GAP_REPORT.md` |
+| G2 | Bad-sector map, retry passes, and ddrescue map interoperability | Not implemented; prefix resume does not salvage unreadable sectors | `docs/src/GAP_REPORT.md` |
 | G3 | TUI (ratatui) | Not implemented | `docs/src/GAP_REPORT.md` |
 | G4 | RAID assembly | Not implemented | `docs/src/GAP_REPORT.md` |
 | G5 | Encryption unlock (BitLocker/LUKS/VeraCrypt/FileVault) | Not implemented | `docs/src/GAP_REPORT.md` |

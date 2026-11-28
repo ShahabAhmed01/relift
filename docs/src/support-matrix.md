@@ -93,6 +93,7 @@ changes, so this table cannot drift silently.
 | Deep scan (carve) | ✓ | ✓ | `--mode deep` / `--carve` |
 | Keep partial results after stopping a scan | ✓ | ✓ | Scan cancellation preserves candidates already written to the session |
 | Resume an interrupted scan from a checkpoint | ✓ | ✗ | CLI `--resume`; volume-level checkpoint. Completed volumes are skipped and the interrupted volume is rescanned from its start. Source size/fingerprint must match |
+| Resume interrupted imaging | ✓ | ✗ | CLI `relift image --resume` validates source identity and the saved prefix; checkpoints are 256 MiB by default |
 | Live file listing | ✓ | ✓ | `--live` |
 | Filter by extension/confidence | ✓ | ✓ | Filter expressions |
 | Preview (text/hex/metadata) | ✗ | ✓ | Results pane |
@@ -100,7 +101,7 @@ changes, so this table cannot drift silently.
 | Destination safety | ✓ | ✓ | Blocks the same physical device |
 | Disk imaging | ✓ | ✗ | CLI only |
 | Lost-partition signature scan | ✓ | ✗ | `relift partitions-scan`; estimated candidates for review, no table repair |
-| Imaging map file and multi-pass resume | ✗ | ✗ | Not implemented; `relift image` performs a single copy pass |
+| Bad-sector map, retry passes, ddrescue map import/export | ✗ | ✗ | Unreadable reads stop the current run; use a dedicated bad-sector-aware imager for failing media |
 | TOML config defaults | ✓ | ✗ | `--config` applies to scan, list, and recover; CLI values override config |
 | JSON output | ✓ | ✗ | `--json` |
 | JSON/CSV/HTML reports | ✓ | ✗ | `relift report` |

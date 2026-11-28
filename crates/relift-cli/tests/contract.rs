@@ -52,6 +52,15 @@ fn version_json_has_stable_contract_fields() {
 }
 
 #[test]
+fn image_help_exposes_checkpoint_resume() {
+    let output = run_cli(&["image", "--help"]);
+
+    assert_eq!(output.status.code(), Some(0));
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(help.contains("--resume"), "image help was:\n{help}");
+}
+
+#[test]
 fn usage_and_runtime_failures_have_documented_exit_codes() {
     let usage = run_cli(&["not-a-command"]);
     assert_eq!(usage.status.code(), Some(2));

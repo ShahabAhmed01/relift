@@ -5,6 +5,13 @@ Branch: fix/ci-and-claim-reconciliation (from main a7cb3e0)
 Repository: https://github.com/ShahabAhmed01/relift
 Auditor: Autonomous agent execution under MASTER EXECUTION PROMPT
 
+> Historical audit snapshot from 2026-11-27. It contains two claim errors that
+> were corrected in later audits: the carver had 153 registered identifiers,
+> including marker-only entries (not 36 validator-backed formats), and several
+> filesystem probe fixtures already existed. Use the current
+> [support matrix](src/support-matrix.md), [verification record](src/VERIFICATION.md),
+> and [competitive analysis](research/COMPETITIVE_ANALYSIS.md) for present status.
+
 ## Executive summary
 
 Relift is a GPL-3.0-or-later Rust workspace (relift-core, relift-cli, relift-testkit, relift-gui, relift-bench) with a Tauri 2 + Svelte 5 desktop GUI. It performs read-only deleted-file recovery from raw disk images and devices, recovering validated byte ranges only to a separate destination.
@@ -94,7 +101,9 @@ Total: 94 tests, 0 failures.
 3. Path confinement: Destination writes use canonical paths from volume root with no-follow directory opens; retained directory handles; no-replace rename (Linux/macOS) / no-overwrite move (Windows).
 4. Session identity: Source size/fingerprint revalidated before resume; mismatched sources refused (exit code 4).
 5. Recovery verification: SHA-256 of recovered file compared against bytes read from destination (proves write-back integrity, not original-file identity).
-6. Carving: Magic-byte match alone never emitted; 36 formats each require structural validator acceptance. Random data produces zero false positives (tested).
+6. Carving (as the historical report incorrectly summarized it): Magic-byte
+   matches are not sufficient for emission. The registry includes marker-only
+   entries; only candidates accepted by an available validator can be emitted.
 7. Exit codes: 0 OK, 1 RUNTIME, 2 USAGE, 3 UNSAFE, 4 MISMATCH, 5 PARTIAL — preserved unchanged.
 
 No safety boundary was weakened. No new write-capable paths were introduced.

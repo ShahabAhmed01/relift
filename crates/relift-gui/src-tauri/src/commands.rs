@@ -413,6 +413,7 @@ pub async fn create_image_cmd(
         "bytes_human": relift_core::util::human_bytes(result.bytes),
         "sha256": result.sha256,
         "verified": result.verified,
+        "resumed": result.resumed,
         "elapsed_seconds": result.elapsed_seconds,
     }))
 }

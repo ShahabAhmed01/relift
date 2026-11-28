@@ -16,7 +16,7 @@ current safety instructions take precedence over aspirational alternatives.
 | TUI | Deferred; no TUI is shipped | Adding a second interface without a supported workflow | No TUI crate or command exists; revisit after a concrete user need and maintainer capacity are established |
 | License | GPL-3.0-or-later | Conflicting MIT/Apache-only options in source prompt variants | Existing `LICENSE` and workspace package metadata |
 | Source I/O | Open sources read-only; write only through explicit destination writers | In-place repair or source mutation | `ReadOnlySource`, imaging/recovery modules, destination safety tests |
-| Recovery evidence | Mark fixture-validated and experimental support separately; publish only measured results | Claims of broad accuracy, superiority, or real-media validation without evidence | `docs/support-matrix.md`, `docs/GAP_REPORT.md`, `docs/VERIFICATION.md` |
+| Recovery evidence | Mark fixture-validated and experimental support separately; publish only measured results | Claims of broad accuracy, superiority, or real-media validation without evidence | `docs/src/support-matrix.md`, `docs/src/GAP_REPORT.md`, `docs/src/VERIFICATION.md` |
 | Sessions | Directory with JSON header and JSONL records; volume-level scan checkpoints | SQLite database | `crates/relift-core/src/session.rs`; no SQLite dependency |
 | Network and telemetry | No telemetry or automatic update checks; recovery is local | Required accounts, cloud scanning, silent telemetry | No network client in the core/CLI; no update command is implemented |
 | Release status | Published v0.1.0 preview; unsigned artifacts | Claiming a stable or signed release | Preview assets and SHA256SUMS are published; no signing or notarization credentials are configured |
@@ -26,11 +26,11 @@ current safety instructions take precedence over aspirational alternatives.
 | Capability | Selected status | Evidence and limitation |
 |---|---|---|
 | FAT12/16/32, exFAT, NTFS, ext2/3/4 | Implemented and deterministic-fixture tested | Fixture/end-to-end evidence; no real-volume accuracy corpus |
-| HFS+, APFS, Btrfs, XFS | Parser exists; experimental | No deterministic fixture or end-to-end recovery evidence yet |
-| Other filesystems | Detection only or unsupported | See `docs/support-matrix.md` and `docs/GAP_REPORT.md` |
-| Carving | Emit only formats with structural validators | Validated formats and unimplemented formats are listed in `docs/support-matrix.md` |
-| Container images | Raw images only | Convert E01/AFF4/VHD/VMDK/QCOW2/DMG to raw before scanning |
-| In-progress resume | Implemented for scans; volume-level checkpoint | `relift scan --resume` revalidates source size/fingerprint, skips completed volumes, and rescans the interrupted volume. Imaging resume and live pause remain unimplemented |
+| HFS+, APFS, Btrfs, XFS | Detection fixtures exist; deleted-file recovery is experimental or unimplemented | Probe tests establish identification only, not deleted-file recovery |
+| Other filesystems | Detection only or unsupported | See `docs/src/support-matrix.md` and `docs/src/GAP_REPORT.md` |
+| Carving | Emit only formats with structural validators | Validated formats and unimplemented formats are listed in `docs/src/support-matrix.md` |
+| Container images | Scanning accepts raw images and raw devices | Virtual/forensic image inspection is partial and not integrated with scan; convert supported container images to raw before scanning |
+| In-progress resume | Implemented for scans and CLI imaging; no live pause | `relift scan --resume` uses volume checkpoints. `relift image --resume` verifies the checkpointed output against the current source before continuing; bad-sector retries and multi-pass recovery are not implemented |
 
 ## Decision records
 

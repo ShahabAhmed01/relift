@@ -1,9 +1,9 @@
 # Troubleshooting
 
 Use the command reference in [`CLI.md`](CLI.md) for available flags. Relift does
-not implement `--max-mem`, `--threads`, `--rate-limit`, image map files, or a
-forensic mode. Scan resume is available as `scan --resume`; it is not a live
-pause control.
+not implement `--max-mem`, `--threads`, `--rate-limit`, bad-sector map files, or
+a forensic mode. Scan and image resume are available through `scan --resume`
+and `image --resume`; neither is a live pause control.
 
 ## Device access
 
@@ -80,10 +80,13 @@ output under a collision-safe `.partial` name; Windows removes failed output.
 ## Imaging problems
 
 `relift image` creates a new raw image and refuses to overwrite an existing
-destination. It performs a single-pass copy; it does not retry bad sectors or
-resume from a map file. For a failing or physically damaged drive, stop using
-it and consider professional recovery or a dedicated imaging tool designed
-for read errors.
+destination. If a run was interrupted, use the same source and destination
+with `--resume`; Relift checks the source identity and verifies the saved
+checkpoint prefix against both the partial image and current source bytes
+before continuing. This re-reads the checkpointed source range. It does not
+retry bad sectors or perform multiple recovery passes. For a failing or
+physically damaged drive, stop using it and consider professional recovery or a
+dedicated imaging tool designed for read errors.
 
 ## GUI problems
 

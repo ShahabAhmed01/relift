@@ -11,6 +11,9 @@ Notable changes to Relift are recorded here.
   Completed volumes are skipped; the interrupted volume is rescanned from its
   start. Candidate IDs are dense and `candidates.jsonl` is byte-identical to an
   uninterrupted run.
+- Resumable imaging: `relift image --resume` continues from a durable,
+  SHA-256-checked prefix checkpoint after verifying source identity. It does not
+  retry unreadable sectors or implement multi-pass recovery.
 - Fuzz harnesses for the carving validator and filesystem scanner in `fuzz/`.
 - Benchmark results and methodology in `docs/benches/results/`.
 

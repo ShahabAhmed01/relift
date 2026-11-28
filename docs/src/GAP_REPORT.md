@@ -42,6 +42,10 @@ deliberate, and tracked.
 
 - Only raw images are supported. E01/Ex01, AFF4, VHD/VHDX, VMDK, QCOW2 and
   DMG/UDIF must be converted to raw before scanning.
+- Imaging can resume from a versioned JSONL checkpoint map at durable prefix
+  boundaries. Checkpoints default to 256 MiB; uncheckpointed bytes are recopied
+  after interruption. Bad-sector retries, unreadable-range maps, multi-pass
+  recovery, and ddrescue mapfile import/export are not implemented.
 
 ## Platform gaps
 

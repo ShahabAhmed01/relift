@@ -10,6 +10,12 @@
 > claims describe that checkout; use the current support matrix and verification
 > record for present status.
 
+> Correction added 2026-11-28: Section C.1's statement that every registered
+> format carried a structural validator was inaccurate. The registry includes
+> marker-only entries; only formats with an available validator can emit
+> candidates. Current coverage is recorded in `docs/src/formats.md` and the
+> [verification record](docs/src/VERIFICATION.md).
+
 ---
 
 ## A. Executive summary
@@ -75,7 +81,7 @@ No safety boundary was weakened. No new write-capable paths were introduced. No 
 
 ## C. Implemented improvements
 
-1. **carve.rs claim-accuracy fix** — Replaced the inaccurate "Not carved in this build: ZIP64, RAR5, OLE compound files, FLAC and ISO 9660" note. Every registered format carries a structural validator and is carved; ZIP64 shares the PK local-header magic with ZIP and is validated by the ZIP validator. This is a documentation/claim fix only; no recovery behavior changed. Verified `registered_format_count_is_stable` still asserts 36 distinct formats.
+1. **carve.rs claim-accuracy fix (historical description corrected above)** — The scan note was adjusted in that audit; its claim that every registered format had a structural validator was wrong. The current registry has 153 identifiers, including marker-only entries. ZIP64 shares the PK local-header magic with ZIP and is validated by the ZIP validator.
 
 2. **Packaging checksum correction** — `packaging/homebrew/relift.rb` sha256 set to the hash computed from the actual v1.0.0 source tarball (`37403a06ac73235308124fae3dcbffeab35806f937202ec2521d1ec4c2d7d395`). `packaging/aur/PKGBUILD` sha256sums set to the hash computed from the actual v0.1.0 source tarball (`921b75d52695b3d127f87f5983720d736dacbb014d87b0e0037c57f7ed71c4eb`), matching its declared `pkgver=0.1.0`. Confirmed by downloading both archives and computing SHA-256. The previous `27966eef...` matched neither tag.
 

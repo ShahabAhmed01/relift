@@ -21,7 +21,8 @@ This roadmap lists open work only. The authoritative support and release gaps ar
 ## Priority 3: Product scope
 
 - Add checkpoint-based scan resume.
-- Add multi-pass imaging with a bad-sector map and resume support.
+- Add unreadable-range tracking, bounded retries, multi-pass imaging, and
+  ddrescue map interoperability (prefix checkpoint resume is implemented).
 - Consider E01/AFF4/VHD/VMDK/QCOW2/DMG input after format-specific validation.
 - Add additional carvers only with structural validation and deterministic fixtures.
 - Consider GUI report export, pause/resume, accessibility review, and large-result testing.

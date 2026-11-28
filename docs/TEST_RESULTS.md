@@ -6,16 +6,18 @@ Command: `cargo test --workspace --all-targets` (working tree with audit fixes)
 
 | Crate | Target | Result | Count |
 |-------|--------|--------|-------|
-| relift-core | lib unit tests | PASS | 85 |
+| relift-core | lib unit tests | PASS | 93 |
 | relift-core | end_to_end integration | PASS | 11 |
 | relift-cli | lib unit tests | PASS | 8 |
-| relift-cli | contract integration | PASS | 4 |
+| relift-cli | contract integration | PASS | 5 |
 | relift-gui | lib unit tests | PASS | 2 |
 | relift-gui | main binary | PASS | 0 |
 | relift-testkit | lib unit tests | PASS | 2 |
 | relift-bench | main binary | PASS | 0 |
 
-**Total: 112 tests passed, 0 failed, 0 ignored.** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` also passed. The fixtures remain synthetic; this run does not validate recovery accuracy on real media.
+**Total: 121 tests passed, 0 failed, 0 ignored.** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo doc --workspace --no-deps` also passed. Eight synthetic imaging tests cover resume after interruption with a torn map tail, changed-source refusal, unsampled source-prefix changes, modified partial-prefix refusal, hard-link alias refusals for the source and output files, and finishing the manifest after an interrupted final rename. A CLI contract test confirms the resume option is exposed. The fixtures remain synthetic; this run does not validate recovery accuracy on real media.
+
+`cargo check -p relift-core --all-targets --target x86_64-unknown-linux-gnu` also passed. The whole-workspace Linux cross-check could not complete on this Windows host because the Tauri dependency `libdbus-sys` requires a Linux pkg-config/sysroot.
 
 The historical 2026-11-27 run is retained below as a dated record.
 

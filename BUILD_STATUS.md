@@ -9,7 +9,7 @@ Toolchains: Rust 1.100.0 MSVC, Rust 1.90.0 MSVC, Node.js 26.13.0.
 |---|---|
 | Rust formatting | PASS: cargo fmt --all -- --check |
 | Rust lints | PASS: cargo clippy --workspace --all-targets -- -D warnings |
-| Workspace tests | PASS on Windows local audit: 112 tests (`cargo test --workspace --all-targets`) |
+| Workspace tests | PASS on Windows local audit: 121 tests (`cargo test --workspace --all-targets`) |
 | Rust documentation | PASS: cargo doc --workspace --no-deps |
 | Frontend dependency install | PASS: npm ci |
 | Svelte and TypeScript checks | PASS: npm run check, 0 errors and 0 warnings |

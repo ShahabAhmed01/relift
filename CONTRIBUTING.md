@@ -29,7 +29,7 @@ A desktop package can be built with:
 - crates/relift-gui/src-tauri: Tauri command and desktop backend.
 - crates/relift-bench: Criterion benchmarks.
 
-Sessions use JSON and JSONL files. A cancelled or crashed scan can be continued with `relift scan --resume`; the checkpoint is volume-level, so the interrupted volume is rescanned. Imaging is a single copy pass without a map-file resume workflow. Check docs/CLI.md and docs/GAP_REPORT.md before relying on a capability.
+Sessions use JSON and JSONL files. A cancelled or crashed scan can be continued with `relift scan --resume`; the checkpoint is volume-level, so the interrupted volume is rescanned. Imaging resumes from durable prefix checkpoints with `relift image --resume`, but it does not retry unreadable sectors. Check docs/CLI.md and docs/GAP_REPORT.md before relying on a capability.
 
 ## Safety requirements
 

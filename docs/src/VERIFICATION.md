@@ -4,12 +4,16 @@ This record separates local checks from product-release evidence. A successful s
 
 ## Latest local audit run (2026-11-28)
 
-On the current Windows working tree, `cargo fmt --all -- --check` and
-`cargo clippy --workspace --all-targets -- -D warnings` passed, and
-`cargo test --workspace --all-targets` passed all 112 tests (85 core unit, 11
-end-to-end, 8 CLI unit, 4 CLI contract, 2 GUI, and 2 testkit). These checks use
+On the current Windows working tree, `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`, and
+`cargo doc --workspace --no-deps` passed, and
+`cargo test --workspace --all-targets` passed all 121 tests (93 core unit, 11
+end-to-end, 8 CLI unit, 5 CLI contract, 2 GUI, and 2 testkit). These checks use
 synthetic fixtures and do not measure real-media recovery accuracy. This is a
 local run, not a replacement for the cross-platform CI evidence below.
+The core crate also cross-compiles for `x86_64-unknown-linux-gnu`; a whole-
+workspace Linux cross-check requires the Tauri `libdbus` sysroot, which is not
+available on this Windows host.
 
 ## Gate status
 
@@ -33,6 +37,7 @@ local run, not a replacement for the cross-platform CI evidence below.
 | G16 | Installable package-manager releases | PENDING | Manifests are templates with placeholders; no upstream submissions |
 | G17 | Launch materials and distribution | PENDING | No verified launch kit or launch execution |
 | G18 | Current verification record | PASS | This file records current evidence and explicitly marks remaining gates |
+| G19 | Resume interrupted imaging safely | IMPLEMENTED | Synthetic tests cover cancellation after a durable checkpoint, torn JSONL tail recovery, changed source-prefix bytes including an unsampled identity region, modified-prefix refusal, source/output hard-link refusal, and completing manifest publication after a final-rename interruption. Raw-device behavior and power-loss testing remain unvalidated. |
 
 ## Local checks on 2026-11-15
 
@@ -60,7 +65,7 @@ The current release workflow source passed [GitHub Actions run 43701255160](http
 
 ## Recovery evidence and limits
 
-The Rust suite uses deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures with byte-exact SHA-256 verification. Probe detection fixtures were added for HFS+, APFS, Btrfs, and XFS (identified but metadata recovery not implemented). Carving now includes structurally validated FLAC, OLE, MPEG-TS, RAR5, and ISO 9660 in addition to the previous 200+ formats. Tests check source-image immutability, destination separation, path confinement, CLI JSON contracts, exit codes, and Tauri DTO field names. These tests do not measure precision or recall on a representative corpus and do not exercise physical drives.
+The Rust suite uses deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures with byte-exact SHA-256 verification. Probe detection fixtures were added for HFS+, APFS, Btrfs, and XFS (identified but metadata recovery not implemented). The carver registers 153 format identifiers, including marker-only entries; validators vary in fixture coverage and maturity. Tests check source-image immutability, destination separation, path confinement, CLI JSON contracts, exit codes, Tauri DTO field names, and checkpointed image resume. These tests do not measure precision or recall on a representative corpus and do not exercise physical drives.
 
 No physical device was accessed during this verification. macOS raw-device behavior remains untested, Windows raw-device enumeration requires elevation, and Linux destination ancestry tests are synthetic/CI-only.
 
