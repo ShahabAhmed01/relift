@@ -546,7 +546,7 @@ Recovery destination safety is still subject to the platform limits in
 <li>No pause/resume for a running scan, and no resume control in the GUI; the
 backend supports <code>relift scan --resume</code> from the CLI.</li>
 <li>No device-health, SMART, or TRIM diagnosis.</li>
-<li>Visual captures are unverified: the provenance record is contradictory, CLI images expose a local Windows profile path, and at least one supposed GUI screenshot shows an editor/agent conversation. Re-capture from the current build before publishing images. See <a href="../assets/demo/PROVENANCE.html">asset provenance</a>.</li>
+<li>The older screenshots in <code>docs/assets/screenshots/</code> remain unverified and are not product evidence. A separate real-app capture set is recorded in <a href="../GUI_CAPTURE.html">GUI_CAPTURE.md</a> and <a href="../assets/demo/verified-2026-11-28/PROVENANCE.html">its provenance</a>. Those captures use generated synthetic data; they do not establish recovery accuracy on real media.</li>
 </ul>
 <p>The GUI is built in the release workflow, but platform runtime behavior,
 accessibility, cold-start time, and large-result performance have not been
@@ -1356,7 +1356,7 @@ local run, not a replacement for the cross-platform CI evidence below.</p>
 <tr><td>G10</td><td>Resume interrupted scan after process termination</td><td>IMPLEMENTED</td><td>Volume-level checkpoint resume: <code>relift scan --resume</code> revalidates source size/fingerprint, skips completed volumes, and rescans the interrupted volume from its start. Verified by unit tests (cancelled-carve, multi-volume skip, mismatch refusal, completed-session refusal) and a real process-kill test whose resumed <code>candidates.jsonl</code> is byte-identical (SHA-256) to an uninterrupted scan.</td></tr>
 <tr><td>G11</td><td>24-hour parser fuzzing</td><td>PARTIAL</td><td>cargo-fuzz harnesses for the carver and filesystem probes are checked in under fuzz/ and compile cleanly on nightly; a CI fuzz job runs bounded executions on Linux (nightly + clang). Local Windows execution is blocked by the missing clang/libFuzzer runtime DLL. Sustained 24-hour run and crash-minimized corpus remain pending</td></tr>
 <tr><td>G12</td><td>Signed and notarized platform releases</td><td>PENDING</td><td>Release assets are unsigned; credentials are not configured</td></tr>
-<tr><td>G13</td><td>Screenshots from the running GUI</td><td>PENDING</td><td>Existing visual assets have contradictory provenance; CLI images expose a local Windows profile path and at least one supposed GUI image is an editor/agent conversation. Re-capture and review before use.</td></tr>
+<tr><td>G13</td><td>Screenshots from the running GUI</td><td>PASS</td><td>Fresh 1280 × 800 captures of the Windows Tauri app against a generated FAT32 image are in <code>docs/assets/demo/verified-2026-11-28/</code>; legacy screenshots remain unverified and unused.</td></tr>
 <tr><td>G14</td><td>Deployed, indexed documentation site</td><td>PENDING</td><td>No documentation site deployment or indexing evidence</td></tr>
 <tr><td>G15</td><td>Product and documentation honesty review</td><td>PARTIAL</td><td>Claims were reconciled with implementation; visual, accessibility, and external launch review remain</td></tr>
 <tr><td>G16</td><td>Installable package-manager releases</td><td>PENDING</td><td>Manifests are templates with placeholders; no upstream submissions</td></tr>
@@ -1497,10 +1497,9 @@ submitted to their upstream repositories.</li>
 <ul>
 <li>No simulated or mock results; every fixture-validated recovery is compared
 byte-for-byte with SHA-256.</li>
-<li>Unverified screenshot/video assets remain in <code>docs/assets/</code>; their provenance
-is contradictory, one supposed GUI image is an editor/agent conversation, and
-CLI screenshots expose a local Windows profile path. Do not publish or use
-them as evidence; current-build recapture and privacy review are pending.</li>
+<li>Legacy screenshot/video assets remain unverified under <code>docs/assets/</code> and are
+not used in the README. A separate real-app capture set using only synthetic
+data is documented at <code>docs/assets/demo/verified-2026-11-28/</code>.</li>
 <li>No telemetry; default offline.</li>
 <li>Unsupported filesystems are identified and reported, never silently claimed.</li>
 </ul>
