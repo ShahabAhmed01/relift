@@ -187,7 +187,7 @@
 <h2 id="detection-without-metadata-recovery"><a class="header" href="#detection-without-metadata-recovery">Detection without metadata recovery</a></h2>
 <p>ReFS, F2FS, ZFS, ReiserFS, ISO 9660, and UDF may be identified by probing, but metadata recovery is not implemented.</p>
 <h2 id="scan-mode"><a class="header" href="#scan-mode">Scan mode</a></h2>
-<p>Quick mode scans supported filesystem metadata. Deep mode also runs the registered signature validators. Formatted-volume and lost-partition scan modes are not implemented. See docs/CLI.md for exact options.</p>
+<p>Quick mode scans supported filesystem metadata. Deep mode also runs the registered signature validators. The separate <code>partitions-scan</code> command searches for lost partition boot-sector signatures and stores its results in a catalog-only session; it does not reconstruct partition tables or recover files directly. See <a href="CLI.html">CLI</a> for exact options.</p>
 <h2 id="evidence-boundary"><a class="header" href="#evidence-boundary">Evidence boundary</a></h2>
 <p>Current metadata recovery evidence is from deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures. No real physical volume or representative real-media corpus has been validated. For details, use the <a href="support-matrix.html">support matrix</a>, <a href="limitations.html">limitations</a>, and <a href="GAP_REPORT.html">gap report</a>.</p>
 

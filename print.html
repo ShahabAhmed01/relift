@@ -184,7 +184,7 @@
 <li><strong>Read-only by construction</strong> – <code>ReadOnlySource</code> exposes no write method; the engine cannot modify the source device</li>
 <li><strong>Byte-for-byte recovery</strong> verified against synthetic fixtures with SHA-256</li>
 <li><strong>Filesystem metadata recovery</strong> – FAT12/16/32, exFAT, NTFS, ext2/3/4 (fixture-validated); HFS+, APFS, Btrfs and XFS parsers are implemented but experimental</li>
-<li><strong>Signature carving</strong> – 36 structurally validated formats, including JPEG, PNG, PDF, ZIP, MP4, MP3, SQLite, FLAC, RAR5, OLE, MPEG-TS, and ISO 9660 (full list in <a href="formats.html">Supported Formats</a>)</li>
+<li><strong>Signature carving</strong> – 153 registered identifiers, including marker-only entries; only validator-backed formats emit candidates, and validation maturity varies (full registry in <a href="formats.html">Supported Formats</a>)</li>
 <li><strong>Session-based workflow</strong> – scan → session → recover → report, with checkpoint resume</li>
 <li><strong>Cross-platform</strong> – Windows, macOS, and Linux</li>
 <li><strong>No telemetry</strong> – fully offline by default</li>
@@ -272,8 +272,31 @@ npm run tauri build
 <tr><td><code>--json</code></td><td>Emit machine-readable JSON on stdout</td></tr>
 <tr><td><code>--help</code></td><td>Show help</td></tr>
 <tr><td><code>--version</code></td><td>Print version</td></tr>
+<tr><td><code>--config &lt;FILE&gt;</code></td><td>Use a TOML config file; otherwise search <code>./relift.toml</code> and the user config directory. Applies to <code>scan</code>, <code>list</code>, and <code>recover</code>.</td></tr>
 </tbody></table>
 </div>
+<p>Config values are defaults. Explicit command-line values take precedence. Unknown
+keys and invalid modes/confidence labels are rejected. Supported settings:</p>
+<pre><code class="language-toml">[scan]
+mode = &quot;deep&quot;                 # quick or deep
+include_live = false
+carve = false
+max_candidates = 1000000
+
+[recover]
+verify = true
+min_confidence = &quot;likely&quot;
+
+[output]
+dest = &quot;/mnt/recovery&quot;
+
+[filter]
+ext = [&quot;jpg&quot;, &quot;png&quot;]
+format = [&quot;pdf&quot;]
+name = [&quot;IMG_&quot;]
+path = [&quot;DCIM&quot;]
+min_confidence = &quot;likely&quot;
+</code></pre>
 <h2 id="commands"><a class="header" href="#commands">Commands</a></h2>
 <h3 id="relift-devices"><a class="header" href="#relift-devices"><code>relift devices</code></a></h3>
 <p>List physical disks and partitions exposed by the operating system.</p>
@@ -287,13 +310,15 @@ npm run tauri build
 <tr><td><code>&lt;SOURCE&gt;</code></td><td>Disk image path or raw device (e.g., <code>image.dd</code>, <code>\\.\PhysicalDrive1</code>)</td></tr>
 <tr><td><code>--session &lt;DIR&gt;</code></td><td>New or empty directory for session output; an existing interrupted session with <code>--resume</code> (required)</td></tr>
 <tr><td><code>--resume</code></td><td>Continue an interrupted session. Uses the session's recorded options and requires an unchanged source</td></tr>
-<tr><td><code>--mode &lt;MODE&gt;</code></td><td>Scan preset: <code>quick</code> (metadata only) or <code>deep</code> (metadata + validating carving) (default: <code>quick</code>)</td></tr>
+<tr><td><code>--mode &lt;MODE&gt;</code></td><td>Scan preset: <code>quick</code> (metadata only) or <code>deep</code> (metadata + validating carving). Default: config value or <code>quick</code>.</td></tr>
 <tr><td><code>--live</code></td><td>Also list files that are still allocated</td></tr>
+<tr><td><code>--no-live</code></td><td>Disable live entries, including a config default</td></tr>
 <tr><td><code>--carve</code></td><td>Run signature carving in addition to metadata recovery (implied by <code>--mode deep</code>)</td></tr>
+<tr><td><code>--no-carve</code></td><td>Disable carving, including config and deep-mode defaults</td></tr>
 <tr><td><code>--volume &lt;INDEX&gt;</code></td><td>Scan only this volume index (repeatable)</td></tr>
 <tr><td><code>--offset &lt;BYTES&gt;</code></td><td>Manual volume offset in bytes (requires <code>--length</code>)</td></tr>
 <tr><td><code>--length &lt;BYTES&gt;</code></td><td>Manual volume length in bytes (requires <code>--offset</code>)</td></tr>
-<tr><td><code>--max-candidates &lt;N&gt;</code></td><td>Stop after this many candidates (default: 1,000,000)</td></tr>
+<tr><td><code>--max-candidates &lt;N&gt;</code></td><td>Stop after this many candidates (default: config value or 1,000,000)</td></tr>
 <tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
 </tbody></table>
 </div>
@@ -359,11 +384,12 @@ identity must still match the session record; a changed image is refused.</p>
 </code></pre>
 <div class="table-wrapper"><table><thead><tr><th>Option</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>&lt;SESSION&gt;</code></td><td>Session directory produced by <code>relift scan</code></td></tr>
-<tr><td><code>--dest &lt;DIR&gt;</code></td><td>Destination directory (must be on a different physical device)</td></tr>
+<tr><td><code>--dest &lt;DIR&gt;</code></td><td>Destination directory (must be on a different physical device); can come from <code>[output].dest</code></td></tr>
 <tr><td><code>--source &lt;PATH&gt;</code></td><td>Re-open this source instead of the path recorded in the session</td></tr>
 <tr><td><code>--filter &lt;EXPR&gt;</code></td><td>Filter candidates (repeatable): same expressions as <code>relift list</code></td></tr>
 <tr><td><code>--dry-run</code></td><td>Plan only: validate source and destination, list what would be written. No files are written and the session is not modified.</td></tr>
 <tr><td><code>--no-verify</code></td><td>Do not re-read each output file after writing it (verification is on by default)</td></tr>
+<tr><td><code>--verify</code></td><td>Re-read each output file, overriding a config setting that disables verification</td></tr>
 <tr><td><code>--min-confidence &lt;LABEL&gt;</code></td><td>Skip candidates below this confidence (<code>verified</code>, <code>likely</code>, <code>partial</code>, <code>unverified</code>)</td></tr>
 <tr><td><code>--id &lt;N&gt;</code></td><td>Recover only these candidate IDs (repeatable)</td></tr>
 <tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
@@ -426,6 +452,30 @@ are never overwritten.</p>
 <pre><code class="language-sh">relift completions bash &gt; /etc/bash_completion.d/relift
 relift completions powershell &gt; relift.ps1
 </code></pre>
+<h3 id="relift-partitions-and-relift-partitions-scan"><a class="header" href="#relift-partitions-and-relift-partitions-scan"><code>relift partitions</code> and <code>relift partitions-scan</code></a></h3>
+<p><code>partitions</code> reads an existing MBR/GPT/APM table. <code>partitions-scan</code> checks
+sector boundaries for known filesystem signatures and probes likely volume
+starts; reported ranges are estimates for review, not a repaired partition
+table. <code>--session</code> writes a catalog-only session and does not scan files.</p>
+<pre><code class="language-sh">relift partitions image.dd --probe
+relift partitions-scan image.dd --max-bytes 500G --session ./partition-catalog
+</code></pre>
+<h3 id="relift-info-relift-verify-and-relift-session"><a class="header" href="#relift-info-relift-verify-and-relift-session"><code>relift info</code>, <code>relift verify</code>, and <code>relift session</code></a></h3>
+<p><code>info</code> prints source or session identity information. <code>verify</code> streams the
+recovered outputs and checks their SHA-256 values against the session log;
+paths outside the recorded destination are rejected. Partial recovery records
+are reported as incomplete. <code>session --full</code> includes the candidate listing.</p>
+<pre><code class="language-sh">relift info image.dd --verbose
+relift verify ./session --json
+relift session ./session --full
+</code></pre>
+<h3 id="relift-virtual-disk-and-relift-forensic-image"><a class="header" href="#relift-virtual-disk-and-relift-forensic-image"><code>relift virtual-disk</code> and <code>relift forensic-image</code></a></h3>
+<p>These commands inspect container metadata only. They do not make a container
+scannable through <code>relift scan</code>; several formats and virtual-disk readers remain
+incomplete. Convert the input to a raw image before scanning.</p>
+<h3 id="relift-self-update-and-relift-mcp"><a class="header" href="#relift-self-update-and-relift-mcp"><code>relift self-update</code> and <code>relift mcp</code></a></h3>
+<p>These are status stubs. <code>self-update</code> does not query or install releases, and
+<code>mcp</code> does not start a server.</p>
 <h2 id="exit-codes-1"><a class="header" href="#exit-codes-1">Exit codes</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Code</th><th>Constant</th><th>Meaning</th></tr></thead><tbody>
 <tr><td>0</td><td><code>EXIT_OK</code></td><td>Success</td></tr>
@@ -436,18 +486,16 @@ relift completions powershell &gt; relift.ps1
 <tr><td>5</td><td><code>EXIT_PARTIAL</code></td><td>Partial (some files failed or were incomplete)</td></tr>
 </tbody></table>
 </div>
-<h2 id="planned-but-not-yet-implemented"><a class="header" href="#planned-but-not-yet-implemented">Planned but not yet implemented</a></h2>
-<p>The following are documented in <code>AGENTS.md</code> as planned work and are <strong>not</strong>
-part of the current CLI:</p>
+<h2 id="not-implemented"><a class="header" href="#not-implemented">Not implemented</a></h2>
+<p>The following options and services are not part of the current CLI:</p>
 <ul>
-<li><code>relift info</code>, <code>relift verify</code>, <code>relift session</code>, <code>relift self-update</code></li>
 <li><code>--mode formatted</code>, <code>--mode lost-partition</code></li>
 <li><code>--quiet</code>, <code>--dry-run</code> on <code>scan</code></li>
 <li><code>--preserve-paths</code>, <code>--preserve-times</code>, <code>--on-conflict</code> on <code>recover</code></li>
 <li><code>--map</code>, <code>--passes</code>, <code>--rate-limit</code> on <code>image</code></li>
 <li>Filter expressions: <code>mime:</code>, <code>size:</code>, <code>date:</code>, <code>conf:</code>, <code>hash:</code></li>
-<li>Configuration files (<code>--config</code>, <code>config.toml</code>)</li>
 <li>JSON Schema files (<code>docs/schemas/</code>)</li>
+<li>Resumable, bad-sector-aware image mapfiles and retry passes</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="desktop-gui"><a class="header" href="#desktop-gui">Desktop GUI</a></h1>
 <p>Relift's desktop interface uses Tauri 2 and Svelte 5. It calls the shared
@@ -498,7 +546,7 @@ Recovery destination safety is still subject to the platform limits in
 <li>No pause/resume for a running scan, and no resume control in the GUI; the
 backend supports <code>relift scan --resume</code> from the CLI.</li>
 <li>No device-health, SMART, or TRIM diagnosis.</li>
-<li>No real screenshot evidence is included in the repository yet. See <a href="../GUI_CAPTURE.html">GUI_CAPTURE.md</a> for the owner-run capture procedure using deterministic synthetic fixtures.</li>
+<li>Visual captures are unverified: the provenance record is contradictory, CLI images expose a local Windows profile path, and at least one supposed GUI screenshot shows an editor/agent conversation. Re-capture from the current build before publishing images. See <a href="../assets/demo/PROVENANCE.html">asset provenance</a>.</li>
 </ul>
 <p>The GUI is built in the release workflow, but platform runtime behavior,
 accessibility, cold-start time, and large-result performance have not been
@@ -519,7 +567,7 @@ measured as release gates. See <a href="VERIFICATION.html"><code>VERIFICATION.md
 <h2 id="detection-without-metadata-recovery"><a class="header" href="#detection-without-metadata-recovery">Detection without metadata recovery</a></h2>
 <p>ReFS, F2FS, ZFS, ReiserFS, ISO 9660, and UDF may be identified by probing, but metadata recovery is not implemented.</p>
 <h2 id="scan-mode"><a class="header" href="#scan-mode">Scan mode</a></h2>
-<p>Quick mode scans supported filesystem metadata. Deep mode also runs the registered signature validators. Formatted-volume and lost-partition scan modes are not implemented. See docs/CLI.md for exact options.</p>
+<p>Quick mode scans supported filesystem metadata. Deep mode also runs the registered signature validators. The separate <code>partitions-scan</code> command searches for lost partition boot-sector signatures and stores its results in a catalog-only session; it does not reconstruct partition tables or recover files directly. See <a href="CLI.html">CLI</a> for exact options.</p>
 <h2 id="evidence-boundary"><a class="header" href="#evidence-boundary">Evidence boundary</a></h2>
 <p>Current metadata recovery evidence is from deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures. No real physical volume or representative real-media corpus has been validated. For details, use the <a href="support-matrix.html">support matrix</a>, <a href="limitations.html">limitations</a>, and <a href="GAP_REPORT.html">gap report</a>.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="carved-format-reference"><a class="header" href="#carved-format-reference">Carved Format Reference</a></h1>
@@ -529,8 +577,8 @@ is evidence about its container structure; it is not proof that the file is
 complete, uncorrupted, or openable in every application.</p>
 <p>The implementation is in
 <a href="https://github.com/ShahabAhmed01/relift/blob/main/crates/relift-core/src/carve.rs"><code>crates/relift-core/src/carve.rs</code></a>.
-The 153 formats below are registered for carving; a format without a working
-validator is not emitted.</p>
+The 153 identifiers below are registered for carving; marker-only entries
+without a working validator are not emitted.</p>
 <h2 id="registered-formats"><a class="header" href="#registered-formats">Registered formats</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Group</th><th>Formats</th></tr></thead><tbody>
 <tr><td>Images</td><td>JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, TGA, PCX, PBM, PGM, PPM, ICO, ICNS, CUR, EMF, WMF, PSD, XCF, CDR, AI, EPS, PS, EXR, HDR, ORF, RW2, X3F, CRW, CR3, RAF, MRW, DDS</td></tr>
@@ -1061,7 +1109,7 @@ retracted or corrected when the code or tests no longer support it.</p>
 <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
 <tr><td>S1</td><td><code>ReadOnlySource</code> exposes no write method</td><td>Trait has only <code>len</code>, <code>sector_size</code>, <code>read_at</code>, <code>identity</code>, <code>description</code>, <code>read_exact_at</code>, <code>read_vec</code></td><td>fixture-validated</td><td><code>crates/relift-core/src/source.rs</code></td><td>Yes</td></tr>
 <tr><td>S2</td><td>Source is opened read-only on all platforms</td><td><code>GENERIC_READ</code> only (Windows), <code>O_RDONLY</code> (Linux/macOS)</td><td>implemented</td><td><code>crates/relift-core/src/source.rs</code></td><td>Yes</td></tr>
-<tr><td>S3</td><td>Destination on same physical device as source is refused</td><td><code>validate_destination</code> resolves ancestry and rejects same-disk</td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
+<tr><td>S3</td><td>A raw-device destination on the same physical disk is refused</td><td><code>validate_destination</code> resolves raw-device ancestry and rejects same-disk; image sources are checked against the source file itself</td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
 <tr><td>S4</td><td>Output files created with <code>create_new</code> (no overwrite)</td><td><code>CapabilityOpenOptions::create_new(true)</code></td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
 <tr><td>S5</td><td>Traversal components rejected in output paths</td><td><code>sanitize_relative</code> rejects <code>..</code>, <code>.</code>, absolute, prefix</td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
 <tr><td>S6</td><td>Recovery refuses a source whose size/fingerprint differs from session</td><td><code>run_recovery</code> compares <code>size</code> and <code>fingerprint</code></td><td>unit-tested</td><td><code>crates/relift-core/src/recover.rs</code></td><td>Yes</td></tr>
@@ -1083,14 +1131,15 @@ retracted or corrected when the code or tests no longer support it.</p>
 </div>
 <h2 id="carving-claims"><a class="header" href="#carving-claims">Carving claims</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
-<tr><td>C1</td><td>36 registered formats, each with a structural validator</td><td><code>registered_format_count_is_stable</code> test asserts 36 unique formats</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
-<tr><td>C2</td><td>Random data produces zero false positives</td><td>Unit tests: <code>random_bytes_rejects_new_carvers</code>, <code>random_mz_is_rejected</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C1</td><td>153 unique format identifiers are registered; some entries are marker-only and cannot emit candidates</td><td><code>registered_format_count_is_stable</code> asserts the registry count; the dispatch path emits only when a validator returns a result</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C2</td><td>Fixed noise patterns produce no candidates in the tested fixtures</td><td>Unit tests: <code>random_bytes_rejects_new_carvers</code>, <code>random_mz_is_rejected</code>; this is not a general false-positive rate</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C3</td><td>MPEG-TS requires &gt;=4 consecutive valid 188-byte packets</td><td>Unit test: <code>mpegts_rejects_random_sync_bytes</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C4</td><td>Valid MPEG-TS is still carved</td><td>Unit test: <code>valid_mpegts_is_carved</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C5</td><td>Chunk overlap &gt;= max signature length - 1</td><td>Unit test: <code>overlap_covers_longest_signature</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C6</td><td>Signatures spanning chunk boundaries are found</td><td>Unit test: <code>signatures_at_chunk_boundaries_are_found</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C7</td><td>ZIP64 is not separately emitted</td><td>Code comment: shares <code>PK\x03\x04</code> magic with ZIP validator</td><td>implemented</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C8</td><td>Unvalidated carves are never emitted</td><td><code>validate()</code> returns <code>Option</code>; only <code>Some</code> candidates are emitted</td><td>implemented</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C9</td><td>CR3, RAF, MRW and DDS require format-specific structure before emission</td><td>Validator tests include accepted synthetic samples and malformed headers/bounds</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 </tbody></table>
 </div>
 <h2 id="filesystem-detection-claims"><a class="header" href="#filesystem-detection-claims">Filesystem detection claims</a></h2>
@@ -1108,6 +1157,9 @@ retracted or corrected when the code or tests no longer support it.</p>
 <tr><td>L2</td><td><code>--json</code> produces machine-readable output</td><td>Contract test: <code>scan_json_is_valid_and_recovery_rejects_a_changed_source</code></td><td>unit-tested</td><td><code>crates/relift-cli/tests/contract.rs</code></td><td>Yes</td></tr>
 <tr><td>L3</td><td><code>--resume</code> continues a cancelled session</td><td>Contract test: <code>scan_resume_continues_a_cancelled_session_and_rejects_a_changed_source</code></td><td>unit-tested</td><td><code>crates/relift-cli/tests/contract.rs</code></td><td>Yes</td></tr>
 <tr><td>L4</td><td><code>--dry-run</code> validates without writing</td><td>Unit test: <code>dry_run_plans_without_writing_or_mutating_the_session</code></td><td>unit-tested</td><td><code>crates/relift-core/src/recover.rs</code></td><td>Yes</td></tr>
+<tr><td>L5</td><td><code>partitions-scan</code> checks signatures from a buffered chunk and bounds estimated volume sizes</td><td>Synthetic NTFS signature scan fixture</td><td>unit-tested</td><td><code>crates/relift-core/src/partitions.rs</code></td><td>Yes</td></tr>
+<tr><td>L6</td><td>Config scan/list/recover settings are applied and unknown fields are rejected</td><td>Config parser tests plus CLI filter precedence tests</td><td>unit-tested</td><td><code>crates/relift-cli/src/config.rs</code>, <code>crates/relift-cli/src/main.rs</code></td><td>Yes</td></tr>
+<tr><td>L7</td><td><code>relift verify</code> streams hashes and rejects output paths outside the saved destination</td><td>Streaming <code>hash_file</code>, canonical path confinement helper, and confinement test</td><td>unit-tested</td><td><code>crates/relift-cli/src/main.rs</code></td><td>Yes</td></tr>
 </tbody></table>
 </div>
 <h2 id="imaging-claims"><a class="header" href="#imaging-claims">Imaging claims</a></h2>
@@ -1132,8 +1184,8 @@ retracted or corrected when the code or tests no longer support it.</p>
 <h2 id="claims-that-must-be-corrected-if-code-changes"><a class="header" href="#claims-that-must-be-corrected-if-code-changes">Claims that must be corrected if code changes</a></h2>
 <p>If any of the following change, the corresponding documentation must be updated at the same time:</p>
 <ul>
-<li>The number of registered carve formats (36): <code>registered_format_count_is_stable</code> test, <code>docs/src/formats.md</code>, <code>docs/src/support-matrix.md</code>, README, <code>llms.txt</code>, <code>llms-full.txt</code>.</li>
-<li>The test count (100): README badge and text.</li>
+<li>The number of registered carve identifiers (153): <code>registered_format_count_is_stable</code> test, <code>docs/src/formats.md</code>, <code>docs/src/support-matrix.md</code>, README, <code>llms.txt</code>, <code>llms-full.txt</code>.</li>
+<li>The test count: README badge and text, <code>docs/TEST_RESULTS.md</code>, <code>docs/src/VERIFICATION.md</code>.</li>
 <li>Filesystem support levels: <code>docs/src/support-matrix.md</code>, <code>docs/src/limitations.md</code>, README.</li>
 <li>Exit codes: <code>docs/src/CLI.md</code>, README, <code>crates/relift-cli/src/main.rs</code>.</li>
 <li>The source read-only invariant: <code>crates/relift-core/src/source.rs</code>, <code>docs/decisions/ADR-0002-read-only-invariant.md</code>.</li>
@@ -1283,11 +1335,18 @@ forensic evidence acquisition; see <a href="forensic-use.html"><code>forensic-us
 <a href="VERIFICATION.html"><code>VERIFICATION.md</code></a>.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="verification-status"><a class="header" href="#verification-status">Verification status</a></h1>
 <p>This record separates local checks from product-release evidence. A successful synthetic test suite does not prove recovery accuracy on real devices.</p>
+<h2 id="latest-local-audit-run-2026-11-28"><a class="header" href="#latest-local-audit-run-2026-11-28">Latest local audit run (2026-11-28)</a></h2>
+<p>On the current Windows working tree, <code>cargo fmt --all -- --check</code> and
+<code>cargo clippy --workspace --all-targets -- -D warnings</code> passed, and
+<code>cargo test --workspace --all-targets</code> passed all 112 tests (85 core unit, 11
+end-to-end, 8 CLI unit, 4 CLI contract, 2 GUI, and 2 testkit). These checks use
+synthetic fixtures and do not measure real-media recovery accuracy. This is a
+local run, not a replacement for the cross-platform CI evidence below.</p>
 <h2 id="gate-status"><a class="header" href="#gate-status">Gate status</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Gate</th><th>Requirement</th><th>Status</th><th>Evidence or remaining work</th></tr></thead><tbody>
 <tr><td>G1</td><td>Linux, macOS, and Windows CI</td><td>PASS</td><td><a href="https://github.com/ShahabAhmed01/relift/actions/runs/43701255160">GitHub Actions run 43701255160</a>: frontend, dependency/license, documentation, and Rust jobs passed across Linux, macOS, and Windows on stable and Rust 1.90</td></tr>
 <tr><td>G2</td><td>Metadata recall and precision targets</td><td>PARTIAL</td><td>Deterministic FAT32/exFAT/NTFS/ext4 fixtures with byte-exact SHA-256 verification (end_to_end tests). Probe detection fixtures added for HFS+, APFS, Btrfs, XFS. No representative labeled corpus for recall/precision percentages yet.</td></tr>
-<tr><td>G3</td><td>Carving recall and precision targets</td><td>PARTIAL</td><td>200+ structurally validated carvers (including newly added FLAC, OLE, MPEG-TS, RAR5, ISO 9660). Negative test confirms random data produces zero false positives. No representative labeled file corpus for recall/precision percentages yet.</td></tr>
+<tr><td>G3</td><td>Carving recall and precision targets</td><td>PARTIAL</td><td>153 identifiers are registered, including marker-only entries; only a subset has structural validators and fixture tests. Validators vary in maturity. No representative labeled file corpus or measured precision/recall rates yet.</td></tr>
 <tr><td>G4</td><td>No source writes</td><td>PARTIAL</td><td>Read-only source abstraction and synthetic image hash checks; no physical-device before/after test</td></tr>
 <tr><td>G5</td><td>Refuse destination on source device</td><td>PARTIAL</td><td>Synthetic ancestry and destination tests; no mounted raw-device validation</td></tr>
 <tr><td>G6</td><td>Throughput targets</td><td>PARTIAL</td><td>Criterion baselines measured on Windows 11 x86_64, Rust 1.100: signature sweep 4.10-4.48 GiB/s (64 MiB buffer); JPEG carver validation 6.6-6.8 ms / 1 MiB; ZIP carver validation 6.3-6.5 ms / 1 MiB; NTFS metadata scan ~1.05 ms; ext4 metadata scan ~0.8 ms; FAT32 metadata scan ~0.17 ms; filesystem probes 37-64 µs. No published hardware baseline or 1 TB device measurement yet.</td></tr>
@@ -1297,7 +1356,7 @@ forensic evidence acquisition; see <a href="forensic-use.html"><code>forensic-us
 <tr><td>G10</td><td>Resume interrupted scan after process termination</td><td>IMPLEMENTED</td><td>Volume-level checkpoint resume: <code>relift scan --resume</code> revalidates source size/fingerprint, skips completed volumes, and rescans the interrupted volume from its start. Verified by unit tests (cancelled-carve, multi-volume skip, mismatch refusal, completed-session refusal) and a real process-kill test whose resumed <code>candidates.jsonl</code> is byte-identical (SHA-256) to an uninterrupted scan.</td></tr>
 <tr><td>G11</td><td>24-hour parser fuzzing</td><td>PARTIAL</td><td>cargo-fuzz harnesses for the carver and filesystem probes are checked in under fuzz/ and compile cleanly on nightly; a CI fuzz job runs bounded executions on Linux (nightly + clang). Local Windows execution is blocked by the missing clang/libFuzzer runtime DLL. Sustained 24-hour run and crash-minimized corpus remain pending</td></tr>
 <tr><td>G12</td><td>Signed and notarized platform releases</td><td>PENDING</td><td>Release assets are unsigned; credentials are not configured</td></tr>
-<tr><td>G13</td><td>Screenshots from the running GUI</td><td>PENDING</td><td>No screenshot evidence checked in</td></tr>
+<tr><td>G13</td><td>Screenshots from the running GUI</td><td>PENDING</td><td>Existing visual assets have contradictory provenance; CLI images expose a local Windows profile path and at least one supposed GUI image is an editor/agent conversation. Re-capture and review before use.</td></tr>
 <tr><td>G14</td><td>Deployed, indexed documentation site</td><td>PENDING</td><td>No documentation site deployment or indexing evidence</td></tr>
 <tr><td>G15</td><td>Product and documentation honesty review</td><td>PARTIAL</td><td>Claims were reconciled with implementation; visual, accessibility, and external launch review remain</td></tr>
 <tr><td>G16</td><td>Installable package-manager releases</td><td>PENDING</td><td>Manifests are templates with placeholders; no upstream submissions</td></tr>
@@ -1438,7 +1497,10 @@ submitted to their upstream repositories.</li>
 <ul>
 <li>No simulated or mock results; every fixture-validated recovery is compared
 byte-for-byte with SHA-256.</li>
-<li>No faked benchmarks, screenshots, stars, reviews, or release claims.</li>
+<li>Unverified screenshot/video assets remain in <code>docs/assets/</code>; their provenance
+is contradictory, one supposed GUI image is an editor/agent conversation, and
+CLI screenshots expose a local Windows profile path. Do not publish or use
+them as evidence; current-build recapture and privacy review are pending.</li>
 <li>No telemetry; default offline.</li>
 <li>Unsupported filesystems are identified and reported, never silently claimed.</li>
 </ul>

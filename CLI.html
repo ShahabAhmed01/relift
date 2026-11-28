@@ -179,8 +179,31 @@
 <tr><td><code>--json</code></td><td>Emit machine-readable JSON on stdout</td></tr>
 <tr><td><code>--help</code></td><td>Show help</td></tr>
 <tr><td><code>--version</code></td><td>Print version</td></tr>
+<tr><td><code>--config &lt;FILE&gt;</code></td><td>Use a TOML config file; otherwise search <code>./relift.toml</code> and the user config directory. Applies to <code>scan</code>, <code>list</code>, and <code>recover</code>.</td></tr>
 </tbody></table>
 </div>
+<p>Config values are defaults. Explicit command-line values take precedence. Unknown
+keys and invalid modes/confidence labels are rejected. Supported settings:</p>
+<pre><code class="language-toml">[scan]
+mode = &quot;deep&quot;                 # quick or deep
+include_live = false
+carve = false
+max_candidates = 1000000
+
+[recover]
+verify = true
+min_confidence = &quot;likely&quot;
+
+[output]
+dest = &quot;/mnt/recovery&quot;
+
+[filter]
+ext = [&quot;jpg&quot;, &quot;png&quot;]
+format = [&quot;pdf&quot;]
+name = [&quot;IMG_&quot;]
+path = [&quot;DCIM&quot;]
+min_confidence = &quot;likely&quot;
+</code></pre>
 <h2 id="commands"><a class="header" href="#commands">Commands</a></h2>
 <h3 id="relift-devices"><a class="header" href="#relift-devices"><code>relift devices</code></a></h3>
 <p>List physical disks and partitions exposed by the operating system.</p>
@@ -194,13 +217,15 @@
 <tr><td><code>&lt;SOURCE&gt;</code></td><td>Disk image path or raw device (e.g., <code>image.dd</code>, <code>\\.\PhysicalDrive1</code>)</td></tr>
 <tr><td><code>--session &lt;DIR&gt;</code></td><td>New or empty directory for session output; an existing interrupted session with <code>--resume</code> (required)</td></tr>
 <tr><td><code>--resume</code></td><td>Continue an interrupted session. Uses the session's recorded options and requires an unchanged source</td></tr>
-<tr><td><code>--mode &lt;MODE&gt;</code></td><td>Scan preset: <code>quick</code> (metadata only) or <code>deep</code> (metadata + validating carving) (default: <code>quick</code>)</td></tr>
+<tr><td><code>--mode &lt;MODE&gt;</code></td><td>Scan preset: <code>quick</code> (metadata only) or <code>deep</code> (metadata + validating carving). Default: config value or <code>quick</code>.</td></tr>
 <tr><td><code>--live</code></td><td>Also list files that are still allocated</td></tr>
+<tr><td><code>--no-live</code></td><td>Disable live entries, including a config default</td></tr>
 <tr><td><code>--carve</code></td><td>Run signature carving in addition to metadata recovery (implied by <code>--mode deep</code>)</td></tr>
+<tr><td><code>--no-carve</code></td><td>Disable carving, including config and deep-mode defaults</td></tr>
 <tr><td><code>--volume &lt;INDEX&gt;</code></td><td>Scan only this volume index (repeatable)</td></tr>
 <tr><td><code>--offset &lt;BYTES&gt;</code></td><td>Manual volume offset in bytes (requires <code>--length</code>)</td></tr>
 <tr><td><code>--length &lt;BYTES&gt;</code></td><td>Manual volume length in bytes (requires <code>--offset</code>)</td></tr>
-<tr><td><code>--max-candidates &lt;N&gt;</code></td><td>Stop after this many candidates (default: 1,000,000)</td></tr>
+<tr><td><code>--max-candidates &lt;N&gt;</code></td><td>Stop after this many candidates (default: config value or 1,000,000)</td></tr>
 <tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
 </tbody></table>
 </div>
@@ -266,11 +291,12 @@ identity must still match the session record; a changed image is refused.</p>
 </code></pre>
 <div class="table-wrapper"><table><thead><tr><th>Option</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>&lt;SESSION&gt;</code></td><td>Session directory produced by <code>relift scan</code></td></tr>
-<tr><td><code>--dest &lt;DIR&gt;</code></td><td>Destination directory (must be on a different physical device)</td></tr>
+<tr><td><code>--dest &lt;DIR&gt;</code></td><td>Destination directory (must be on a different physical device); can come from <code>[output].dest</code></td></tr>
 <tr><td><code>--source &lt;PATH&gt;</code></td><td>Re-open this source instead of the path recorded in the session</td></tr>
 <tr><td><code>--filter &lt;EXPR&gt;</code></td><td>Filter candidates (repeatable): same expressions as <code>relift list</code></td></tr>
 <tr><td><code>--dry-run</code></td><td>Plan only: validate source and destination, list what would be written. No files are written and the session is not modified.</td></tr>
 <tr><td><code>--no-verify</code></td><td>Do not re-read each output file after writing it (verification is on by default)</td></tr>
+<tr><td><code>--verify</code></td><td>Re-read each output file, overriding a config setting that disables verification</td></tr>
 <tr><td><code>--min-confidence &lt;LABEL&gt;</code></td><td>Skip candidates below this confidence (<code>verified</code>, <code>likely</code>, <code>partial</code>, <code>unverified</code>)</td></tr>
 <tr><td><code>--id &lt;N&gt;</code></td><td>Recover only these candidate IDs (repeatable)</td></tr>
 <tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
@@ -333,6 +359,30 @@ are never overwritten.</p>
 <pre><code class="language-sh">relift completions bash &gt; /etc/bash_completion.d/relift
 relift completions powershell &gt; relift.ps1
 </code></pre>
+<h3 id="relift-partitions-and-relift-partitions-scan"><a class="header" href="#relift-partitions-and-relift-partitions-scan"><code>relift partitions</code> and <code>relift partitions-scan</code></a></h3>
+<p><code>partitions</code> reads an existing MBR/GPT/APM table. <code>partitions-scan</code> checks
+sector boundaries for known filesystem signatures and probes likely volume
+starts; reported ranges are estimates for review, not a repaired partition
+table. <code>--session</code> writes a catalog-only session and does not scan files.</p>
+<pre><code class="language-sh">relift partitions image.dd --probe
+relift partitions-scan image.dd --max-bytes 500G --session ./partition-catalog
+</code></pre>
+<h3 id="relift-info-relift-verify-and-relift-session"><a class="header" href="#relift-info-relift-verify-and-relift-session"><code>relift info</code>, <code>relift verify</code>, and <code>relift session</code></a></h3>
+<p><code>info</code> prints source or session identity information. <code>verify</code> streams the
+recovered outputs and checks their SHA-256 values against the session log;
+paths outside the recorded destination are rejected. Partial recovery records
+are reported as incomplete. <code>session --full</code> includes the candidate listing.</p>
+<pre><code class="language-sh">relift info image.dd --verbose
+relift verify ./session --json
+relift session ./session --full
+</code></pre>
+<h3 id="relift-virtual-disk-and-relift-forensic-image"><a class="header" href="#relift-virtual-disk-and-relift-forensic-image"><code>relift virtual-disk</code> and <code>relift forensic-image</code></a></h3>
+<p>These commands inspect container metadata only. They do not make a container
+scannable through <code>relift scan</code>; several formats and virtual-disk readers remain
+incomplete. Convert the input to a raw image before scanning.</p>
+<h3 id="relift-self-update-and-relift-mcp"><a class="header" href="#relift-self-update-and-relift-mcp"><code>relift self-update</code> and <code>relift mcp</code></a></h3>
+<p>These are status stubs. <code>self-update</code> does not query or install releases, and
+<code>mcp</code> does not start a server.</p>
 <h2 id="exit-codes"><a class="header" href="#exit-codes">Exit codes</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Code</th><th>Constant</th><th>Meaning</th></tr></thead><tbody>
 <tr><td>0</td><td><code>EXIT_OK</code></td><td>Success</td></tr>
@@ -343,18 +393,16 @@ relift completions powershell &gt; relift.ps1
 <tr><td>5</td><td><code>EXIT_PARTIAL</code></td><td>Partial (some files failed or were incomplete)</td></tr>
 </tbody></table>
 </div>
-<h2 id="planned-but-not-yet-implemented"><a class="header" href="#planned-but-not-yet-implemented">Planned but not yet implemented</a></h2>
-<p>The following are documented in <code>AGENTS.md</code> as planned work and are <strong>not</strong>
-part of the current CLI:</p>
+<h2 id="not-implemented"><a class="header" href="#not-implemented">Not implemented</a></h2>
+<p>The following options and services are not part of the current CLI:</p>
 <ul>
-<li><code>relift info</code>, <code>relift verify</code>, <code>relift session</code>, <code>relift self-update</code></li>
 <li><code>--mode formatted</code>, <code>--mode lost-partition</code></li>
 <li><code>--quiet</code>, <code>--dry-run</code> on <code>scan</code></li>
 <li><code>--preserve-paths</code>, <code>--preserve-times</code>, <code>--on-conflict</code> on <code>recover</code></li>
 <li><code>--map</code>, <code>--passes</code>, <code>--rate-limit</code> on <code>image</code></li>
 <li>Filter expressions: <code>mime:</code>, <code>size:</code>, <code>date:</code>, <code>conf:</code>, <code>hash:</code></li>
-<li>Configuration files (<code>--config</code>, <code>config.toml</code>)</li>
 <li>JSON Schema files (<code>docs/schemas/</code>)</li>
+<li>Resumable, bad-sector-aware image mapfiles and retry passes</li>
 </ul>
 
                     </main>

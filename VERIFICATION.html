@@ -173,11 +173,18 @@
                     <main>
                         <h1 id="verification-status"><a class="header" href="#verification-status">Verification status</a></h1>
 <p>This record separates local checks from product-release evidence. A successful synthetic test suite does not prove recovery accuracy on real devices.</p>
+<h2 id="latest-local-audit-run-2026-11-28"><a class="header" href="#latest-local-audit-run-2026-11-28">Latest local audit run (2026-11-28)</a></h2>
+<p>On the current Windows working tree, <code>cargo fmt --all -- --check</code> and
+<code>cargo clippy --workspace --all-targets -- -D warnings</code> passed, and
+<code>cargo test --workspace --all-targets</code> passed all 112 tests (85 core unit, 11
+end-to-end, 8 CLI unit, 4 CLI contract, 2 GUI, and 2 testkit). These checks use
+synthetic fixtures and do not measure real-media recovery accuracy. This is a
+local run, not a replacement for the cross-platform CI evidence below.</p>
 <h2 id="gate-status"><a class="header" href="#gate-status">Gate status</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Gate</th><th>Requirement</th><th>Status</th><th>Evidence or remaining work</th></tr></thead><tbody>
 <tr><td>G1</td><td>Linux, macOS, and Windows CI</td><td>PASS</td><td><a href="https://github.com/ShahabAhmed01/relift/actions/runs/43701255160">GitHub Actions run 43701255160</a>: frontend, dependency/license, documentation, and Rust jobs passed across Linux, macOS, and Windows on stable and Rust 1.90</td></tr>
 <tr><td>G2</td><td>Metadata recall and precision targets</td><td>PARTIAL</td><td>Deterministic FAT32/exFAT/NTFS/ext4 fixtures with byte-exact SHA-256 verification (end_to_end tests). Probe detection fixtures added for HFS+, APFS, Btrfs, XFS. No representative labeled corpus for recall/precision percentages yet.</td></tr>
-<tr><td>G3</td><td>Carving recall and precision targets</td><td>PARTIAL</td><td>200+ structurally validated carvers (including newly added FLAC, OLE, MPEG-TS, RAR5, ISO 9660). Negative test confirms random data produces zero false positives. No representative labeled file corpus for recall/precision percentages yet.</td></tr>
+<tr><td>G3</td><td>Carving recall and precision targets</td><td>PARTIAL</td><td>153 identifiers are registered, including marker-only entries; only a subset has structural validators and fixture tests. Validators vary in maturity. No representative labeled file corpus or measured precision/recall rates yet.</td></tr>
 <tr><td>G4</td><td>No source writes</td><td>PARTIAL</td><td>Read-only source abstraction and synthetic image hash checks; no physical-device before/after test</td></tr>
 <tr><td>G5</td><td>Refuse destination on source device</td><td>PARTIAL</td><td>Synthetic ancestry and destination tests; no mounted raw-device validation</td></tr>
 <tr><td>G6</td><td>Throughput targets</td><td>PARTIAL</td><td>Criterion baselines measured on Windows 11 x86_64, Rust 1.100: signature sweep 4.10-4.48 GiB/s (64 MiB buffer); JPEG carver validation 6.6-6.8 ms / 1 MiB; ZIP carver validation 6.3-6.5 ms / 1 MiB; NTFS metadata scan ~1.05 ms; ext4 metadata scan ~0.8 ms; FAT32 metadata scan ~0.17 ms; filesystem probes 37-64 µs. No published hardware baseline or 1 TB device measurement yet.</td></tr>
@@ -187,7 +194,7 @@
 <tr><td>G10</td><td>Resume interrupted scan after process termination</td><td>IMPLEMENTED</td><td>Volume-level checkpoint resume: <code>relift scan --resume</code> revalidates source size/fingerprint, skips completed volumes, and rescans the interrupted volume from its start. Verified by unit tests (cancelled-carve, multi-volume skip, mismatch refusal, completed-session refusal) and a real process-kill test whose resumed <code>candidates.jsonl</code> is byte-identical (SHA-256) to an uninterrupted scan.</td></tr>
 <tr><td>G11</td><td>24-hour parser fuzzing</td><td>PARTIAL</td><td>cargo-fuzz harnesses for the carver and filesystem probes are checked in under fuzz/ and compile cleanly on nightly; a CI fuzz job runs bounded executions on Linux (nightly + clang). Local Windows execution is blocked by the missing clang/libFuzzer runtime DLL. Sustained 24-hour run and crash-minimized corpus remain pending</td></tr>
 <tr><td>G12</td><td>Signed and notarized platform releases</td><td>PENDING</td><td>Release assets are unsigned; credentials are not configured</td></tr>
-<tr><td>G13</td><td>Screenshots from the running GUI</td><td>PENDING</td><td>No screenshot evidence checked in</td></tr>
+<tr><td>G13</td><td>Screenshots from the running GUI</td><td>PENDING</td><td>Existing visual assets have contradictory provenance; CLI images expose a local Windows profile path and at least one supposed GUI image is an editor/agent conversation. Re-capture and review before use.</td></tr>
 <tr><td>G14</td><td>Deployed, indexed documentation site</td><td>PENDING</td><td>No documentation site deployment or indexing evidence</td></tr>
 <tr><td>G15</td><td>Product and documentation honesty review</td><td>PARTIAL</td><td>Claims were reconciled with implementation; visual, accessibility, and external launch review remain</td></tr>
 <tr><td>G16</td><td>Installable package-manager releases</td><td>PENDING</td><td>Manifests are templates with placeholders; no upstream submissions</td></tr>

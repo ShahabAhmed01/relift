@@ -189,7 +189,7 @@ retracted or corrected when the code or tests no longer support it.</p>
 <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
 <tr><td>S1</td><td><code>ReadOnlySource</code> exposes no write method</td><td>Trait has only <code>len</code>, <code>sector_size</code>, <code>read_at</code>, <code>identity</code>, <code>description</code>, <code>read_exact_at</code>, <code>read_vec</code></td><td>fixture-validated</td><td><code>crates/relift-core/src/source.rs</code></td><td>Yes</td></tr>
 <tr><td>S2</td><td>Source is opened read-only on all platforms</td><td><code>GENERIC_READ</code> only (Windows), <code>O_RDONLY</code> (Linux/macOS)</td><td>implemented</td><td><code>crates/relift-core/src/source.rs</code></td><td>Yes</td></tr>
-<tr><td>S3</td><td>Destination on same physical device as source is refused</td><td><code>validate_destination</code> resolves ancestry and rejects same-disk</td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
+<tr><td>S3</td><td>A raw-device destination on the same physical disk is refused</td><td><code>validate_destination</code> resolves raw-device ancestry and rejects same-disk; image sources are checked against the source file itself</td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
 <tr><td>S4</td><td>Output files created with <code>create_new</code> (no overwrite)</td><td><code>CapabilityOpenOptions::create_new(true)</code></td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
 <tr><td>S5</td><td>Traversal components rejected in output paths</td><td><code>sanitize_relative</code> rejects <code>..</code>, <code>.</code>, absolute, prefix</td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
 <tr><td>S6</td><td>Recovery refuses a source whose size/fingerprint differs from session</td><td><code>run_recovery</code> compares <code>size</code> and <code>fingerprint</code></td><td>unit-tested</td><td><code>crates/relift-core/src/recover.rs</code></td><td>Yes</td></tr>
@@ -211,14 +211,15 @@ retracted or corrected when the code or tests no longer support it.</p>
 </div>
 <h2 id="carving-claims"><a class="header" href="#carving-claims">Carving claims</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
-<tr><td>C1</td><td>36 registered formats, each with a structural validator</td><td><code>registered_format_count_is_stable</code> test asserts 36 unique formats</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
-<tr><td>C2</td><td>Random data produces zero false positives</td><td>Unit tests: <code>random_bytes_rejects_new_carvers</code>, <code>random_mz_is_rejected</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C1</td><td>153 unique format identifiers are registered; some entries are marker-only and cannot emit candidates</td><td><code>registered_format_count_is_stable</code> asserts the registry count; the dispatch path emits only when a validator returns a result</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C2</td><td>Fixed noise patterns produce no candidates in the tested fixtures</td><td>Unit tests: <code>random_bytes_rejects_new_carvers</code>, <code>random_mz_is_rejected</code>; this is not a general false-positive rate</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C3</td><td>MPEG-TS requires &gt;=4 consecutive valid 188-byte packets</td><td>Unit test: <code>mpegts_rejects_random_sync_bytes</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C4</td><td>Valid MPEG-TS is still carved</td><td>Unit test: <code>valid_mpegts_is_carved</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C5</td><td>Chunk overlap &gt;= max signature length - 1</td><td>Unit test: <code>overlap_covers_longest_signature</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C6</td><td>Signatures spanning chunk boundaries are found</td><td>Unit test: <code>signatures_at_chunk_boundaries_are_found</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C7</td><td>ZIP64 is not separately emitted</td><td>Code comment: shares <code>PK\x03\x04</code> magic with ZIP validator</td><td>implemented</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 <tr><td>C8</td><td>Unvalidated carves are never emitted</td><td><code>validate()</code> returns <code>Option</code>; only <code>Some</code> candidates are emitted</td><td>implemented</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C9</td><td>CR3, RAF, MRW and DDS require format-specific structure before emission</td><td>Validator tests include accepted synthetic samples and malformed headers/bounds</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
 </tbody></table>
 </div>
 <h2 id="filesystem-detection-claims"><a class="header" href="#filesystem-detection-claims">Filesystem detection claims</a></h2>
@@ -236,6 +237,9 @@ retracted or corrected when the code or tests no longer support it.</p>
 <tr><td>L2</td><td><code>--json</code> produces machine-readable output</td><td>Contract test: <code>scan_json_is_valid_and_recovery_rejects_a_changed_source</code></td><td>unit-tested</td><td><code>crates/relift-cli/tests/contract.rs</code></td><td>Yes</td></tr>
 <tr><td>L3</td><td><code>--resume</code> continues a cancelled session</td><td>Contract test: <code>scan_resume_continues_a_cancelled_session_and_rejects_a_changed_source</code></td><td>unit-tested</td><td><code>crates/relift-cli/tests/contract.rs</code></td><td>Yes</td></tr>
 <tr><td>L4</td><td><code>--dry-run</code> validates without writing</td><td>Unit test: <code>dry_run_plans_without_writing_or_mutating_the_session</code></td><td>unit-tested</td><td><code>crates/relift-core/src/recover.rs</code></td><td>Yes</td></tr>
+<tr><td>L5</td><td><code>partitions-scan</code> checks signatures from a buffered chunk and bounds estimated volume sizes</td><td>Synthetic NTFS signature scan fixture</td><td>unit-tested</td><td><code>crates/relift-core/src/partitions.rs</code></td><td>Yes</td></tr>
+<tr><td>L6</td><td>Config scan/list/recover settings are applied and unknown fields are rejected</td><td>Config parser tests plus CLI filter precedence tests</td><td>unit-tested</td><td><code>crates/relift-cli/src/config.rs</code>, <code>crates/relift-cli/src/main.rs</code></td><td>Yes</td></tr>
+<tr><td>L7</td><td><code>relift verify</code> streams hashes and rejects output paths outside the saved destination</td><td>Streaming <code>hash_file</code>, canonical path confinement helper, and confinement test</td><td>unit-tested</td><td><code>crates/relift-cli/src/main.rs</code></td><td>Yes</td></tr>
 </tbody></table>
 </div>
 <h2 id="imaging-claims"><a class="header" href="#imaging-claims">Imaging claims</a></h2>
@@ -260,8 +264,8 @@ retracted or corrected when the code or tests no longer support it.</p>
 <h2 id="claims-that-must-be-corrected-if-code-changes"><a class="header" href="#claims-that-must-be-corrected-if-code-changes">Claims that must be corrected if code changes</a></h2>
 <p>If any of the following change, the corresponding documentation must be updated at the same time:</p>
 <ul>
-<li>The number of registered carve formats (36): <code>registered_format_count_is_stable</code> test, <code>docs/src/formats.md</code>, <code>docs/src/support-matrix.md</code>, README, <code>llms.txt</code>, <code>llms-full.txt</code>.</li>
-<li>The test count (100): README badge and text.</li>
+<li>The number of registered carve identifiers (153): <code>registered_format_count_is_stable</code> test, <code>docs/src/formats.md</code>, <code>docs/src/support-matrix.md</code>, README, <code>llms.txt</code>, <code>llms-full.txt</code>.</li>
+<li>The test count: README badge and text, <code>docs/TEST_RESULTS.md</code>, <code>docs/src/VERIFICATION.md</code>.</li>
 <li>Filesystem support levels: <code>docs/src/support-matrix.md</code>, <code>docs/src/limitations.md</code>, README.</li>
 <li>Exit codes: <code>docs/src/CLI.md</code>, README, <code>crates/relift-cli/src/main.rs</code>.</li>
 <li>The source read-only invariant: <code>crates/relift-core/src/source.rs</code>, <code>docs/decisions/ADR-0002-read-only-invariant.md</code>.</li>
