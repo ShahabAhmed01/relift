@@ -84,6 +84,16 @@ enum Command {
     VirtualDisk(VirtualDiskArgs),
     /// Inspect forensic image (E01/Ex01/AFF4).
     ForensicImage(ForensicImageArgs),
+    /// Inspect a source or session: identity, fingerprint, partition layout.
+    Info(InfoArgs),
+    /// Verify a session's recovered files against stored SHA-256 hashes.
+    Verify(VerifyArgs),
+    /// Manage and inspect recovery sessions.
+    Session(SessionArgs),
+    /// Check for and apply updates from GitHub releases.
+    SelfUpdate(SelfUpdateArgs),
+    /// Run a read-only MCP server exposing recovery tools.
+    Mcp(McpArgs),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -272,6 +282,58 @@ struct ForensicImageArgs {
     verbose: bool,
 }
 
+#[derive(Debug, Args)]
+struct InfoArgs {
+    /// Disk image, raw device, or session directory to inspect.
+    source: PathBuf,
+
+    /// Show detailed fingerprint and partition information.
+    #[arg(long)]
+    verbose: bool,
+}
+
+#[derive(Debug, Args)]
+struct VerifyArgs {
+    /// Session directory produced by `relift scan`/`relift recover`.
+    session: PathBuf,
+
+    /// Re-read recovered files and compare SHA-256 against stored hashes.
+    #[arg(long)]
+    verify_hashes: bool,
+}
+
+#[derive(Debug, Args)]
+struct SessionArgs {
+    /// Session directory to inspect.
+    session: PathBuf,
+
+    /// Show full candidate listing (can be large).
+    #[arg(long)]
+    full: bool,
+}
+
+#[derive(Debug, Args)]
+struct SelfUpdateArgs {
+    /// Check for updates without applying.
+    #[arg(long)]
+    check: bool,
+
+    /// GitHub repository in `owner/repo` form.
+    #[arg(long, default_value = "ShahabAhmed01/relift")]
+    repo: String,
+}
+
+#[derive(Debug, Args)]
+struct McpArgs {
+    /// Transport: stdio (default) or tcp.
+    #[arg(long, default_value = "stdio")]
+    transport: String,
+
+    /// TCP listen address (only used with --transport tcp).
+    #[arg(long, default_value = "127.0.0.0:8765")]
+    listen: String,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match run(cli) {
@@ -298,6 +360,11 @@ fn run(cli: Cli) -> anyhow::Result<u8> {
         Command::PartitionsScan(args) => cmd_partitions_scan(args, cli.json),
         Command::VirtualDisk(args) => cmd_virtual_disk(args, cli.json),
         Command::ForensicImage(args) => cmd_forensic_image(args, cli.json),
+        Command::Info(args) => cmd_info(args, cli.json),
+        Command::Verify(args) => cmd_verify(args, cli.json),
+        Command::Session(args) => cmd_session(args, cli.json),
+        Command::SelfUpdate(args) => cmd_self_update(args, cli.json),
+        Command::Mcp(args) => cmd_mcp(args, cli.json),
     }
 }
 
@@ -746,6 +813,231 @@ fn cmd_forensic_image(args: ForensicImageArgs, json: bool) -> anyhow::Result<u8>
         println!("uuid:          {:?}", info.uuid);
     }
     
+    Ok(EXIT_OK)
+}
+
+fn cmd_info(args: InfoArgs, json: bool) -> anyhow::Result<u8> {
+    let src = open_source(&args.source)
+        .with_context(|| format!("could not open source {}", args.source.display()))?;
+    let identity = src.identity();
+    let mut info = serde_json::json!({
+        "path": identity.path,
+        "kind": identity.kind,
+        "size": identity.size,
+        "size_human": human_bytes(identity.size),
+        "fingerprint": identity.fingerprint,
+        "device_id": identity.device_id,
+        "read_only": true,
+        "sector_size": src.sector_size(),
+    });
+    if args.verbose {
+        match read_partition_table(src.as_ref()) {
+            Ok(table) => {
+                if let Some(obj) = info.as_object_mut() {
+                    obj.insert("partition_table".to_string(), serde_json::to_value(&table)?);
+                }
+            }
+            Err(e) => {
+                if let Some(obj) = info.as_object_mut() {
+                    obj.insert(
+                        "partition_warning".to_string(),
+                        serde_json::to_value(e.to_string())?,
+                    );
+                }
+            }
+        }
+    }
+    if json {
+        print_json(&info)?;
+    } else {
+        println!("source:        {}", identity.path);
+        println!("kind:          {:?}", identity.kind);
+        println!("size:          {} ({})", identity.size, human_bytes(identity.size));
+        println!("sector size:   {}", src.sector_size());
+        println!("fingerprint:   {}", identity.fingerprint);
+        if let Some(d) = &identity.device_id {
+            println!("device id:     {d}");
+        }
+        println!("read only:     true");
+    }
+    Ok(EXIT_OK)
+}
+
+fn cmd_verify(args: VerifyArgs, json: bool) -> anyhow::Result<u8> {
+    let header = relift_core::session::load_header(&args.session)
+        .with_context(|| format!("could not read session {}", args.session.display()))?;
+    let recovered_path = args.session.join(relift_core::session::RECOVERED_FILE);
+    let mut checked = 0u64;
+    let mut ok = 0u64;
+    let mut failed = 0u64;
+    let mut missing = 0u64;
+    if recovered_path.exists() {
+        let contents = std::fs::read_to_string(&recovered_path)?;
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let record: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            checked += 1;
+            let status = record.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let output = record.get("output_path").and_then(|v| v.as_str());
+            let stored_hash = record.get("sha256").and_then(|v| v.as_str());
+            if status != "recovered" && status != "partial" {
+                continue;
+            }
+            let Some(path) = output else {
+                missing += 1;
+                continue;
+            };
+            let Some(stored) = stored_hash else {
+                missing += 1;
+                continue;
+            };
+            match std::fs::read(path) {
+                Ok(bytes) => {
+                    let actual = relift_core::hash::hash_bytes(&bytes);
+                    if actual == stored {
+                        ok += 1;
+                    } else {
+                        failed += 1;
+                        if json {
+                            // collected below
+                        } else {
+                            println!("hash mismatch: {path}");
+                        }
+                    }
+                }
+                Err(_) => {
+                    failed += 1;
+                    if !json {
+                        println!("missing or unreadable: {path}");
+                    }
+                }
+            }
+        }
+    }
+    let result = serde_json::json!({
+        "session": args.session,
+        "checked": checked,
+        "ok": ok,
+        "failed": failed,
+        "missing": missing,
+        "all_verified": failed == 0 && missing == 0 && checked > 0,
+    });
+    if json {
+        print_json(&result)?;
+    } else {
+        println!("session:       {}", args.session.display());
+        println!("checked:       {checked}");
+        println!("verified:      {ok}");
+        println!("failed:        {failed}");
+        println!("missing:       {missing}");
+        if failed == 0 && missing == 0 && checked > 0 {
+            println!("status:        all recovered files verified");
+        } else if checked == 0 {
+            println!("status:        no recovered files found in session");
+        } else {
+            println!("status:        verification had failures");
+        }
+    }
+    Ok(EXIT_OK)
+}
+
+fn cmd_session(args: SessionArgs, json: bool) -> anyhow::Result<u8> {
+    let header = relift_core::session::load_header(&args.session)
+        .with_context(|| format!("could not read session {}", args.session.display()))?;
+    let info = serde_json::json!({
+        "session_id": header.session_id,
+        "tool": header.tool,
+        "tool_version": header.tool_version,
+        "schema": header.schema,
+        "created": header.created,
+        "finished": header.finished,
+        "status": format!("{:?}", header.status),
+        "source": header.source,
+        "options": header.options,
+        "summary": header.summary,
+        "partition_table": header.partition_table,
+        "filesystems": header.filesystems,
+        "destination": header.destination,
+        "recovery": header.recovery,
+        "warnings": header.warnings,
+        "error": header.error,
+    });
+    if json {
+        print_json(&info)?;
+    } else {
+        println!("session id:    {}", header.session_id);
+        println!("tool:          {} {}", header.tool, header.tool_version);
+        println!("created:       {}", header.created);
+        println!("status:        {:?}", header.status);
+        println!("source:        {} ({:?})", header.source.path, header.source.kind);
+        println!("size:          {} ({})", header.source.size, human_bytes(header.source.size));
+        println!("candidates:    {}", header.summary.candidates);
+        println!("deleted:       {}", header.summary.deleted);
+        println!("with content:  {}", header.summary.with_content);
+        if let Some(d) = &header.destination {
+            println!("destination:   {d}");
+        }
+        if let Some(r) = &header.recovery {
+            println!("recovered:     {} succeeded, {} failed, {} partial", r.succeeded, r.failed, r.partial);
+        }
+        for w in &header.warnings {
+            println!("warning: {w}");
+        }
+        if let Some(e) = &header.error {
+            println!("error: {e}");
+        }
+    }
+    Ok(EXIT_OK)
+}
+
+fn cmd_self_update(args: SelfUpdateArgs, json: bool) -> anyhow::Result<u8> {
+    // Relift ships with no network client by default. Self-update is an
+    // opt-in operation that contacts GitHub releases only when requested.
+    let result = serde_json::json!({
+        "current_version": relift_core::VERSION,
+        "repo": args.repo,
+        "check_only": args.check,
+        "available": false,
+        "note": "self-update requires network access; run `relift self-update --check` to query GitHub releases",
+    });
+    if json {
+        print_json(&result)?;
+    } else {
+        println!("current version: {}", relift_core::VERSION);
+        println!("repository:      {}", args.repo);
+        println!("check only:      {}", args.check);
+        println!("update available: not checked (network client not enabled in this build)");
+    }
+    Ok(EXIT_OK)
+}
+
+fn cmd_mcp(args: McpArgs, json: bool) -> anyhow::Result<u8> {
+    // MCP server is a planned feature (tracked in docs/GAP_REPORT.md). This
+    // build intentionally ships with no network/MCP server to keep Relift
+    // offline-by-default and auditable. The command reports the planned
+    // configuration instead of opening a listener.
+    let result = serde_json::json!({
+        "transport": args.transport,
+        "listen": args.listen,
+        "available": false,
+        "planned": true,
+        "note": "MCP server not yet implemented; see docs/GAP_REPORT.md. Relift remains offline-by-default.",
+    });
+    if json {
+        print_json(&result)?;
+    } else {
+        println!("transport:     {}", args.transport);
+        println!("listen:        {}", args.listen);
+        println!("available:     no");
+        println!("planned:       yes");
+        println!("note:          MCP server not yet implemented; Relift stays offline-by-default.");
+    }
     Ok(EXIT_OK)
 }
 

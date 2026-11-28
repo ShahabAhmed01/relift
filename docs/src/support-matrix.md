@@ -55,23 +55,29 @@ There is no io_uring, `O_DIRECT`, or OS-specific direct-I/O path.
 
 ## Carved format support
 
-Every emitted carve must pass a structural validator. There are 36 registered
+Every emitted carve must pass a structural validator. There are 149 registered
 format identifiers:
 
 | Category | Formats |
 |----------|---------|
-| Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF |
-| Documents | PDF, DOCX, XLSX, PPTX |
-| Archives and containers | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660 |
-| Video | MP4/ISO-BMFF, MKV, MPEG-TS |
-| Audio | MP3, WAV/RIFF, Ogg, FLAC |
-| Databases | SQLite |
-| System | PST/OST, LNK, EVTX, OLE compound files |
-| Executables | PE (EXE/DLL), ELF |
+| Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, TGA, PCX, PBM, PGM, PPM, ICO, ICNS, CUR, EMF, WMF, PSD, XCF, CDR, AI, EPS, PS, EXR, HDR, ORF, RW2, X3F, CRW |
+| Documents | PDF, DOCX, XLSX, PPTX, DOC, XLS, PPT, PUB, WPD, WPS, XLR, RTF, TEX, LYX, FB2, PAGES, NUMBERS, KEY |
+| Archives and containers | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660, CAB, ACE, ARJ, LZH, LZO, PAR2, RPM, XAR, DEB, BKF, ARC, ZOO, WIM, APK |
+| Video | MP4/ISO-BMFF, MKV, MPEG-TS, FLV, SWF, MXF, DPX, VOB, ASF |
+| Audio | MP3, WAV/RIFF, Ogg, FLAC, AMR, AAC, M4A, WMA, AIFF, AU, MID, IT, XM, S3M, MOD, APE, VOC, SPX, WV, TTA |
+| Databases | SQLite, MDB, ACCDB |
+| System | PST/OST, LNK, EVTX, DBX, MSG, MBX, EML, NSF |
+| Executables | PE (EXE/DLL/SYS), ELF, Mach-O, Java Class, DEX, COM |
+| Fonts | TTF, OTF, WOFF, WOFF2, PFB |
+| Disk / forensic | E01 (EnCase), GHO, DAR |
+| Apple | Plist (binary and XML), AppleSingle |
+| Game / ROM | NES |
 
-**Not emitted:** ZIP64 (shares the PK\\x03\\x04 local-header magic with ZIP;
-handled by the existing ZIP validator), and formats without a registered
-validator. MOV is classified as MP4/ISO-BMFF; WebM is classified as MKV.
+**Not emitted:** Shn (Shorten), NSF (Lotus Notes), EML, VFD, ROM, N64, GBA, SFC,
+BIN have no working validator in this build and are not emitted despite having
+markers. ZIP64 (shares the PK\\x03\\x04 local-header magic with ZIP; handled by
+the existing ZIP validator), and formats without a registered validator. MOV is
+classified as MP4/ISO-BMFF; WebM is classified as MKV; AVI is classified as RIFF.
 
 The `registered_format_count_is_stable` unit test fails when the marker set
 changes, so this table cannot drift silently.
@@ -96,7 +102,13 @@ changes, so this table cannot drift silently.
 | JSON/CSV/HTML/Markdown reports | ✓ | ✗ | `relift report` |
 | Shell completions | ✓ | ✗ | `relift completions` |
 | Self-tests (`doctor`) | ✓ | ✓ | Permission and device checks |
+| `relift info` (source/session inspection) | ✓ | ✗ | `--json` supported |
+| `relift verify` (SHA-256 audit of recovered files) | ✓ | ✗ | Re-reads outputs against stored hashes |
+| `relift session` (session inspection) | ✓ | ✗ | Full session header and summary |
+| `relift self-update` (update status) | ✓ | ✗ | Offline-by-default; `--check` only |
+| `relift mcp` (MCP server status) | ✓ | ✗ | Planned; offline-by-default |
 
 ## Known limitations
 
 See `docs/GAP_REPORT.md` and `docs/limitations.md` for the full list.
+

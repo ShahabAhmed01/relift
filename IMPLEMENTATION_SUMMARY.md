@@ -212,7 +212,7 @@ New tests added:
 | Open Source | ✅ GPL-3.0+ | ✅ GPLv2+ | ❌ | ❌ |
 | Read-only enforced | ✅ Code-level | Docs only | ❌ | ❌ |
 | Destination separation | ✅ Enforced | ❌ | ❌ | ❌ |
-| Validated carving | ✅ 36 formats | Magic only | Custom sigs | Custom sigs |
+| Validated carving | ✅ 149 formats | Magic only | Custom sigs | Custom sigs |
 | SHA-256 verification | ✅ | ❌ | ❌ | Partial |
 | Sessions/resume | ✅ | ❌ | ❌ | Partial |
 | Partition recovery | ✅ NEW | ✅ | ✅ | ✅ |

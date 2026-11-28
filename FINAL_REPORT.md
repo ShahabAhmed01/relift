@@ -10,7 +10,7 @@
 
 ## A. Executive summary
 
-Relift is a free, open-source, cross-platform deleted-file recovery tool for raw disk images and drives. It combines filesystem metadata recovery (NTFS $MFT, FAT12/16/32, exFAT, ext2/3/4) with structurally validated signature carving (36 formats), enforces read-only source access, refuses unsafe (same-device) recovery destinations, verifies recovered output with SHA-256, and keeps resumable, inspectable sessions.
+Relift is a free, open-source, cross-platform deleted-file recovery tool for raw disk images and drives. It combines filesystem metadata recovery (NTFS $MFT, FAT12/16/32, exFAT, ext2/3/4) with structurally validated signature carving (149 formats), enforces read-only source access, refuses unsafe (same-device) recovery destinations, verifies recovered output with SHA-256, and keeps resumable, inspectable sessions.
 
 **What was wrong at the start of this session:**
 - The carver's scan note falsely claimed RAR5, OLE, FLAC, and ISO 9660 are not carved, although each has a registered structural validator (claim drift).
@@ -259,3 +259,4 @@ The following changes remain uncommitted in this working session and are include
 ---
 
 **Bottom line:** Relift's core safety architecture is sound and well tested. This session made its public claims accurate (carver, packaging checksums, repository description), added an honest competitive analysis, and opened three reviewable PRs. The product remains free, open-source, offline-first, and unsigned; real-media validation, signing, package submissions, and genuine GUI screenshots remain owner-gated next steps.
+

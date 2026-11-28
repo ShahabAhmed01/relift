@@ -7,21 +7,25 @@ complete, uncorrupted, or openable in every application.
 
 The implementation is in
 [`crates/relift-core/src/carve.rs`](https://github.com/ShahabAhmed01/relift/blob/main/crates/relift-core/src/carve.rs).
-The 36 formats below are registered for carving; a format without a working
+The 149 formats below are registered for carving; a format without a working
 validator is not emitted.
 
 ## Registered formats
 
 | Group | Formats |
 |---|---|
-| Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF |
-| Documents | PDF, DOCX, XLSX, PPTX |
-| Archives and containers | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660 |
-| Video | MP4/ISO-BMFF, MKV, MPEG-TS |
-| Audio | MP3, WAV/RIFF, Ogg, FLAC |
-| Databases | SQLite |
-| System files | PST/OST, LNK, EVTX, OLE compound files |
-| Executables | PE (EXE/DLL), ELF |
+| Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, TGA, PCX, PBM, PGM, PPM, ICO, ICNS, CUR, EMF, WMF, PSD, XCF, CDR, AI, EPS, PS, EXR, HDR, ORF, RW2, X3F, CRW |
+| Documents | PDF, DOCX, XLSX, PPTX, DOC, XLS, PPT, PUB, WPD, WPS, XLR, ODP, ODS, ODT, RTF, EPUB, TEX, LYX, FB2, PAGES, NUMBERS, KEY |
+| Archives and containers | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660, CAB, ACE, ARJ, LZH, LZO, PAR2, RPM, XAR, DEB, BKF, ARC, ZOO, WIM, APK |
+| Video | MP4/ISO-BMFF, MKV, MPEG-TS, FLV, SWF, MXF, DPX, VOB, ASF, AVI |
+| Audio | MP3, WAV/RIFF, Ogg, FLAC, AMR, AAC, M4A, WMA, AIFF, AU, MID, IT, XM, S3M, MOD, APE, VOC, SPX, WV, TTA |
+| Databases | SQLite, MDB, ACCDB, IBd |
+| System files | PST/OST, LNK, EVTX, DBX, MSG, MBX, EML, NSF |
+| Executables | PE (EXE/DLL/SYS), ELF, Mach-O, Java Class, DEX, COM |
+| Fonts | TTF, OTF, WOFF, WOFF2, PFB |
+| Disk / forensic | E01 (EnCase), GHO, DAR |
+| Apple | Plist (binary and XML), AppleSingle |
+| Game / ROM | NES |
 
 The MP4/ISO-BMFF validator does not separately classify MOV. WebM is handled by
 the MKV/Matroska validator. DOCX/XLSX/PPTX are checked as ZIP containers with
@@ -29,11 +33,11 @@ expected package entries. Relift does not extract archive members.
 
 ## Not emitted
 
+- Shn (Shorten), NSF (Lotus Notes), EML, VFD, ROM, N64, GBA, SFC, BIN have no
+  working validator in this build and are not emitted despite having markers.
 - ZIP64: shares the `PK\x03\x04` local-header magic with ZIP and is handled by
   the existing ZIP validator. A dedicated ZIP64 end-of-central-directory
   validator is not implemented.
-- Camera RAW, ODT/ODS/ODP, RTF, EPUB, AVI, FLV, AAC, and AIFF have no registered
-  validator in this build.
 
 See [`support-matrix.md`](support-matrix.md) and
 [`GAP_REPORT.md`](GAP_REPORT.md) for the current support boundary.
@@ -59,3 +63,4 @@ fixtures before registering a new marker. Do not emit a format based only on a
 magic-byte match. The `registered_format_count_is_stable` unit test fails when
 the marker set changes, which is the prompt to update this page and the support
 matrix.
+

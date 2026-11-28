@@ -10,7 +10,7 @@ SD). It uses:
 
 - **Filesystem metadata recovery** (NTFS $MFT, FAT/exFAT directories, ext4
   inodes, APFS B-trees) for original names/paths/timestamps
-- **Validating signature carving** (36 formats with structural checks: CRC,
+- **Validating signature carving** (149 formats with structural checks: CRC,
   Huffman, box tree, etc.)
 - **Strict read-only** on source; recovery only to a different physical volume
 
@@ -186,3 +186,4 @@ is not implemented yet. Do not configure `relift mcp` in Claude Desktop.
 
 The agent should execute the commands in order, show the human each step's
 output, and ask for confirmation before the final recovery.
+

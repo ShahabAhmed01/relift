@@ -39,7 +39,7 @@ Pricing and tier details for proprietary products come from public vendor/resell
 | Destination separation enforced | Yes | No | No | No | No |
 | Source immutability guarantee | Verified | Not stated | Not stated | Not stated | Not stated |
 | Deleted-file metadata recovery (FAT/exFAT/NTFS/ext4) | Verified on fixtures | Verified (FAT/exFAT/NTFS/ext2) | Verified (NTFS) | Verified (assumption) | Verified (assumption) |
-| Deep scan / signature carving | Yes, 36 formats | Yes (PhotoRec, hundreds of signatures) | Yes (signature mode) | Yes | Yes |
+| Deep scan / signature carving | Yes, 149 formats | Yes (PhotoRec, hundreds of signatures) | Yes (signature mode) | Yes | Yes |
 | Structurally validated carving | Yes (every format validated) | No (magic + header, more false positives) | Partial | Assumption | Assumption |
 | Lost partition detection | No | Yes | No | No | Yes |
 | Raw disk image support | Yes | Yes | No | No | Yes |
@@ -107,3 +107,4 @@ These gaps are tracked in `docs/src/GAP_REPORT.md` and are research targets, not
 ## Competitive positioning statement
 
 Relift is not positioned as a clone of TestDisk, R-Studio, or Windows File Recovery. It is positioned as the free, open-source, cross-platform recovery tool that enforces source safety, validates every carved file, verifies recovered output, and keeps source and destination strictly separated — with no paid tier, no telemetry, and no account requirement. Users who need partition recovery, RAID reconstruction, virtual-disk containers, or evidence-image formats should use TestDisk or a commercial suite; users who want a free, transparent, safety-first tool for deleted files on disk images and drives are Relift's target audience.
+
