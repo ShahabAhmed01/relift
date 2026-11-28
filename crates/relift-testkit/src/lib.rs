@@ -1880,10 +1880,9 @@ impl HfsPlusFixture {
 pub fn hfsplus_image() -> HfsPlusFixture {
     let mut bytes = vec![0u8; 2048];
     let off = 1024usize;
-    // hfs::scan reads header at offset 1024, magic at buf[0..2].
+    // HFS+ volume header is at block 2 (offset 1024 for 512-byte sectors).
+    // The 'H+'/0x482B signature is at offset 0 within that header.
     bytes[off..off + 2].copy_from_slice(&0x482Bu16.to_be_bytes());
-    // Top-level probe checks u16 at buf[1026] => absolute 1026.
-    bytes[off + 2..off + 4].copy_from_slice(&0x482Bu16.to_be_bytes());
     // Five BTreeRef structs at offsets 112, 160, 208, 256, 304 within header.
     for btree_off in [112usize, 160, 208, 256, 304] {
         let abs = off + btree_off;
@@ -1899,8 +1898,8 @@ pub fn hfsplus_image() -> HfsPlusFixture {
 // APFS probe fixture
 // ---------------------------------------------------------------------------
 
-/// APFS probe fixture: "NXSB" container magic at two offsets (top-level probe
-/// checks `buf[1027]`, `apfs::scan` checks `buf[0]`), plus "APSB" volume magic
+/// APFS probe fixture: "NXSB" container magic at offset 0 (the container
+/// superblock is at offset 0 of the container), plus "APSB" volume magic
 /// at `block_size * 2`.
 #[derive(Debug, Clone)]
 pub struct ApfsFixture {
@@ -1918,11 +1917,11 @@ pub fn apfs_image() -> ApfsFixture {
     let block_size: u32 = 4096;
     let mut bytes = vec![0u8; block_size as usize * 3];
 
-    // Container superblock at offset 0.
-    bytes[0..4].copy_from_slice(b"NXSB"); // apfs::scan checks buf[0..4]
+    // Container superblock at offset 0. The 'NXSB' magic is at offset 0
+    // within the superblock.
+    bytes[0..4].copy_from_slice(b"NXSB");
     bytes[24..28].copy_from_slice(&block_size.to_le_bytes()); // block_size
     bytes[32..40].copy_from_slice(&(block_size as u64 * 3).to_le_bytes()); // total_blocks > 0
-    bytes[1027..1031].copy_from_slice(b"NXSB"); // top-level probe checks buf[1027..1031]
 
     // Volume superblock at block_size * 2 = 8192.
     let vol_off = block_size as usize * 2;

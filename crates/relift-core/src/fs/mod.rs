@@ -210,11 +210,17 @@ pub fn probe(src: &dyn ReadOnlySource, volume: &VolumeRef) -> Option<FsInfo> {
 
     // Identify common filesystems we do not yet parse, so the UI can be honest
     // instead of silently returning "no deleted files".
+    //
+    // HFS+: the volume header lives at block 2 (offset 1024 for 512-byte
+    // sectors); its 'H+'/0x482B signature is at the start of that block.
+    // APFS: the container superblock is at offset 0 of the container; its
+    // 'NXSB' magic is at the start of that block. The previous offsets
+    // (1026 and 1027 respectively) were off and would miss real volumes.
     if buf.len() >= 2048 {
-        if u16_be_at(&buf, 1024 + 2) == Some(0x482B) {
+        if u16_be_at(&buf, 1024) == Some(0x482B) || u16_be_at(&buf, 1024) == Some(0x4858) {
             return Some(identify(FsKind::HfsPlus, "HFS+ volume header", &buf));
         }
-        if buf.get(1024 + 3..1024 + 7) == Some(b"NXSB") {
+        if buf.get(0..4) == Some(b"NXSB") {
             return Some(identify(FsKind::Apfs, "APFS container superblock", &buf));
         }
         if buf.get(0x10040..0x10048) == Some(b"_BHRfS_M") {
