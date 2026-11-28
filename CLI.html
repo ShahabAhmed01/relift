@@ -252,8 +252,9 @@ its start; candidates written after the last completed volume are discarded.
 The session's recorded options (carving, live entries, volume selection, manual
 range, candidate limit) are reused. The source is re-opened read-only and its
 size and sampled fingerprint must match the session, otherwise resume is
-refused with exit code 4. Live pause/resume is not supported, and imaging has
-no resumable map-file workflow.</p>
+refused with exit code 4. Live pause/resume is not supported. Interrupted image
+copies can continue with <code>relift image --resume</code>; unreadable-sector retries and
+multi-pass recovery are not implemented.</p>
 <h3 id="relift-list"><a class="header" href="#relift-list"><code>relift list</code></a></h3>
 <p>List candidates saved in a session without writing anything.</p>
 <pre><code>relift list &lt;SESSION&gt; [OPTIONS]
@@ -323,6 +324,7 @@ are never overwritten.</p>
 <div class="table-wrapper"><table><thead><tr><th>Option</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>&lt;SOURCE&gt;</code></td><td>Disk image or raw device path</td></tr>
 <tr><td><code>--dest &lt;FILE&gt;</code></td><td>New image file to create (never overwrites existing)</td></tr>
+<tr><td><code>--resume</code></td><td>Resume from the last durable checkpoint in the existing <code>.partial</code> image and <code>.relift-map.jsonl</code> file</td></tr>
 <tr><td><code>--no-verify</code></td><td>Do not re-read the finished image to verify its hash</td></tr>
 <tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
 </tbody></table>
@@ -330,6 +332,13 @@ are never overwritten.</p>
 <p><strong>Example:</strong></p>
 <pre><code class="language-sh">relift image /dev/sdb --dest /mnt/backup/drive.img
 </code></pre>
+<p>If imaging is interrupted, rerun the same command with <code>--resume</code>. Relift
+revalidates the source identity and checks the saved image prefix against the
+current source bytes before continuing. This re-reads the checkpointed prefix.
+Checkpoints are synced every 256 MiB by default; an interruption may require
+recopying bytes since the last checkpoint. <code>--resume</code> only applies to a Relift
+partial image and its matching map file. It does not retry unreadable sectors
+or provide ddrescue-style multi-pass recovery.</p>
 <h3 id="relift-doctor"><a class="header" href="#relift-doctor"><code>relift doctor</code></a></h3>
 <p>Run self-tests for hashing, carving, storage and raw access.</p>
 <pre><code>relift doctor [--json]
@@ -402,7 +411,7 @@ incomplete. Convert the input to a raw image before scanning.</p>
 <li><code>--map</code>, <code>--passes</code>, <code>--rate-limit</code> on <code>image</code></li>
 <li>Filter expressions: <code>mime:</code>, <code>size:</code>, <code>date:</code>, <code>conf:</code>, <code>hash:</code></li>
 <li>JSON Schema files (<code>docs/schemas/</code>)</li>
-<li>Resumable, bad-sector-aware image mapfiles and retry passes</li>
+<li>Bad-sector-aware image maps, retry passes, and ddrescue map import/export</li>
 </ul>
 
                     </main>

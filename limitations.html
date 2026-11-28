@@ -232,8 +232,9 @@ find content on the underlying bytes.</li>
 the existing ZIP validator rather than a separate carver. A dedicated ZIP64
 end-of-central-directory validator is not yet implemented.</li>
 </ul>
-<p>Every other registered format carries its own structural validator, and an
-unvalidated carve is never emitted.</p>
+<p>The registry also contains marker-only entries that do not emit candidates.
+Available validators must accept the structure before any carve is emitted;
+validator coverage and maturity vary by format.</p>
 <h3 id="fragmentation"><a class="header" href="#fragmentation">Fragmentation</a></h3>
 <ul>
 <li>Bifragment gap carving is not implemented for most formats.</li>
@@ -276,6 +277,15 @@ are not carved. See the constants in <code>crates/relift-core/src/carve.rs</code
 <li>Failed-output handling differs by platform: Windows removes a failed output;
 Linux and macOS retain a collision-safe <code>.partial</code> file when possible.</li>
 <li>Sparse holes are written as zeroes and included in the hash.</li>
+</ul>
+<h3 id="imaging"><a class="header" href="#imaging">Imaging</a></h3>
+<ul>
+<li>Interrupted copies can resume from a durable prefix checkpoint with
+<code>relift image --resume</code>. Checkpoints are 256 MiB apart by default; uncommitted
+bytes are recopied. Resume hashes the saved prefix and re-reads the same
+source range to ensure the bytes still match.</li>
+<li>Imaging stops on unreadable source ranges. It does not record bad-sector
+ranges, retry sectors, or run multiple passes.</li>
 </ul>
 <h3 id="sessions"><a class="header" href="#sessions">Sessions</a></h3>
 <ul>

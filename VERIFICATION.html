@@ -174,12 +174,16 @@
                         <h1 id="verification-status"><a class="header" href="#verification-status">Verification status</a></h1>
 <p>This record separates local checks from product-release evidence. A successful synthetic test suite does not prove recovery accuracy on real devices.</p>
 <h2 id="latest-local-audit-run-2026-11-28"><a class="header" href="#latest-local-audit-run-2026-11-28">Latest local audit run (2026-11-28)</a></h2>
-<p>On the current Windows working tree, <code>cargo fmt --all -- --check</code> and
-<code>cargo clippy --workspace --all-targets -- -D warnings</code> passed, and
-<code>cargo test --workspace --all-targets</code> passed all 112 tests (85 core unit, 11
-end-to-end, 8 CLI unit, 4 CLI contract, 2 GUI, and 2 testkit). These checks use
+<p>On the current Windows working tree, <code>cargo fmt --all -- --check</code>,
+<code>cargo clippy --workspace --all-targets -- -D warnings</code>, and
+<code>cargo doc --workspace --no-deps</code> passed, and
+<code>cargo test --workspace --all-targets</code> passed all 121 tests (93 core unit, 11
+end-to-end, 8 CLI unit, 5 CLI contract, 2 GUI, and 2 testkit). These checks use
 synthetic fixtures and do not measure real-media recovery accuracy. This is a
-local run, not a replacement for the cross-platform CI evidence below.</p>
+local run, not a replacement for the cross-platform CI evidence below.
+The core crate also cross-compiles for <code>x86_64-unknown-linux-gnu</code>; a whole-
+workspace Linux cross-check requires the Tauri <code>libdbus</code> sysroot, which is not
+available on this Windows host.</p>
 <h2 id="gate-status"><a class="header" href="#gate-status">Gate status</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Gate</th><th>Requirement</th><th>Status</th><th>Evidence or remaining work</th></tr></thead><tbody>
 <tr><td>G1</td><td>Linux, macOS, and Windows CI</td><td>PASS</td><td><a href="https://github.com/ShahabAhmed01/relift/actions/runs/43701255160">GitHub Actions run 43701255160</a>: frontend, dependency/license, documentation, and Rust jobs passed across Linux, macOS, and Windows on stable and Rust 1.90</td></tr>
@@ -200,6 +204,7 @@ local run, not a replacement for the cross-platform CI evidence below.</p>
 <tr><td>G16</td><td>Installable package-manager releases</td><td>PENDING</td><td>Manifests are templates with placeholders; no upstream submissions</td></tr>
 <tr><td>G17</td><td>Launch materials and distribution</td><td>PENDING</td><td>No verified launch kit or launch execution</td></tr>
 <tr><td>G18</td><td>Current verification record</td><td>PASS</td><td>This file records current evidence and explicitly marks remaining gates</td></tr>
+<tr><td>G19</td><td>Resume interrupted imaging safely</td><td>IMPLEMENTED</td><td>Synthetic tests cover cancellation after a durable checkpoint, torn JSONL tail recovery, changed source-prefix bytes including an unsampled identity region, modified-prefix refusal, source/output hard-link refusal, and completing manifest publication after a final-rename interruption. Raw-device behavior and power-loss testing remain unvalidated.</td></tr>
 </tbody></table>
 </div>
 <h2 id="local-checks-on-2026-11-15"><a class="header" href="#local-checks-on-2026-11-15">Local checks on 2026-11-15</a></h2>
@@ -222,7 +227,7 @@ local run, not a replacement for the cross-platform CI evidence below.</p>
 <h2 id="ci-evidence"><a class="header" href="#ci-evidence">CI evidence</a></h2>
 <p>The current release workflow source passed <a href="https://github.com/ShahabAhmed01/relift/actions/runs/43701255160">GitHub Actions run 43701255160</a>. Frontend, dependency/license, documentation, and all configured Rust jobs passed, including Linux, macOS, and Windows with stable and Rust 1.90. The release workflow passed <a href="https://github.com/ShahabAhmed01/relift/actions/runs/43701736196">run 43701736196</a>, building 12 binaries and attaching a SHA256SUMS manifest. All 12 manifest entries were checked against the SHA-256 asset digests reported by GitHub. The benchmark job was skipped because the CI run did not request benchmark execution.</p>
 <h2 id="recovery-evidence-and-limits"><a class="header" href="#recovery-evidence-and-limits">Recovery evidence and limits</a></h2>
-<p>The Rust suite uses deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures with byte-exact SHA-256 verification. Probe detection fixtures were added for HFS+, APFS, Btrfs, and XFS (identified but metadata recovery not implemented). Carving now includes structurally validated FLAC, OLE, MPEG-TS, RAR5, and ISO 9660 in addition to the previous 200+ formats. Tests check source-image immutability, destination separation, path confinement, CLI JSON contracts, exit codes, and Tauri DTO field names. These tests do not measure precision or recall on a representative corpus and do not exercise physical drives.</p>
+<p>The Rust suite uses deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures with byte-exact SHA-256 verification. Probe detection fixtures were added for HFS+, APFS, Btrfs, and XFS (identified but metadata recovery not implemented). The carver registers 153 format identifiers, including marker-only entries; validators vary in fixture coverage and maturity. Tests check source-image immutability, destination separation, path confinement, CLI JSON contracts, exit codes, Tauri DTO field names, and checkpointed image resume. These tests do not measure precision or recall on a representative corpus and do not exercise physical drives.</p>
 <p>No physical device was accessed during this verification. macOS raw-device behavior remains untested, Windows raw-device enumeration requires elevation, and Linux destination ancestry tests are synthetic/CI-only.</p>
 <h2 id="release-state"><a class="header" href="#release-state">Release state</a></h2>
 <p>The <a href="https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0">v0.1.0 GitHub preview</a> is published as a prerelease with 12 unsigned binaries and a SHA256SUMS manifest. The manifest matches GitHub's asset digests but does not authenticate the publisher. No signing or notarization credentials are configured. Package-manager files still contain placeholders and are not installable or submitted.</p>

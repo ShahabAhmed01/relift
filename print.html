@@ -345,8 +345,9 @@ its start; candidates written after the last completed volume are discarded.
 The session's recorded options (carving, live entries, volume selection, manual
 range, candidate limit) are reused. The source is re-opened read-only and its
 size and sampled fingerprint must match the session, otherwise resume is
-refused with exit code 4. Live pause/resume is not supported, and imaging has
-no resumable map-file workflow.</p>
+refused with exit code 4. Live pause/resume is not supported. Interrupted image
+copies can continue with <code>relift image --resume</code>; unreadable-sector retries and
+multi-pass recovery are not implemented.</p>
 <h3 id="relift-list"><a class="header" href="#relift-list"><code>relift list</code></a></h3>
 <p>List candidates saved in a session without writing anything.</p>
 <pre><code>relift list &lt;SESSION&gt; [OPTIONS]
@@ -416,6 +417,7 @@ are never overwritten.</p>
 <div class="table-wrapper"><table><thead><tr><th>Option</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>&lt;SOURCE&gt;</code></td><td>Disk image or raw device path</td></tr>
 <tr><td><code>--dest &lt;FILE&gt;</code></td><td>New image file to create (never overwrites existing)</td></tr>
+<tr><td><code>--resume</code></td><td>Resume from the last durable checkpoint in the existing <code>.partial</code> image and <code>.relift-map.jsonl</code> file</td></tr>
 <tr><td><code>--no-verify</code></td><td>Do not re-read the finished image to verify its hash</td></tr>
 <tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
 </tbody></table>
@@ -423,6 +425,13 @@ are never overwritten.</p>
 <p><strong>Example:</strong></p>
 <pre><code class="language-sh">relift image /dev/sdb --dest /mnt/backup/drive.img
 </code></pre>
+<p>If imaging is interrupted, rerun the same command with <code>--resume</code>. Relift
+revalidates the source identity and checks the saved image prefix against the
+current source bytes before continuing. This re-reads the checkpointed prefix.
+Checkpoints are synced every 256 MiB by default; an interruption may require
+recopying bytes since the last checkpoint. <code>--resume</code> only applies to a Relift
+partial image and its matching map file. It does not retry unreadable sectors
+or provide ddrescue-style multi-pass recovery.</p>
 <h3 id="relift-doctor"><a class="header" href="#relift-doctor"><code>relift doctor</code></a></h3>
 <p>Run self-tests for hashing, carving, storage and raw access.</p>
 <pre><code>relift doctor [--json]
@@ -495,7 +504,7 @@ incomplete. Convert the input to a raw image before scanning.</p>
 <li><code>--map</code>, <code>--passes</code>, <code>--rate-limit</code> on <code>image</code></li>
 <li>Filter expressions: <code>mime:</code>, <code>size:</code>, <code>date:</code>, <code>conf:</code>, <code>hash:</code></li>
 <li>JSON Schema files (<code>docs/schemas/</code>)</li>
-<li>Resumable, bad-sector-aware image mapfiles and retry passes</li>
+<li>Bad-sector-aware image maps, retry passes, and ddrescue map import/export</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="desktop-gui"><a class="header" href="#desktop-gui">Desktop GUI</a></h1>
 <p>Relift's desktop interface uses Tauri 2 and Svelte 5. It calls the shared
@@ -642,8 +651,9 @@ qualified examiner review the acquisition and analysis plan.</p>
 <li>Confirm the source and destination with the operator. The destination must
 be a different physical volume.</li>
 <li>If appropriate, create a raw image on the separate destination. Relift's
-image command makes a single-pass copy and writes a SHA-256 manifest; it
-does not provide bad-sector maps, retries, or multi-pass resume.</li>
+image command writes a SHA-256 manifest and can resume from durable prefix
+checkpoints; it does not provide bad-sector maps, read retries, or
+multi-pass recovery, and is not a forensic acquisition substitute.</li>
 <li>Scan the image, review candidates, and run a dry-run recovery.</li>
 <li>Recover only after confirming the dry-run and destination. Keep the image,
 session directory, report, and recovered output under controlled storage.</li>
@@ -689,9 +699,9 @@ disabled with <code>--no-verify</code>.</li>
 <a href="VERIFICATION.html"><code>VERIFICATION.md</code></a> for current support and evidence status.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h1>
 <p>Use the command reference in <a href="CLI.html"><code>CLI.md</code></a> for available flags. Relift does
-not implement <code>--max-mem</code>, <code>--threads</code>, <code>--rate-limit</code>, image map files, or a
-forensic mode. Scan resume is available as <code>scan --resume</code>; it is not a live
-pause control.</p>
+not implement <code>--max-mem</code>, <code>--threads</code>, <code>--rate-limit</code>, bad-sector map files, or
+a forensic mode. Scan and image resume are available through <code>scan --resume</code>
+and <code>image --resume</code>; neither is a live pause control.</p>
 <h2 id="device-access"><a class="header" href="#device-access">Device access</a></h2>
 <ul>
 <li>Raw-device access may require Administrator on Windows or elevated
@@ -746,10 +756,13 @@ were written consistently, not that they match an unavailable original.</p>
 output under a collision-safe <code>.partial</code> name; Windows removes failed output.</p>
 <h2 id="imaging-problems"><a class="header" href="#imaging-problems">Imaging problems</a></h2>
 <p><code>relift image</code> creates a new raw image and refuses to overwrite an existing
-destination. It performs a single-pass copy; it does not retry bad sectors or
-resume from a map file. For a failing or physically damaged drive, stop using
-it and consider professional recovery or a dedicated imaging tool designed
-for read errors.</p>
+destination. If a run was interrupted, use the same source and destination
+with <code>--resume</code>; Relift checks the source identity and verifies the saved
+checkpoint prefix against both the partial image and current source bytes
+before continuing. This re-reads the checkpointed source range. It does not
+retry bad sectors or perform multiple recovery passes. For a failing or
+physically damaged drive, stop using it and consider professional recovery or a
+dedicated imaging tool designed for read errors.</p>
 <h2 id="gui-problems"><a class="header" href="#gui-problems">GUI problems</a></h2>
 <p>The GUI requires the platform's Tauri webview runtime and the native build
 dependencies listed by Tauri. On Windows, install WebView2 if it is missing.
@@ -1028,8 +1041,9 @@ find content on the underlying bytes.</li>
 the existing ZIP validator rather than a separate carver. A dedicated ZIP64
 end-of-central-directory validator is not yet implemented.</li>
 </ul>
-<p>Every other registered format carries its own structural validator, and an
-unvalidated carve is never emitted.</p>
+<p>The registry also contains marker-only entries that do not emit candidates.
+Available validators must accept the structure before any carve is emitted;
+validator coverage and maturity vary by format.</p>
 <h3 id="fragmentation"><a class="header" href="#fragmentation">Fragmentation</a></h3>
 <ul>
 <li>Bifragment gap carving is not implemented for most formats.</li>
@@ -1072,6 +1086,15 @@ are not carved. See the constants in <code>crates/relift-core/src/carve.rs</code
 <li>Failed-output handling differs by platform: Windows removes a failed output;
 Linux and macOS retain a collision-safe <code>.partial</code> file when possible.</li>
 <li>Sparse holes are written as zeroes and included in the hash.</li>
+</ul>
+<h3 id="imaging"><a class="header" href="#imaging">Imaging</a></h3>
+<ul>
+<li>Interrupted copies can resume from a durable prefix checkpoint with
+<code>relift image --resume</code>. Checkpoints are 256 MiB apart by default; uncommitted
+bytes are recopied. Resume hashes the saved prefix and re-reads the same
+source range to ensure the bytes still match.</li>
+<li>Imaging stops on unreadable source ranges. It does not record bad-sector
+ranges, retry sectors, or run multiple passes.</li>
 </ul>
 <h3 id="sessions"><a class="header" href="#sessions">Sessions</a></h3>
 <ul>
@@ -1166,13 +1189,13 @@ retracted or corrected when the code or tests no longer support it.</p>
 <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
 <tr><td>I1</td><td>Image is opened with <code>create_new</code> (existing file never overwritten)</td><td>Unit tests: <code>existing_manifest_is_never_overwritten</code>, <code>final_image_name_collision_does_not_replace_existing_file</code></td><td>unit-tested</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
 <tr><td>I2</td><td>Image SHA-256 verified by re-read</td><td>Unit test: <code>image_roundtrip_and_manifest</code></td><td>unit-tested</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
-<tr><td>I3</td><td>Imaging is a single copy pass (no mapfile resume)</td><td>Code: single <code>while at &lt; total</code> loop; no mapfile support</td><td>implemented</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
+<tr><td>I3</td><td>Interrupted imaging resumes from a durable prefix checkpoint</td><td>Synthetic tests cover cancellation, torn map tail, changed source bytes, partial-image tampering, source/output hard-link refusal, and manifest finalization after rename</td><td>unit-tested</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
 </tbody></table>
 </div>
 <h2 id="not-yet-implemented-documented-as-gaps"><a class="header" href="#not-yet-implemented-documented-as-gaps">Not yet implemented (documented as gaps)</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Status</th><th>Location</th></tr></thead><tbody>
 <tr><td>G1</td><td>E01/AFF4/VHD/VMDK/QCOW2/DMG container support</td><td>Not implemented; convert to raw first</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
-<tr><td>G2</td><td>Persistent imaging mapfile / multi-pass resume</td><td>Not implemented; <code>relift image</code> is single-pass</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G2</td><td>Bad-sector map, retry passes, and ddrescue map interoperability</td><td>Not implemented; prefix resume does not salvage unreadable sectors</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
 <tr><td>G3</td><td>TUI (ratatui)</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
 <tr><td>G4</td><td>RAID assembly</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
 <tr><td>G5</td><td>Encryption unlock (BitLocker/LUKS/VeraCrypt/FileVault)</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
@@ -1263,10 +1286,10 @@ authorized tools first, then provide a supported raw image or device.</p>
 are supported directly.</p>
 <h3 id="how-do-i-handle-a-failing-drive"><a class="header" href="#how-do-i-handle-a-failing-drive">How do I handle a failing drive?</a></h3>
 <p>Stop using it. If it is clicking, beeping, disconnecting, or returning repeated
-read errors, consider professional recovery. Relift's <code>image</code> command makes a
-single-pass raw copy; it does not provide ddrescue-style maps, retries, or
-multi-pass resume. Image to a different physical volume before scanning when
-the device is stable enough to read.</p>
+read errors, consider professional recovery. Relift's <code>image</code> command can
+resume from durable checkpoints, but it does not provide unreadable-sector
+maps, retries, or multi-pass recovery. Image to a different physical volume
+before scanning when the device is stable enough to read.</p>
 <h3 id="can-i-pause-or-resume-a-scan"><a class="header" href="#can-i-pause-or-resume-a-scan">Can I pause or resume a scan?</a></h3>
 <p>Relift cannot pause a running scan. If a scan is cancelled or the process
 crashes, <code>relift scan &lt;source&gt; --session &lt;dir&gt; --resume</code> continues it after
@@ -1336,12 +1359,16 @@ forensic evidence acquisition; see <a href="forensic-use.html"><code>forensic-us
 <div style="break-before: page; page-break-before: always;"></div><h1 id="verification-status"><a class="header" href="#verification-status">Verification status</a></h1>
 <p>This record separates local checks from product-release evidence. A successful synthetic test suite does not prove recovery accuracy on real devices.</p>
 <h2 id="latest-local-audit-run-2026-11-28"><a class="header" href="#latest-local-audit-run-2026-11-28">Latest local audit run (2026-11-28)</a></h2>
-<p>On the current Windows working tree, <code>cargo fmt --all -- --check</code> and
-<code>cargo clippy --workspace --all-targets -- -D warnings</code> passed, and
-<code>cargo test --workspace --all-targets</code> passed all 112 tests (85 core unit, 11
-end-to-end, 8 CLI unit, 4 CLI contract, 2 GUI, and 2 testkit). These checks use
+<p>On the current Windows working tree, <code>cargo fmt --all -- --check</code>,
+<code>cargo clippy --workspace --all-targets -- -D warnings</code>, and
+<code>cargo doc --workspace --no-deps</code> passed, and
+<code>cargo test --workspace --all-targets</code> passed all 121 tests (93 core unit, 11
+end-to-end, 8 CLI unit, 5 CLI contract, 2 GUI, and 2 testkit). These checks use
 synthetic fixtures and do not measure real-media recovery accuracy. This is a
-local run, not a replacement for the cross-platform CI evidence below.</p>
+local run, not a replacement for the cross-platform CI evidence below.
+The core crate also cross-compiles for <code>x86_64-unknown-linux-gnu</code>; a whole-
+workspace Linux cross-check requires the Tauri <code>libdbus</code> sysroot, which is not
+available on this Windows host.</p>
 <h2 id="gate-status"><a class="header" href="#gate-status">Gate status</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Gate</th><th>Requirement</th><th>Status</th><th>Evidence or remaining work</th></tr></thead><tbody>
 <tr><td>G1</td><td>Linux, macOS, and Windows CI</td><td>PASS</td><td><a href="https://github.com/ShahabAhmed01/relift/actions/runs/43701255160">GitHub Actions run 43701255160</a>: frontend, dependency/license, documentation, and Rust jobs passed across Linux, macOS, and Windows on stable and Rust 1.90</td></tr>
@@ -1362,6 +1389,7 @@ local run, not a replacement for the cross-platform CI evidence below.</p>
 <tr><td>G16</td><td>Installable package-manager releases</td><td>PENDING</td><td>Manifests are templates with placeholders; no upstream submissions</td></tr>
 <tr><td>G17</td><td>Launch materials and distribution</td><td>PENDING</td><td>No verified launch kit or launch execution</td></tr>
 <tr><td>G18</td><td>Current verification record</td><td>PASS</td><td>This file records current evidence and explicitly marks remaining gates</td></tr>
+<tr><td>G19</td><td>Resume interrupted imaging safely</td><td>IMPLEMENTED</td><td>Synthetic tests cover cancellation after a durable checkpoint, torn JSONL tail recovery, changed source-prefix bytes including an unsampled identity region, modified-prefix refusal, source/output hard-link refusal, and completing manifest publication after a final-rename interruption. Raw-device behavior and power-loss testing remain unvalidated.</td></tr>
 </tbody></table>
 </div>
 <h2 id="local-checks-on-2026-11-15"><a class="header" href="#local-checks-on-2026-11-15">Local checks on 2026-11-15</a></h2>
@@ -1384,7 +1412,7 @@ local run, not a replacement for the cross-platform CI evidence below.</p>
 <h2 id="ci-evidence"><a class="header" href="#ci-evidence">CI evidence</a></h2>
 <p>The current release workflow source passed <a href="https://github.com/ShahabAhmed01/relift/actions/runs/43701255160">GitHub Actions run 43701255160</a>. Frontend, dependency/license, documentation, and all configured Rust jobs passed, including Linux, macOS, and Windows with stable and Rust 1.90. The release workflow passed <a href="https://github.com/ShahabAhmed01/relift/actions/runs/43701736196">run 43701736196</a>, building 12 binaries and attaching a SHA256SUMS manifest. All 12 manifest entries were checked against the SHA-256 asset digests reported by GitHub. The benchmark job was skipped because the CI run did not request benchmark execution.</p>
 <h2 id="recovery-evidence-and-limits"><a class="header" href="#recovery-evidence-and-limits">Recovery evidence and limits</a></h2>
-<p>The Rust suite uses deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures with byte-exact SHA-256 verification. Probe detection fixtures were added for HFS+, APFS, Btrfs, and XFS (identified but metadata recovery not implemented). Carving now includes structurally validated FLAC, OLE, MPEG-TS, RAR5, and ISO 9660 in addition to the previous 200+ formats. Tests check source-image immutability, destination separation, path confinement, CLI JSON contracts, exit codes, and Tauri DTO field names. These tests do not measure precision or recall on a representative corpus and do not exercise physical drives.</p>
+<p>The Rust suite uses deterministic synthetic FAT32, exFAT, NTFS, and ext4 fixtures with byte-exact SHA-256 verification. Probe detection fixtures were added for HFS+, APFS, Btrfs, and XFS (identified but metadata recovery not implemented). The carver registers 153 format identifiers, including marker-only entries; validators vary in fixture coverage and maturity. Tests check source-image immutability, destination separation, path confinement, CLI JSON contracts, exit codes, Tauri DTO field names, and checkpointed image resume. These tests do not measure precision or recall on a representative corpus and do not exercise physical drives.</p>
 <p>No physical device was accessed during this verification. macOS raw-device behavior remains untested, Windows raw-device enumeration requires elevation, and Linux destination ancestry tests are synthetic/CI-only.</p>
 <h2 id="release-state"><a class="header" href="#release-state">Release state</a></h2>
 <p>The <a href="https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0">v0.1.0 GitHub preview</a> is published as a prerelease with 12 unsigned binaries and a SHA256SUMS manifest. The manifest matches GitHub's asset digests but does not authenticate the publisher. No signing or notarization credentials are configured. Package-manager files still contain placeholders and are not installable or submitted.</p>
@@ -1433,6 +1461,10 @@ never emitted.</li>
 <ul>
 <li>Only raw images are supported. E01/Ex01, AFF4, VHD/VHDX, VMDK, QCOW2 and
 DMG/UDIF must be converted to raw before scanning.</li>
+<li>Imaging can resume from a versioned JSONL checkpoint map at durable prefix
+boundaries. Checkpoints default to 256 MiB; uncheckpointed bytes are recopied
+after interruption. Bad-sector retries, unreadable-range maps, multi-pass
+recovery, and ddrescue mapfile import/export are not implemented.</li>
 </ul>
 <h2 id="platform-gaps"><a class="header" href="#platform-gaps">Platform gaps</a></h2>
 <ul>

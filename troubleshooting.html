@@ -173,9 +173,9 @@
                     <main>
                         <h1 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h1>
 <p>Use the command reference in <a href="CLI.html"><code>CLI.md</code></a> for available flags. Relift does
-not implement <code>--max-mem</code>, <code>--threads</code>, <code>--rate-limit</code>, image map files, or a
-forensic mode. Scan resume is available as <code>scan --resume</code>; it is not a live
-pause control.</p>
+not implement <code>--max-mem</code>, <code>--threads</code>, <code>--rate-limit</code>, bad-sector map files, or
+a forensic mode. Scan and image resume are available through <code>scan --resume</code>
+and <code>image --resume</code>; neither is a live pause control.</p>
 <h2 id="device-access"><a class="header" href="#device-access">Device access</a></h2>
 <ul>
 <li>Raw-device access may require Administrator on Windows or elevated
@@ -230,10 +230,13 @@ were written consistently, not that they match an unavailable original.</p>
 output under a collision-safe <code>.partial</code> name; Windows removes failed output.</p>
 <h2 id="imaging-problems"><a class="header" href="#imaging-problems">Imaging problems</a></h2>
 <p><code>relift image</code> creates a new raw image and refuses to overwrite an existing
-destination. It performs a single-pass copy; it does not retry bad sectors or
-resume from a map file. For a failing or physically damaged drive, stop using
-it and consider professional recovery or a dedicated imaging tool designed
-for read errors.</p>
+destination. If a run was interrupted, use the same source and destination
+with <code>--resume</code>; Relift checks the source identity and verifies the saved
+checkpoint prefix against both the partial image and current source bytes
+before continuing. This re-reads the checkpointed source range. It does not
+retry bad sectors or perform multiple recovery passes. For a failing or
+physically damaged drive, stop using it and consider professional recovery or a
+dedicated imaging tool designed for read errors.</p>
 <h2 id="gui-problems"><a class="header" href="#gui-problems">GUI problems</a></h2>
 <p>The GUI requires the platform's Tauri webview runtime and the native build
 dependencies listed by Tauri. On Windows, install WebView2 if it is missing.

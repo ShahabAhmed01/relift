@@ -210,10 +210,10 @@ authorized tools first, then provide a supported raw image or device.</p>
 are supported directly.</p>
 <h3 id="how-do-i-handle-a-failing-drive"><a class="header" href="#how-do-i-handle-a-failing-drive">How do I handle a failing drive?</a></h3>
 <p>Stop using it. If it is clicking, beeping, disconnecting, or returning repeated
-read errors, consider professional recovery. Relift's <code>image</code> command makes a
-single-pass raw copy; it does not provide ddrescue-style maps, retries, or
-multi-pass resume. Image to a different physical volume before scanning when
-the device is stable enough to read.</p>
+read errors, consider professional recovery. Relift's <code>image</code> command can
+resume from durable checkpoints, but it does not provide unreadable-sector
+maps, retries, or multi-pass recovery. Image to a different physical volume
+before scanning when the device is stable enough to read.</p>
 <h3 id="can-i-pause-or-resume-a-scan"><a class="header" href="#can-i-pause-or-resume-a-scan">Can I pause or resume a scan?</a></h3>
 <p>Relift cannot pause a running scan. If a scan is cancelled or the process
 crashes, <code>relift scan &lt;source&gt; --session &lt;dir&gt; --resume</code> continues it after

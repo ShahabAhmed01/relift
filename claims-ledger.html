@@ -246,13 +246,13 @@ retracted or corrected when the code or tests no longer support it.</p>
 <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
 <tr><td>I1</td><td>Image is opened with <code>create_new</code> (existing file never overwritten)</td><td>Unit tests: <code>existing_manifest_is_never_overwritten</code>, <code>final_image_name_collision_does_not_replace_existing_file</code></td><td>unit-tested</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
 <tr><td>I2</td><td>Image SHA-256 verified by re-read</td><td>Unit test: <code>image_roundtrip_and_manifest</code></td><td>unit-tested</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
-<tr><td>I3</td><td>Imaging is a single copy pass (no mapfile resume)</td><td>Code: single <code>while at &lt; total</code> loop; no mapfile support</td><td>implemented</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
+<tr><td>I3</td><td>Interrupted imaging resumes from a durable prefix checkpoint</td><td>Synthetic tests cover cancellation, torn map tail, changed source bytes, partial-image tampering, source/output hard-link refusal, and manifest finalization after rename</td><td>unit-tested</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
 </tbody></table>
 </div>
 <h2 id="not-yet-implemented-documented-as-gaps"><a class="header" href="#not-yet-implemented-documented-as-gaps">Not yet implemented (documented as gaps)</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Status</th><th>Location</th></tr></thead><tbody>
 <tr><td>G1</td><td>E01/AFF4/VHD/VMDK/QCOW2/DMG container support</td><td>Not implemented; convert to raw first</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
-<tr><td>G2</td><td>Persistent imaging mapfile / multi-pass resume</td><td>Not implemented; <code>relift image</code> is single-pass</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G2</td><td>Bad-sector map, retry passes, and ddrescue map interoperability</td><td>Not implemented; prefix resume does not salvage unreadable sectors</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
 <tr><td>G3</td><td>TUI (ratatui)</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
 <tr><td>G4</td><td>RAID assembly</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
 <tr><td>G5</td><td>Encryption unlock (BitLocker/LUKS/VeraCrypt/FileVault)</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
