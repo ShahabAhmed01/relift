@@ -55,12 +55,12 @@ There is no io_uring, `O_DIRECT`, or OS-specific direct-I/O path.
 
 ## Carved format support
 
-Every emitted carve must pass a structural validator. There are 149 registered
+Every emitted carve must pass a structural validator. There are 153 registered
 format identifiers:
 
 | Category | Formats |
 |----------|---------|
-| Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, TGA, PCX, PBM, PGM, PPM, ICO, ICNS, CUR, EMF, WMF, PSD, XCF, CDR, AI, EPS, PS, EXR, HDR, ORF, RW2, X3F, CRW |
+| Images | JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF, TGA, PCX, PBM, PGM, PPM, ICO, ICNS, CUR, EMF, WMF, PSD, XCF, CDR, AI, EPS, PS, EXR, HDR, ORF, RW2, X3F, CRW, CR3, RAF, MRW, DDS |
 | Documents | PDF, DOCX, XLSX, PPTX, DOC, XLS, PPT, PUB, WPD, WPS, XLR, RTF, TEX, LYX, FB2, PAGES, NUMBERS, KEY |
 | Archives and containers | ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660, CAB, ACE, ARJ, LZH, LZO, PAR2, RPM, XAR, DEB, BKF, ARC, ZOO, WIM, APK |
 | Video | MP4/ISO-BMFF, MKV, MPEG-TS, FLV, SWF, MXF, DPX, VOB, ASF |
@@ -111,4 +111,6 @@ changes, so this table cannot drift silently.
 ## Known limitations
 
 See `docs/GAP_REPORT.md` and `docs/limitations.md` for the full list.
+
+
 

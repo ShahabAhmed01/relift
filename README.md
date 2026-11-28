@@ -34,7 +34,7 @@ the safety of the evidence over the speed of the recovery.
   by default. The check proves the destination bytes match what was read back;
   it does not prove they match an unknown original file.
 - **Carving requires structural validation.** A magic-byte match alone is never
-  emitted as a candidate. The 149 registered formats each pass a structural
+  emitted as a candidate. The 153 registered formats each pass a structural
   validator before a candidate is reported.
 - **Sessions are inspectable and resumable.** Scan results are stored as
   JSON/JSONL, and an interrupted scan can continue with `relift scan --resume`
@@ -48,7 +48,7 @@ the safety of the evidence over the speed of the recovery.
 |---|---|---|
 | Filesystem metadata recovery | FAT12/16/32, exFAT, NTFS, ext2/3/4 | Fixture-validated end to end with SHA-256 |
 | Filesystem detection | HFS+, APFS, Btrfs, XFS, ReFS, F2FS, ZFS, ReiserFS, ISO 9660, UDF | HFS+/APFS/Btrfs/XFS have probe fixtures; the rest are detection-only |
-| Signature carving | 149 formats with structural validators | Unit-tested valid, truncated, and random inputs |
+| Signature carving | 153 formats with structural validators | Unit-tested valid, truncated, and random inputs |
 | Sparse files | Holes and unwritten extents keep byte offsets | Fixture-tested |
 | CLI | scan, recover, image, devices, doctor, report, completions | Process-level contract tests |
 | GUI | source selection, scan progress, filtering, preview, recovery | Tauri 2 + Svelte 5; see [GUI docs](docs/src/GUI.md) |
@@ -250,4 +250,6 @@ GPL-3.0-or-later. See [LICENSE](LICENSE).
   <a href="SECURITY.md">Security policy</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
+
+
 

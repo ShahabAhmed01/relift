@@ -14,7 +14,7 @@ Relift is already a strong contender with unique strengths: **read-only by const
 | GUI | ✅ Tauri+Svelte | ❌ (QPhotoRec basic) | ✅ Dense | ✅ Professional |
 | Read-only enforced | ✅ Code-level | Docs only | ❌ | ❌ |
 | Destination separation | ✅ Enforced | ❌ | ❌ | ❌ |
-| Validated carving | ✅ 149 formats | Magic only | Custom sigs | Custom sigs |
+| Validated carving | ✅ 153 formats | Magic only | Custom sigs | Custom sigs |
 | SHA-256 verification | ✅ | ❌ | ❌ | Partial |
 | Sessions/resume | ✅ | ❌ | ❌ | Partial |
 | Partition recovery | ❌ | ✅ | ✅ | ✅ |
@@ -352,3 +352,5 @@ Priority additions:
 5. **Standards Compliant**: Open formats, documented protocols.
 6. **Honest About Limits**: Document what we can't do.
 7. **Community Driven**: Open development, open governance.
+
+

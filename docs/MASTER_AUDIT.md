@@ -19,7 +19,7 @@ ID   Severity  Area             Description                                     
 ----- --------- ---------------- ---------------------------------------------------------------------------------------- --------------------------------------------
 R1    P0        Dependencies     chrono 0.4.45 unmaintained (RUSTSEC-2026-0543), url 2.5.8 stack overflow (RUSTSEC-2026-0592), cookie 0.18.2 fork nonce repeat (RUSTSEC-2026-0594) — all failing cargo deny check | FIXED on branch (chrono removed, url->2.5.9, cookie->0.18.3)
 R2    P0        Documentation    cargo doc --workspace --no-deps failed with RUSTDOCFLAGS=-D warnings due to broken intra-doc links in testkit comments | FIXED on branch (escaped bracket references)
-R3    P1        Claim drift      README said "200+ more" carving formats and "93 tests"; actual code registers 149 formats; current suite passes 94 tests | FIXED on branch
+R3    P1        Claim drift      README said "200+ more" carving formats and "93 tests"; actual code registers 153 formats; current suite passes 94 tests | FIXED on branch
 R4    P1        Claim drift      Support matrix said HFS+/APFS/Btrfs/XFS had "no fixture yet"; probe fixtures exist and are tested | FIXED on branch
 R5    P1        Encoding         README.md had UTF-8 BOM and mojibake sequences | FIXED on branch
 R6    P1        Link drift       10 broken relative links across README and docs | FIXED on branch
@@ -123,4 +123,6 @@ Fuzzing           | Bounded CI fuzz runs (5000 runs each); no 24-hour campaign  
 ## CI status on branch
 
 All required checks pass locally. The branch has not been pushed to GitHub; CI has not been re-run on the remote. Push to fix/ci-and-claim-reconciliation to trigger remote CI validation. Do not push to main.
+
+
 

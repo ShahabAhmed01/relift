@@ -28,6 +28,8 @@ use relift_core::virtual_disk::{open_virtual_disk, open_forensic_image};
 use relift_core::{SCHEMA_VERSION, VERSION};
 use serde::Serialize;
 
+mod config;
+
 /// Stable process exit codes. These are part of the CLI contract and are
 /// documented in `docs/CLI.md`.
 const EXIT_OK: u8 = 0;
@@ -51,6 +53,11 @@ struct Cli {
     /// Emit machine-readable JSON on stdout.
     #[arg(long, global = true)]
     json: bool,
+
+    /// Path to a relift.toml configuration file. Defaults to ./relift.toml or
+    /// $HOME/.config/relift/config.toml. CLI arguments override config values.
+    #[arg(long, global = true, value_name = "FILE")]
+    config: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Command,
@@ -346,10 +353,11 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<u8> {
+    let config = config::load_config(cli.config.as_deref())?;
     match cli.command {
-        Command::Scan(args) => cmd_scan(args, cli.json),
+        Command::Scan(args) => cmd_scan(args, cli.json, &config),
         Command::List(args) => cmd_list(args, cli.json),
-        Command::Recover(args) => cmd_recover(args, cli.json),
+        Command::Recover(args) => cmd_recover(args, cli.json, &config),
         Command::Image(args) => cmd_image(args, cli.json),
         Command::Devices => cmd_devices(cli.json),
         Command::Doctor => cmd_doctor(cli.json),
@@ -368,7 +376,7 @@ fn run(cli: Cli) -> anyhow::Result<u8> {
     }
 }
 
-fn cmd_scan(args: ScanArgs, json: bool) -> anyhow::Result<u8> {
+fn cmd_scan(args: ScanArgs, json: bool, config: &config::Config) -> anyhow::Result<u8> {
     let manual_volume = match (args.offset.as_deref(), args.length.as_deref()) {
         (Some(offset), Some(length)) => Some(ManualVolume {
             offset: parse_bytes(offset, "offset")?,
@@ -388,12 +396,28 @@ fn cmd_scan(args: ScanArgs, json: bool) -> anyhow::Result<u8> {
         );
     }
     let mut request = ScanRequest::new(&args.session);
-    request.include_live = args.live;
-    request.carve = args.carve || args.mode == ScanMode::Deep;
+    // Config-file defaults apply first; CLI arguments override them.
+    request.include_live = config.scan.include_live.unwrap_or(args.live);
+    if config.scan.carve.unwrap_or(false) {
+        request.carve = true;
+    }
+    request.carve = args.carve || request.carve || args.mode == ScanMode::Deep;
     request.volume_indices = args.volume.clone();
     request.manual_volume = manual_volume;
-    request.max_candidates = args.max_candidates.max(1);
+    request.max_candidates = config
+        .scan
+        .max_candidates
+        .unwrap_or(args.max_candidates)
+        .max(1);
     request.resume = args.resume;
+
+    // Config-file scan mode ("quick" or "deep") enables carving when deep.
+    if let Some(mode) = &config.scan.mode {
+        let mode_deep = mode.trim().to_ascii_lowercase() == "deep";
+        if mode_deep {
+            request.carve = true;
+        }
+    }
 
     let mut printer = Progress::new(!json);
     let header = {
@@ -414,7 +438,7 @@ fn cmd_scan(args: ScanArgs, json: bool) -> anyhow::Result<u8> {
     })
 }
 
-fn cmd_recover(args: RecoverArgs, json: bool) -> anyhow::Result<u8> {
+fn cmd_recover(args: RecoverArgs, json: bool, config: &config::Config) -> anyhow::Result<u8> {
     let header = load_header(&args.session)
         .with_context(|| format!("could not read session {}", args.session.display()))?;
     let source_path = args
@@ -425,7 +449,12 @@ fn cmd_recover(args: RecoverArgs, json: bool) -> anyhow::Result<u8> {
         .with_context(|| format!("could not open source {}", source_path.display()))?;
     let min_confidence = match args.min_confidence.as_deref() {
         Some(value) => Some(parse_confidence(value)?),
-        None => None,
+        None => config
+            .recover
+            .min_confidence
+            .as_deref()
+            .map(parse_confidence)
+            .transpose()?,
     };
     let ids = if args.id.is_empty() {
         None
@@ -435,7 +464,8 @@ fn cmd_recover(args: RecoverArgs, json: bool) -> anyhow::Result<u8> {
     let filter = CandidateFilter::parse_all(&args.filter)?;
     let dest = prepare_destination(&args.dest)?;
     let mut options = RecoverOptions::new(dest);
-    options.verify = !args.no_verify;
+    // Config default: verify enabled unless --no-verify or config says otherwise.
+    options.verify = config.recover.verify.unwrap_or(true) && !args.no_verify;
     options.min_confidence = min_confidence;
     options.ids = ids;
     options.filter = filter;

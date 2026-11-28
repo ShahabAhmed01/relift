@@ -173,6 +173,10 @@ const MAX_ORF: u64 = 256 * 1024 * 1024;
 const MAX_RW2: u64 = 256 * 1024 * 1024;
 const MAX_X3F: u64 = 256 * 1024 * 1024;
 const MAX_CRW: u64 = 256 * 1024 * 1024;
+const MAX_CR3: u64 = 256 * 1024 * 1024;
+const MAX_RAF: u64 = 256 * 1024 * 1024;
+const MAX_MRW: u64 = 256 * 1024 * 1024;
+const MAX_DDS: u64 = 512 * 1024 * 1024;
 // ===== Additional audio size limits =====
 const MAX_WV: u64 = 512 * 1024 * 1024;
 const MAX_TTA: u64 = 512 * 1024 * 1024;
@@ -1210,6 +1214,32 @@ const MARKERS: &[Marker] = &[
         magic: b"CRM\x00\x00\x08",
         adjust: 0,
     },
+    // ===== More Camera RAW (distinctive magic) =====
+    Marker {
+        format: "cr3",
+        ext: "cr3",
+        magic: b"ftypcr3",
+        adjust: -4,
+    },
+    Marker {
+        format: "raf",
+        ext: "raf",
+        magic: b"RAF",
+        adjust: 0,
+    },
+    Marker {
+        format: "mrw",
+        ext: "mrw",
+        magic: b"MRW",
+        adjust: 0,
+    },
+    // ===== Additional image / disc =====
+    Marker {
+        format: "dds",
+        ext: "dds",
+        magic: b"DDS ",
+        adjust: 0,
+    },
     // ===== Additional audio =====
     Marker {
         format: "wv",
@@ -1572,6 +1602,10 @@ fn marker_max(format: &str) -> u64 {
         "rw2" => MAX_RW2,
         "x3f" => MAX_X3F,
         "crw" => MAX_CRW,
+        "cr3" => MAX_CR3,
+        "raf" => MAX_RAF,
+        "mrw" => MAX_MRW,
+        "dds" => MAX_DDS,
         // ===== Additional audio =====
         "wv" => MAX_WV,
         "tta" => MAX_TTA,
@@ -1800,6 +1834,10 @@ fn validate(
         "rw2" => validate_rw2(src, start, limit),
         "x3f" => validate_x3f(src, start, limit),
         "crw" => validate_crw(src, start, limit),
+        "cr3" => validate_mp4(src, start, limit),
+        "raf" => validate_raf(src, start, limit),
+        "mrw" => validate_mrw(src, start, limit),
+        "dds" => validate_dds(src, start, limit),
         // ===== Additional audio =====
         "wv" => validate_wv(src, start, limit),
         "tta" => validate_tta(src, start, limit),
@@ -4543,6 +4581,41 @@ fn validate_crw(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
     Some(Validated::new(512, 90).note("CRW: Canon CIFF RAW header validated"))
 }
 
+fn validate_raf(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    // Fujifilm RAF: "RAF" magic followed by TIFF header.
+    let h = read_bounded(src, start, 7, limit)?;
+    if &h[0..3] != b"RAF" {
+        return None;
+    }
+    // RAF files typically start with "RAF" + version + TIFF header.
+    let tiff = read_bounded(src, start + 3, 4, limit)?;
+    if tiff != b"II*\0" && tiff != b"MM\x00*" {
+        return None;
+    }
+    Some(Validated::new(512, 90).note("RAF: Fujifilm RAW header + TIFF magic validated"))
+}
+
+fn validate_mrw(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    // Minolta MRW: "MRW" magic.
+    let h = read_bounded(src, start, 3, limit)?;
+    if h != b"MRW" {
+        return None;
+    }
+    Some(Validated::new(512, 88).note("MRW: Minolta RAW header validated"))
+}
+
+fn validate_dds(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    // DirectDraw Surface: "DDS " magic + DDS header.
+    let h = read_bounded(src, start, 4, limit)?;
+    if h != b"DDS " {
+        return None;
+    }
+    let header = read_bounded(src, start, 128, limit)?;
+    let _dw_size = u32_le(&header, 4)?;
+    let _dw_flags = u32_le(&header, 8)?;
+    Some(Validated::new(128, 90).note("DDS: DirectDraw Surface header validated"))
+}
+
 // ===== Additional audio validators =====
 
 fn validate_wv(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
@@ -4921,7 +4994,7 @@ mod tests {
         formats.dedup();
         assert_eq!(
             formats.len(),
-            149,
+            153,
             "registered carve formats changed; update docs/src/formats.md, docs/src/support-matrix.md, README.md, and llms*.txt: {formats:?}"
         );
     }

@@ -19,6 +19,7 @@ clap_complete.workspace = true
 relift-core = { path = "../relift-core" }
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 sha2.workspace = true

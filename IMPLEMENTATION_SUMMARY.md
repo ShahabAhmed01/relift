@@ -212,7 +212,7 @@ New tests added:
 | Open Source | ✅ GPL-3.0+ | ✅ GPLv2+ | ❌ | ❌ |
 | Read-only enforced | ✅ Code-level | Docs only | ❌ | ❌ |
 | Destination separation | ✅ Enforced | ❌ | ❌ | ❌ |
-| Validated carving | ✅ 149 formats | Magic only | Custom sigs | Custom sigs |
+| Validated carving | ✅ 153 formats | Magic only | Custom sigs | Custom sigs |
 | SHA-256 verification | ✅ | ❌ | ❌ | Partial |
 | Sessions/resume | ✅ | ❌ | ❌ | Partial |
 | Partition recovery | ✅ NEW | ✅ | ✅ | ✅ |
@@ -274,3 +274,5 @@ New tests added:
 Relift now has **core S-tier capabilities** that exceed TestDisk/PhotoRec in safety, validation, and usability, while matching DMDE in virtual disk support and approaching R-Studio/UFS Explorer in feature breadth. The unique combination of **code-enforced safety**, **validated carving**, **SHA-256 verification**, and **resumable sessions** makes it the most trustworthy free recovery tool available.
 
 The foundation is solid for adding the remaining differentiating features (search index integration, hex editor, RAID, encryption detection) to become the undisputed #1 free/open-source recovery tool.
+
+
