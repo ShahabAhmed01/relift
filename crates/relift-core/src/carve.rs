@@ -2384,21 +2384,54 @@ fn validate_ole(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
 /// Minimum consecutive valid MPEG-TS packets required to emit a candidate.
 /// A single `0x47` byte (or a short run) appears frequently in unrelated disk
 /// structures and must not be treated as a video stream.
-const MPEGTS_MIN_PACKETS: u32 = 4;
+const MPEGTS_MIN_PACKETS: u32 = 8;
+
+/// Minimum distinct PIDs observed to consider this a plausible transport stream.
+const MPEGTS_MIN_DISTINCT_PIDS: usize = 2;
+
+/// Maximum allowed sync byte gaps (missing 0x47) before breaking the run.
+/// Real TS streams are continuous; a single gap is tolerable (e.g., corruption).
+const MPEGTS_MAX_GAPS: u32 = 2;
 
 fn validate_mpegts(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
     const PACKET: u64 = 188;
     let mut pos = start;
     let mut packets = 0u32;
     let mut first_pid: Option<u16> = None;
+    let mut pids_seen: smallvec::SmallVec<[u16; 8]> = smallvec::SmallVec::new();
+    let mut continuity_errors = 0u32;
+    let mut last_cc: [Option<u8>; 8192] = [None; 8192]; // CC counter per PID
+    let mut gaps = 0u32;
     while pos + PACKET <= limit {
         if pos - start > MAX_MPEGTS {
             return None;
         }
         let sync = read_bounded(src, pos, 1, limit)?;
         if sync[0] != 0x47 {
-            break;
+            gaps += 1;
+            if gaps > MPEGTS_MAX_GAPS {
+                break;
+            }
+            // Try to re-sync by scanning forward for the next 0x47 at a 188-byte boundary
+            let mut found = false;
+            for offset in PACKET..PACKET * 4 {
+                if pos + offset + 1 > limit {
+                    break;
+                }
+                if let Some(s) = read_bounded(src, pos + offset, 1, limit) {
+                    if s[0] == 0x47 {
+                        pos += offset;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                break;
+            }
+            continue;
         }
+        gaps = 0; // Reset gap counter on valid sync
         if pos + 4 > limit {
             break;
         }
@@ -2412,11 +2445,21 @@ fn validate_mpegts(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<V
             // Structurally invalid packet: stop the run.
             break;
         }
-        // Record the first PID; a real stream typically uses consistent or
-        // deliberately chosen PIDs. We do not require all packets to share one
-        // PID (multi-program streams are normal), but we record it for notes.
+        // Continuity counter (lower 4 bits of byte 3)
+        let cc = hdr[2] & 0x0F;
+        if let Some(last) = last_cc[pid as usize] {
+            let expected = (last + 1) & 0x0F;
+            if cc != expected {
+                continuity_errors += 1;
+            }
+        }
+        last_cc[pid as usize] = Some(cc);
+        // Record the first PID and track distinct PIDs
         if first_pid.is_none() {
             first_pid = Some(pid);
+        }
+        if !pids_seen.contains(&pid) {
+            pids_seen.push(pid);
         }
         pos = pos.checked_add(PACKET)?;
         packets += 1;
@@ -2427,15 +2470,26 @@ fn validate_mpegts(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<V
     if packets < MPEGTS_MIN_PACKETS {
         return None;
     }
+    // Require multiple distinct PIDs to avoid false positives from repeated patterns
+    if pids_seen.len() < MPEGTS_MIN_DISTINCT_PIDS {
+        return None;
+    }
     // A run that ends mid-stream because the next packet lacks sync is still a
     // plausible fragment; bound the length to the valid run.
     let length = pos - start;
     // Score rises with run length but caps well below 100: sync bytes alone
     // cannot prove the bytes are a complete, original video file.
-    let score = 60u8.saturating_add((packets / 10).min(30) as u8);
-    let mut v = Validated::new(length, score).note(format!(
-        "MPEG-TS: {} consecutive valid 188-byte packets",
-        packets
+    // Penalize continuity errors heavily.
+    let base_score = 60u8.saturating_add((packets / 10).min(30) as u8);
+    let score = if continuity_errors > packets / 2 {
+        base_score.saturating_sub(20)
+    } else {
+        base_score
+    };
+    let mut v =
+        Validated::new(length, score).note(format!(
+        "MPEG-TS: {} consecutive valid 188-byte packets, {} distinct PIDs, {} continuity errors",
+        packets, pids_seen.len(), continuity_errors
     ));
     if let Some(pid) = first_pid {
         v = v.note(format!("first packet PID {pid}"));
@@ -2668,13 +2722,18 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("video.ts");
         let mut data = Vec::new();
-        // Six valid 188-byte packets with 0x47 sync at the start of each.
-        // AFC = 0b11 (adaptation field + payload), no TEI, PID 0x100.
-        for _ in 0..6 {
+        // Eight valid 188-byte packets with 0x47 sync at the start of each.
+        // Two distinct PIDs (0x100 and 0x101) to satisfy the distinct PID requirement.
+        // AFC = 0b11 (adaptation field + payload), no TEI.
+        // Continuity counter increments from 0 to 7.
+        for i in 0..8u8 {
             data.push(0x47);
-            data.push(0x10); // PID high byte + TEI=0
-            data.push(0x00); // PID low byte
-            data.push(0x30); // AFC = 0b11, no discontinuity, etc.
+            // Alternate between PID 0x100 and 0x101
+            let pid = if i % 2 == 0 { 0x1000 } else { 0x1010 };
+            data.push((pid >> 8) as u8); // PID high byte + TEI=0
+            data.push((pid & 0xFF) as u8); // PID low byte
+                                           // AFC = 0b11, CC = i (lower 4 bits)
+            data.push(0x30 | (i & 0x0F));
             data.extend(std::iter::repeat_n(0u8, 184));
         }
         std::fs::write(&path, &data).unwrap();

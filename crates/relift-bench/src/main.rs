@@ -3,9 +3,9 @@
 //! Run with: `cargo bench -p relift-bench`
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use std::hint::black_box;
 use relift_core::{carve::CarveOptions, fs::FsScanOptions, source::FileSource};
 use relift_testkit::{exfat_image, ext4_image, fat32_image, ntfs_image};
+use std::hint::black_box;
 use tempfile::tempdir;
 
 fn bench_signature_sweep(c: &mut Criterion) {

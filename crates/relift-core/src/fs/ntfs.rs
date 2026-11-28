@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::candidate::{
     format_from_name, Candidate, Confidence, ConfidenceLabel, DataLocation, EntryState,
-    RecoveryMethod, Segment,
+    EvidenceTag, RecoveryMethod, Segment,
 };
 use crate::error::{Error, Result};
 use crate::fs::{
@@ -989,6 +989,7 @@ fn assess_cluster_reuse(
     reasons: &mut Vec<String>,
     label: &mut ConfidenceLabel,
     score: &mut u8,
+    evidence: &mut Vec<EvidenceTag>,
 ) {
     let Some(bitmap) = bitmap else {
         reasons.push(
@@ -996,6 +997,7 @@ fn assess_cluster_reuse(
         );
         return;
     };
+    evidence.push(EvidenceTag::FilesystemMetadata);
     const LIMIT: u64 = 4096;
     let mut reused = 0u64;
     let mut inspected = 0u64;
@@ -1026,12 +1028,14 @@ fn assess_cluster_reuse(
         reasons.push(format!(
             "allocation bitmap marks {reused} of {inspected} inspected data clusters as currently allocated; the clusters were likely reallocated to another object, so recovered bytes may not be the original content",
         ));
+        evidence.push(EvidenceTag::AllocationBitmapReused);
         *label = ConfidenceLabel::Partial;
         *score = (*score).min(45);
     } else if inspected > 0 {
         reasons.push(
             "allocation bitmap shows all inspected data clusters are free; original content is likely intact but unprotected".into(),
         );
+        evidence.push(EvidenceTag::AllocationBitmapFree);
     }
 }
 
@@ -1210,9 +1214,7 @@ pub fn scan(
             ConfidenceLabel::Likely
         };
         let mut score: u8 = if parsed.in_use { 96 } else { 86 };
-        let mut complete;
-        let mut data;
-        let mut size = primary.real_size;
+        let size = primary.real_size;
 
         if !parsed.fixup_ok {
             label = ConfidenceLabel::Partial;
@@ -1229,138 +1231,176 @@ pub fn scan(
             reasons.push(warning.clone());
         }
 
-        match &parsed.data {
-            Some(d) => {
-                size = if d.real_size != 0 { d.real_size } else { size };
-                let (location, data_complete, note) = data_location(d, &boot, volume);
-                data = location;
-                complete = data_complete;
-                if let Some(note) = note {
-                    reasons.push(note);
-                    if !data.is_none() {
-                        label = ConfidenceLabel::Partial;
-                        score = score.min(62);
-                    }
-                }
-                if d.resident {
-                    reasons.push("data is resident inside the MFT record".into());
-                    score = score.saturating_add(3);
-                } else if !parsed.in_use {
-                    // Deleted non-resident data: check whether its clusters have
-                    // been reallocated by another object. This is the decisive
-                    // signal for whether the recovered bytes are original content.
-                    reasons.push("data is described by non-resident runs".into());
-                    assess_cluster_reuse(&bitmap, d, &mut reasons, &mut label, &mut score);
-                } else {
-                    reasons.push("data is described by non-resident runs".into());
-                }
-                if d.encrypted || d.compressed {
-                    label = ConfidenceLabel::Unverified;
-                    score = 25;
-                    complete = false;
-                } else if d.initialized_size < d.real_size {
-                    reasons.push(format!(
-                        "initialized size {} is shorter than the file size {}; the tail was never written",
-                        d.initialized_size, d.real_size
-                    ));
-                }
-                if d.named {
-                    reasons.push(
-                        "only a named alternate data stream was found; unnamed data is unavailable"
-                            .into(),
-                    );
-                    data = DataLocation::None;
-                    complete = false;
-                    label = ConfidenceLabel::Unverified;
-                    score = 30;
-                }
-            }
-            None => {
-                reasons.push("no $DATA attribute is present; content cannot be located".into());
-                label = ConfidenceLabel::Unverified;
-                score = 25;
-                data = DataLocation::None;
-                complete = primary.real_size == 0;
-            }
-        }
-
-        if primary.namespace == 2 {
-            reasons.push("only a DOS 8.3 alias was preserved".into());
-            score = score.min(55);
-            label = ConfidenceLabel::Partial;
-        } else if primary.namespace == 1 || primary.namespace == 3 {
-            reasons.push("$FILE_NAME is a Win32 name".into());
-        }
-        if case_insensitive_eq(&primary.name, "$MFT") {
-            reasons.push("system metadata file".into());
-        }
-        if let Some(parent) = summaries.get(&primary.parent) {
-            if !parent.is_dir {
-                reasons.push("parent reference does not point at a directory".into());
-                label = ConfidenceLabel::Partial;
-                score = score.min(60);
-            }
-            if parent.sequence != primary.parent_sequence {
-                reasons.push(format!(
-                    "parent reference sequence {} does not match the current parent sequence {}",
-                    primary.parent_sequence, parent.sequence
-                ));
-            }
-            if !parent.in_use {
-                reasons.push("the parent directory record is itself deleted".into());
-            }
-        } else if primary.parent != ROOT_RECORD {
-            reasons.push("parent record is unavailable; the path is incomplete".into());
-        }
-        if cycle {
-            reasons.push("the parent chain contains a cycle; recovered path is empty".into());
-            label = ConfidenceLabel::Partial;
-            score = score.min(55);
-        }
-
         let format = format_from_name(&primary.name);
-        let method = match &parsed.data {
-            Some(d) if d.resident => RecoveryMethod::NtfsMftResident,
-            Some(_) => RecoveryMethod::NtfsMftRuns,
-            None => RecoveryMethod::MetadataOnly,
-        };
+
+        // Create candidate early so we can add evidence tags during assessment
         let mut candidate = Candidate::new(
             primary.name.clone(),
             size,
             format,
-            data,
-            method,
+            DataLocation::None,
+            RecoveryMethod::MetadataOnly,
             Confidence::new(label, score, reasons),
             "ntfs",
         );
-        candidate.path = parent_path;
+        candidate.path = parent_path.clone();
         candidate.state = if parsed.in_use {
             EntryState::Live
         } else {
             EntryState::Deleted
         };
-        candidate.complete = complete;
         candidate.volume_offset = volume.offset;
         candidate.record_id = Some(format!("mft:{index}"));
-        let (created, modified, accessed) = parsed.best_times();
-        candidate.created = created;
-        candidate.modified = modified;
-        candidate.accessed = accessed;
-        candidate.validation.push("MFT FILE record parsed".into());
-        if parsed.fixup_ok {
+
+        match &parsed.data {
+            Some(d) => {
+                candidate.size = if d.real_size != 0 {
+                    d.real_size
+                } else {
+                    candidate.size
+                };
+                let (location, data_complete, note) = data_location(d, &boot, volume);
+                candidate.data = location;
+                candidate.complete = data_complete;
+                if let Some(note) = note {
+                    candidate.confidence.reasons.push(note);
+                    if !candidate.data.is_none() {
+                        candidate.confidence.label = ConfidenceLabel::Partial;
+                        candidate.confidence.score = candidate.confidence.score.min(62);
+                    }
+                }
+                if d.resident {
+                    candidate
+                        .confidence
+                        .reasons
+                        .push("data is resident inside the MFT record".into());
+                    candidate.confidence.score = candidate.confidence.score.saturating_add(3);
+                    candidate.confidence = candidate
+                        .confidence
+                        .with_evidence(EvidenceTag::ResidentData);
+                } else if !parsed.in_use {
+                    // Deleted non-resident data: check whether its clusters have
+                    // been reallocated by another object. This is the decisive
+                    // signal for whether the recovered bytes are original content.
+                    candidate
+                        .confidence
+                        .reasons
+                        .push("data is described by non-resident runs".into());
+                    let mut evidence_tags = Vec::new();
+                    assess_cluster_reuse(
+                        &bitmap,
+                        d,
+                        &mut candidate.confidence.reasons,
+                        &mut candidate.confidence.label,
+                        &mut candidate.confidence.score,
+                        &mut evidence_tags,
+                    );
+                    candidate.confidence.evidence.extend(evidence_tags);
+                } else {
+                    candidate
+                        .confidence
+                        .reasons
+                        .push("data is described by non-resident runs".into());
+                }
+                if d.encrypted || d.compressed {
+                    candidate.confidence.label = ConfidenceLabel::Unverified;
+                    candidate.confidence.score = 25;
+                    candidate.complete = false;
+                    if d.encrypted {
+                        candidate.confidence =
+                            candidate.confidence.with_evidence(EvidenceTag::Encrypted);
+                    }
+                    if d.compressed {
+                        candidate.confidence =
+                            candidate.confidence.with_evidence(EvidenceTag::Compressed);
+                    }
+                } else if d.initialized_size < d.real_size {
+                    candidate.confidence.reasons.push(format!(
+                        "initialized size {} is shorter than the file size {}; the tail was never written",
+                        d.initialized_size, d.real_size
+                    ));
+                }
+                if d.named {
+                    candidate.confidence.reasons.push(
+                        "only a named alternate data stream was found; unnamed data is unavailable"
+                            .into(),
+                    );
+                    candidate.data = DataLocation::None;
+                    candidate.complete = false;
+                    candidate.confidence.label = ConfidenceLabel::Unverified;
+                    candidate.confidence.score = 30;
+                }
+            }
+            None => {
+                candidate
+                    .confidence
+                    .reasons
+                    .push("no $DATA attribute is present; content cannot be located".into());
+                candidate.confidence.label = ConfidenceLabel::Unverified;
+                candidate.confidence.score = 25;
+                candidate.data = DataLocation::None;
+                candidate.complete = primary.real_size == 0;
+            }
+        }
+
+        if primary.namespace == 2 {
             candidate
-                .validation
-                .push("update-sequence fixup valid".into());
+                .confidence
+                .reasons
+                .push("only a DOS 8.3 alias was preserved".into());
+            candidate.confidence.score = candidate.confidence.score.min(55);
+            candidate.confidence.label = ConfidenceLabel::Partial;
+        } else if primary.namespace == 1 || primary.namespace == 3 {
+            candidate
+                .confidence
+                .reasons
+                .push("$FILE_NAME is a Win32 name".into());
+            candidate.confidence = candidate
+                .confidence
+                .with_evidence(EvidenceTag::OriginalName);
         }
-        candidate
-            .notes
-            .push(format!("MFT sequence {}", parsed.sequence));
-        if primary.real_size != size {
-            candidate.notes.push(format!(
-                "$FILE_NAME size {} differs from $DATA size {}",
-                primary.real_size, size
-            ));
+        if case_insensitive_eq(&primary.name, "$MFT") {
+            candidate
+                .confidence
+                .reasons
+                .push("system metadata file".into());
         }
+        if let Some(parent) = summaries.get(&primary.parent) {
+            if !parent.is_dir {
+                candidate
+                    .confidence
+                    .reasons
+                    .push("parent reference does not point at a directory".into());
+                candidate.confidence.label = ConfidenceLabel::Partial;
+                candidate.confidence.score = candidate.confidence.score.min(60);
+            }
+            if parent.sequence != primary.parent_sequence {
+                candidate.confidence.reasons.push(format!(
+                    "parent reference sequence {} does not match the current parent sequence {}",
+                    primary.parent_sequence, parent.sequence
+                ));
+            }
+            if !parent.in_use {
+                candidate
+                    .confidence
+                    .reasons
+                    .push("the parent directory record is itself deleted".into());
+            }
+        } else if primary.parent != ROOT_RECORD {
+            candidate
+                .confidence
+                .reasons
+                .push("parent record is unavailable; the path is incomplete".into());
+        }
+        if cycle {
+            candidate
+                .confidence
+                .reasons
+                .push("the parent chain contains a cycle; recovered path is empty".into());
+            candidate.confidence.label = ConfidenceLabel::Partial;
+            candidate.confidence.score = candidate.confidence.score.min(55);
+        }
+
         sink.emit(candidate)?;
         summary.emitted += 1;
     }
@@ -1442,10 +1482,19 @@ mod tests {
             sparse: false,
             named: false,
         };
-        assess_cluster_reuse(&Some(bitmap), &data, &mut reasons, &mut label, &mut score);
+        let mut evidence_tags = Vec::new();
+        assess_cluster_reuse(
+            &Some(bitmap),
+            &data,
+            &mut reasons,
+            &mut label,
+            &mut score,
+            &mut evidence_tags,
+        );
         assert_eq!(label, ConfidenceLabel::Partial);
         assert!(score <= 45);
         assert!(reasons.iter().any(|r| r.contains("allocated")));
+        assert!(evidence_tags.contains(&EvidenceTag::AllocationBitmapReused));
     }
 
     #[test]
@@ -1453,6 +1502,7 @@ mod tests {
         let mut label = ConfidenceLabel::Likely;
         let mut score = 86u8;
         let mut reasons = Vec::new();
+        let mut evidence_tags = Vec::new();
         // All-zero bitmap: clusters are free.
         let bitmap = vec![0u8; 16];
         let data = NtfsData {
@@ -1467,9 +1517,17 @@ mod tests {
             sparse: false,
             named: false,
         };
-        assess_cluster_reuse(&Some(bitmap), &data, &mut reasons, &mut label, &mut score);
+        assess_cluster_reuse(
+            &Some(bitmap),
+            &data,
+            &mut reasons,
+            &mut label,
+            &mut score,
+            &mut evidence_tags,
+        );
         assert_eq!(label, ConfidenceLabel::Likely);
         assert!(reasons.iter().any(|r| r.contains("free")));
+        assert!(evidence_tags.contains(&EvidenceTag::AllocationBitmapFree));
     }
 
     #[test]
@@ -1489,7 +1547,15 @@ mod tests {
             sparse: false,
             named: false,
         };
-        assess_cluster_reuse(&None, &data, &mut reasons, &mut label, &mut score);
+        let mut evidence_tags = Vec::<EvidenceTag>::new();
+        assess_cluster_reuse(
+            &None,
+            &data,
+            &mut reasons,
+            &mut label,
+            &mut score,
+            &mut evidence_tags,
+        );
         assert_eq!(label, ConfidenceLabel::Likely);
         assert!(reasons.iter().any(|r| r.contains("unknown")));
     }

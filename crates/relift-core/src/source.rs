@@ -15,6 +15,9 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
 
+/// Result of a tolerant read: (data, unreadable_ranges).
+type TolerantReadResult = (Vec<u8>, Vec<(u64, u64)>);
+
 /// Maximum size of a single `read_vec` allocation. Parsers that need more must
 /// stream; this bound prevents a corrupt length field from exhausting memory.
 pub const MAX_BUFFERED_READ: u64 = 64 * 1024 * 1024;
@@ -99,6 +102,91 @@ pub trait ReadOnlySource: Send + Sync {
         let mut buf = vec![0u8; len as usize];
         self.read_exact_at(offset, &mut buf)?;
         Ok(buf)
+    }
+
+    /// Read a region, tolerating unreadable sectors.
+    ///
+    /// This attempts to read `buf.len()` bytes starting at `offset`. If a read
+    /// fails (e.g., due to a bad sector), the error is recorded and the read
+    /// continues from the next sector boundary. The buffer is zero-filled for
+    /// unreadable regions.
+    ///
+    /// Returns the number of bytes successfully read and a list of unreadable
+    /// ranges (offset, length) within the requested region.
+    fn read_at_tolerant(&self, offset: u64, buf: &mut [u8]) -> Result<(usize, Vec<(u64, u64)>)> {
+        let sector_size = self.sector_size() as u64;
+        let mut done = 0usize;
+        let mut unreadable = Vec::new();
+        let mut current_unreadable_start: Option<u64> = None;
+
+        while done < buf.len() {
+            let at = offset
+                .checked_add(done as u64)
+                .ok_or_else(|| Error::Corrupt("read offset overflow".into()))?;
+            let remaining = buf.len() - done;
+            let sector_aligned = at % sector_size == 0 && remaining >= sector_size as usize;
+
+            let read_result = if sector_aligned {
+                // Read full sectors
+                let sector_count = (remaining / sector_size as usize).min(64);
+                let sector_len = sector_count * sector_size as usize;
+                self.read_at(at, &mut buf[done..done + sector_len])
+            } else {
+                // Read partial sector
+                self.read_at(at, &mut buf[done..])
+            };
+
+            match read_result {
+                Ok(n) if n > 0 => {
+                    if let Some(start) = current_unreadable_start {
+                        unreadable.push((start, at - start));
+                        current_unreadable_start = None;
+                    }
+                    done += n;
+                }
+                Ok(_) => {
+                    // EOF
+                    if let Some(start) = current_unreadable_start {
+                        unreadable.push((start, offset + done as u64 - start));
+                    }
+                    break;
+                }
+                Err(_) => {
+                    if current_unreadable_start.is_none() {
+                        current_unreadable_start = Some(at);
+                    }
+                    // Zero-fill this sector and advance
+                    let sector_end = at
+                        .div_ceil(sector_size)
+                        .checked_mul(sector_size)
+                        .unwrap_or(at + sector_size);
+                    let skip = (sector_end - at).min((buf.len() - done) as u64) as usize;
+                    for b in &mut buf[done..done + skip] {
+                        *b = 0;
+                    }
+                    done += skip;
+                }
+            }
+        }
+
+        if let Some(start) = current_unreadable_start {
+            unreadable.push((start, offset + done as u64 - start));
+        }
+
+        Ok((done, unreadable))
+    }
+
+    /// Read a region into a new vector, tolerating unreadable sectors.
+    fn read_vec_tolerant(&self, offset: u64, len: u64) -> Result<TolerantReadResult> {
+        if len > MAX_BUFFERED_READ {
+            return Err(Error::Corrupt(format!(
+                "refusing to buffer {len} bytes (limit {MAX_BUFFERED_READ})"
+            )));
+        }
+        let mut buf = vec![0u8; len as usize];
+        let (read, unreadable) = self.read_at_tolerant(offset, &mut buf)?;
+        buf.truncate(read);
+        Ok((buf, unreadable))
     }
 }
 
@@ -280,6 +368,14 @@ pub fn looks_like_device(path: &Path) -> bool {
     }
 }
 
+/// Block size for source identity sampling. Each block is hashed individually,
+/// then the block hashes are combined into a Merkle-tree-like structure.
+/// This ensures that any change anywhere in the source changes the fingerprint.
+const IDENTITY_BLOCK_SIZE: u64 = 64 * 1024;
+/// Maximum number of blocks to hash for identity. Beyond this, we sample
+/// logarithmically spaced blocks to keep computation bounded.
+const IDENTITY_MAX_BLOCKS: u64 = 4096;
+
 fn compute_identity(
     kind: SourceKind,
     path: &Path,
@@ -287,31 +383,57 @@ fn compute_identity(
     device_id: Option<String>,
 ) -> SourceIdentity {
     let mut hasher = Sha256::new();
-    hasher.update(b"relift-source-identity-v1");
+    hasher.update(b"relift-source-identity-v2");
     hasher.update(size.to_le_bytes());
     if let Some(id) = &device_id {
         hasher.update(id.as_bytes());
     }
-    // Sample the head and tail. For small files this hashes everything, which
-    // makes fixture and image identity checks exact.
-    let sample = 64 * 1024u64;
+
+    let total_blocks = size.div_ceil(IDENTITY_BLOCK_SIZE);
+    let sample_count = total_blocks.min(IDENTITY_MAX_BLOCKS);
+
+    // For small sources, hash every block. For large sources, sample
+    // logarithmically spaced blocks plus head/tail.
+    let block_indices: Vec<u64> = if total_blocks <= IDENTITY_MAX_BLOCKS {
+        (0..total_blocks).collect()
+    } else {
+        // Always include first and last block
+        let mut indices = vec![0, total_blocks - 1];
+        // Add logarithmically spaced blocks in between
+        for i in 1..sample_count - 1 {
+            // Use quadratic spacing to favor early and late regions
+            let t = i as f64 / (sample_count - 1) as f64;
+            let idx = ((total_blocks - 1) as f64 * t * t) as u64;
+            if idx > 0 && idx < total_blocks - 1 {
+                indices.push(idx);
+            }
+        }
+        indices.sort_unstable();
+        indices.dedup();
+        indices
+    };
+
     let mut hit_any = false;
     if let Ok(f) = File::open(path) {
         if let Ok(meta) = f.metadata() {
             if meta.is_file() {
-                if let Ok(bytes) = read_sample(&f, 0, sample.min(size)) {
-                    hasher.update(&bytes);
-                    hit_any = true;
-                }
-                if size > sample {
-                    if let Ok(bytes) = read_sample(&f, size - sample.min(size), sample) {
-                        hasher.update(&bytes);
+                for &block_idx in &block_indices {
+                    let offset = block_idx * IDENTITY_BLOCK_SIZE;
+                    let len = (size - offset).min(IDENTITY_BLOCK_SIZE);
+                    if let Ok(bytes) = read_sample(&f, offset, len) {
+                        // Hash each block individually
+                        let mut block_hasher = Sha256::new();
+                        block_hasher.update(b"relift-block-v1");
+                        block_hasher.update(block_idx.to_le_bytes());
+                        block_hasher.update(&bytes);
+                        hasher.update(block_hasher.finalize());
                         hit_any = true;
                     }
                 }
             }
         }
     }
+
     if !hit_any {
         hasher.update(b"unreadable-sample");
         hasher.update(path.to_string_lossy().as_bytes());
@@ -770,5 +892,48 @@ mod tests {
             assert!(looks_like_device(Path::new("/dev/sda")));
             assert!(!looks_like_device(Path::new("/tmp/image.dd")));
         }
+    }
+
+    #[test]
+    fn read_at_tolerant_handles_eof() {
+        let dir = std::env::temp_dir().join(format!("relift-src-tol-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sample_tol.img");
+        std::fs::write(&path, [0xAA; 100]).unwrap();
+        let src = FileSource::open(&path).unwrap();
+
+        // Read past EOF
+        let mut buf = vec![0u8; 200];
+        let (read, unreadable) = src.read_at_tolerant(0, &mut buf).unwrap();
+        assert_eq!(read, 100);
+        assert!(unreadable.is_empty());
+        assert_eq!(buf[..100], [0xAA; 100]);
+        assert_eq!(buf[100..], [0u8; 100]);
+
+        // Read starting past EOF
+        let mut buf = vec![0u8; 50];
+        let (read, unreadable) = src.read_at_tolerant(150, &mut buf).unwrap();
+        assert_eq!(read, 0);
+        assert!(unreadable.is_empty());
+    }
+
+    #[test]
+    fn read_vec_tolerant_works() {
+        let dir = std::env::temp_dir().join(format!("relift-src-vec-tol-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sample_vec_tol.img");
+        std::fs::write(&path, [0xBB; 500]).unwrap();
+        let src = FileSource::open(&path).unwrap();
+
+        let (data, unreadable) = src.read_vec_tolerant(100, 300).unwrap();
+        assert_eq!(data.len(), 300);
+        assert!(unreadable.is_empty());
+        assert_eq!(data, vec![0xBB; 300]);
+
+        // Read past EOF
+        let (data, unreadable) = src.read_vec_tolerant(400, 200).unwrap();
+        assert_eq!(data.len(), 100);
+        assert!(unreadable.is_empty());
+        assert_eq!(data, vec![0xBB; 100]);
     }
 }

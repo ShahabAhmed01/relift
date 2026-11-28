@@ -27,6 +27,95 @@ pub enum RecoveryMethod {
     Metadata,
 }
 
+/// Recovery likelihood assessment - how likely the recovered bytes represent
+/// the original file content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryLikelihood {
+    /// Strong evidence: original allocation intact, metadata consistent,
+    /// structural validation passed, no known overwrites.
+    Intact,
+    /// Good evidence: original allocation likely intact but with some
+    /// assumptions (e.g., contiguous allocation where chain was cleared).
+    Likely,
+    /// Partial evidence: known gaps, overwrites, or incomplete reconstruction.
+    Partial,
+    /// Conflicting evidence: clusters reused, multiple reconstructions possible.
+    Overwritten,
+    /// Unreadable: source read errors prevent recovery.
+    Unreadable,
+    /// Insufficient evidence to assess.
+    #[default]
+    Unknown,
+}
+
+impl RecoveryLikelihood {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Intact => "intact",
+            Self::Likely => "likely",
+            Self::Partial => "partial",
+            Self::Overwritten => "overwritten",
+            Self::Unreadable => "unreadable",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// Returns true if the likelihood suggests recovery is worth attempting.
+    pub fn is_recoverable(self) -> bool {
+        matches!(self, Self::Intact | Self::Likely | Self::Partial)
+    }
+
+    /// Sort order for filtering (best to worst).
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Intact => 5,
+            Self::Likely => 4,
+            Self::Partial => 3,
+            Self::Overwritten => 2,
+            Self::Unreadable => 1,
+            Self::Unknown => 0,
+        }
+    }
+}
+
+/// Assessment confidence - how strong and complete the evidence is behind
+/// the recovery likelihood judgement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AssessmentConfidence {
+    /// High: multiple independent evidence sources agree (e.g., allocation bitmap
+    /// + metadata + structural validation all consistent).
+    High,
+    /// Medium: primary evidence is strong but some secondary checks unavailable.
+    Medium,
+    /// Low: single evidence source or significant gaps in evidence chain.
+    Low,
+    /// Very low: evidence is minimal or contradictory.
+    #[default]
+    VeryLow,
+}
+
+impl AssessmentConfidence {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+            Self::VeryLow => "very_low",
+        }
+    }
+
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::High => 4,
+            Self::Medium => 3,
+            Self::Low => 2,
+            Self::VeryLow => 1,
+        }
+    }
+}
+
 impl RecoveryMethod {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -47,7 +136,7 @@ impl RecoveryMethod {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfidenceLabel {
     /// Structure validates end to end and the evidence is internally
@@ -59,6 +148,7 @@ pub enum ConfidenceLabel {
     /// Partially recoverable or partially overwritten.
     Partial,
     /// Detected only; content is not locatable or could not be validated.
+    #[default]
     Unverified,
 }
 
@@ -71,15 +161,90 @@ impl ConfidenceLabel {
             Self::Unverified => "unverified",
         }
     }
+
+    /// Convert legacy label to the new two-dimensional model.
+    pub fn to_likelihood(self) -> RecoveryLikelihood {
+        match self {
+            Self::Verified => RecoveryLikelihood::Intact,
+            Self::Likely => RecoveryLikelihood::Likely,
+            Self::Partial => RecoveryLikelihood::Partial,
+            Self::Unverified => RecoveryLikelihood::Unknown,
+        }
+    }
+
+    pub fn to_assessment(self) -> AssessmentConfidence {
+        match self {
+            Self::Verified => AssessmentConfidence::High,
+            Self::Likely => AssessmentConfidence::Medium,
+            Self::Partial => AssessmentConfidence::Low,
+            Self::Unverified => AssessmentConfidence::VeryLow,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Confidence {
+    /// Legacy single-label confidence (kept for backward compatibility).
+    #[serde(default)]
     pub label: ConfidenceLabel,
     /// 0..=100. This is a heuristic based on named evidence, not a calibrated
     /// probability and never a fabricated success percentage.
+    #[serde(default)]
     pub score: u8,
     pub reasons: Vec<String>,
+
+    /// New two-dimensional evidence model.
+    /// Recovery likelihood: how likely the recovered bytes represent the original.
+    #[serde(default)]
+    pub likelihood: RecoveryLikelihood,
+    /// Assessment confidence: how strong the evidence behind the likelihood is.
+    #[serde(default)]
+    pub assessment: AssessmentConfidence,
+    /// Specific evidence tags for machine-readable filtering.
+    #[serde(default)]
+    pub evidence: Vec<EvidenceTag>,
+}
+
+/// Machine-readable evidence tags for filtering and analysis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceTag {
+    /// Filesystem metadata (MFT, inode, directory entry) was used.
+    FilesystemMetadata,
+    /// Allocation bitmap or FAT chain confirms original clusters free.
+    AllocationBitmapFree,
+    /// Allocation bitmap or FAT chain shows clusters reused.
+    AllocationBitmapReused,
+    /// Structural validator passed (checksums, magic, end markers).
+    StructuralValidation,
+    /// Internal checksum (CRC, MD5, SHA) inside file format verified.
+    InternalChecksum,
+    /// File content is resident in metadata (NTFS resident, inline data).
+    ResidentData,
+    /// Original filename from directory entry preserved.
+    OriginalName,
+    /// Original directory path reconstructed.
+    OriginalPath,
+    /// Original timestamps preserved.
+    OriginalTimestamps,
+    /// File is fragmented (multiple extents/runs).
+    Fragmented,
+    /// File has sparse holes or unwritten extents.
+    Sparse,
+    /// Source read errors encountered in this file's range.
+    SourceReadErrors,
+    /// Multiple reconstruction alternatives exist.
+    MultipleReconstructions,
+    /// Cluster chain / extent tree followed completely.
+    ChainComplete,
+    /// Cluster chain / extent tree incomplete (assumptions made).
+    ChainIncomplete,
+    /// Journal / log evidence supports deletion time.
+    JournalEvidence,
+    /// Encryption detected (content not decrypted).
+    Encrypted,
+    /// Compression detected (content not decompressed).
+    Compressed,
 }
 
 impl Confidence {
@@ -88,6 +253,9 @@ impl Confidence {
             label,
             score: score.min(100),
             reasons,
+            likelihood: label.to_likelihood(),
+            assessment: label.to_assessment(),
+            evidence: Vec::new(),
         }
     }
 
@@ -100,7 +268,27 @@ impl Confidence {
         self
     }
 
+    pub fn with_likelihood(mut self, likelihood: RecoveryLikelihood) -> Self {
+        self.likelihood = likelihood;
+        self
+    }
+
+    pub fn with_assessment(mut self, assessment: AssessmentConfidence) -> Self {
+        self.assessment = assessment;
+        self
+    }
+
+    pub fn with_evidence(mut self, evidence: EvidenceTag) -> Self {
+        self.evidence.push(evidence);
+        self
+    }
+
     pub fn is_recoverable(&self) -> bool {
+        self.likelihood.is_recoverable()
+    }
+
+    /// Legacy compatibility.
+    pub fn legacy_recoverable(&self) -> bool {
         self.label != ConfidenceLabel::Unverified
     }
 }
