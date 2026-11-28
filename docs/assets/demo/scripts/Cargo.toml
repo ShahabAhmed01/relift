@@ -1,0 +1,14 @@
+[package]
+name = "relift-demo-image"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "genimg"
+path = "genimg.rs"
+
+[dependencies]
+sha2 = "0.11"

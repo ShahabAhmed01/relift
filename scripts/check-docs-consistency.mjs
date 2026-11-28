@@ -61,6 +61,18 @@ function checkTestCount(name, text, expected) {
   }
 }
 
+// Historical reports retain the values that were true for their dated runs.
+// Only check the current portion of those records against today's source tree.
+function currentClaims(name, text) {
+  if (name === "FINAL_REPORT.md" && /Historical audit snapshot from\s+\d{4}-\d{2}-\d{2}/i.test(text)) {
+    return "";
+  }
+  if (name === "TEST_RESULTS.md") {
+    return text.split(/^The historical \d{4}-\d{2}-\d{2} run is retained below\b.*$/im, 1)[0];
+  }
+  return text;
+}
+
 // Collect test counts claimed across all docs to verify they agree with each other.
 const docTestCounts = {};
 
@@ -77,8 +89,9 @@ const files = {
 };
 
 for (const [name, text] of Object.entries(files)) {
-  checkFormatCount(name, text);
-  const counts = findCounts(text, "tests?");
+  const current = currentClaims(name, text);
+  checkFormatCount(name, current);
+  const counts = findCounts(current, "tests?");
   for (const c of counts) {
     docTestCounts[c] = (docTestCounts[c] || 0) + 1;
   }
@@ -108,7 +121,7 @@ const totalMatch = resultsText.match(/Total:\s*(\d+)\s+tests?/);
 if (totalMatch) {
   const expected = Number(totalMatch[1]);
   for (const [name, text] of Object.entries(files)) {
-    checkTestCount(name, text, expected);
+    checkTestCount(name, currentClaims(name, text), expected);
   }
 }
 

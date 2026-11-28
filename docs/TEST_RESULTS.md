@@ -1,5 +1,24 @@
 # Test Results — Relift
 
+## Current audit run (2026-11-28)
+
+Command: `cargo test --workspace --all-targets` (working tree with audit fixes)
+
+| Crate | Target | Result | Count |
+|-------|--------|--------|-------|
+| relift-core | lib unit tests | PASS | 85 |
+| relift-core | end_to_end integration | PASS | 11 |
+| relift-cli | lib unit tests | PASS | 8 |
+| relift-cli | contract integration | PASS | 4 |
+| relift-gui | lib unit tests | PASS | 2 |
+| relift-gui | main binary | PASS | 0 |
+| relift-testkit | lib unit tests | PASS | 2 |
+| relift-bench | main binary | PASS | 0 |
+
+**Total: 112 tests passed, 0 failed, 0 ignored.** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` also passed. The fixtures remain synthetic; this run does not validate recovery accuracy on real media.
+
+The historical 2026-11-27 run is retained below as a dated record.
+
 **Date:** 2026-11-27  
 **Host:** Windows 11 x86_64  
 **Toolchains:** Rust 1.100.0 (stable, MSVC, active), Rust 1.90.0 (MSVC)  

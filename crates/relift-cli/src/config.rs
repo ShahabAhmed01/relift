@@ -17,56 +17,44 @@ pub const DEFAULT_MAX_CANDIDATES: usize = 1_000_000;
 
 /// All configurable options, loaded from `relift.toml` with CLI overrides.
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
-    #[serde(default)]
     pub scan: ScanConfig,
-    #[serde(default)]
     pub recover: RecoverConfig,
-    #[serde(default)]
     pub output: OutputConfig,
-    #[serde(default)]
     pub filter: FilterConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ScanConfig {
-    #[serde(default)]
     pub mode: Option<String>,
-    #[serde(default)]
     pub include_live: Option<bool>,
-    #[serde(default)]
     pub carve: Option<bool>,
-    #[serde(default)]
     pub max_candidates: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 pub struct RecoverConfig {
-    #[serde(default)]
     pub verify: Option<bool>,
-    #[serde(default)]
     pub min_confidence: Option<String>,
-    #[serde(default)]
     pub no_verify: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 pub struct OutputConfig {
-    #[serde(default)]
     pub dest: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 pub struct FilterConfig {
-    #[serde(default)]
     pub ext: Option<Vec<String>>,
-    #[serde(default)]
     pub format: Option<Vec<String>>,
-    #[serde(default)]
     pub name: Option<Vec<String>>,
-    #[serde(default)]
     pub path: Option<Vec<String>>,
-    #[serde(default)]
     pub min_confidence: Option<String>,
 }
 
@@ -106,9 +94,7 @@ fn user_config_dir() -> Option<PathBuf> {
 fn user_config_dir() -> Option<PathBuf> {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config"))
-        })
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
 }
 
 /// Load configuration from a file, returning defaults if no file is found.
@@ -119,10 +105,66 @@ pub fn load_config(explicit: Option<&Path>) -> anyhow::Result<Config> {
                 .map_err(|e| anyhow::anyhow!("could not read config {}: {e}", path.display()))?;
             let config: Config = toml::from_str(&contents)
                 .map_err(|e| anyhow::anyhow!("could not parse config {}: {e}", path.display()))?;
+            validate(&config)
+                .map_err(|e| anyhow::anyhow!("invalid config {}: {e}", path.display()))?;
             Ok(config)
         }
         None => Ok(Config::default()),
     }
+}
+
+fn validate(config: &Config) -> anyhow::Result<()> {
+    if config.recover.verify == Some(true) && config.recover.no_verify == Some(true) {
+        anyhow::bail!("recover.verify and recover.no_verify cannot both be true");
+    }
+    if config
+        .output
+        .dest
+        .as_deref()
+        .is_some_and(|destination| destination.trim().is_empty())
+    {
+        anyhow::bail!("output.dest must not be empty");
+    }
+    if let Some(mode) = config.scan.mode.as_deref() {
+        if !matches!(mode.trim().to_ascii_lowercase().as_str(), "quick" | "deep") {
+            anyhow::bail!("scan.mode must be `quick` or `deep`, got {mode:?}");
+        }
+    }
+    for (key, value) in [
+        (
+            "recover.min_confidence",
+            config.recover.min_confidence.as_deref(),
+        ),
+        (
+            "filter.min_confidence",
+            config.filter.min_confidence.as_deref(),
+        ),
+    ] {
+        if let Some(value) = value {
+            if !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "verified" | "likely" | "partial" | "unverified"
+            ) {
+                anyhow::bail!(
+                    "{key} must be verified, likely, partial or unverified, got {value:?}"
+                );
+            }
+        }
+    }
+    if config.scan.max_candidates == Some(0) {
+        anyhow::bail!("scan.max_candidates must be greater than zero");
+    }
+    for (field, values) in [
+        ("filter.ext", config.filter.ext.as_ref()),
+        ("filter.format", config.filter.format.as_ref()),
+        ("filter.name", config.filter.name.as_ref()),
+        ("filter.path", config.filter.path.as_ref()),
+    ] {
+        if values.is_some_and(|values| values.iter().any(|value| value.trim().is_empty())) {
+            anyhow::bail!("{field} entries must not be empty");
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -163,6 +205,19 @@ ext = ["jpg", "png"]
         assert_eq!(c.scan.max_candidates, Some(500_000));
         assert_eq!(c.recover.verify, Some(false));
         assert_eq!(c.recover.min_confidence.as_deref(), Some("likely"));
-        assert_eq!(c.filter.ext, Some(vec!["jpg".to_string(), "png".to_string()]));
+        assert_eq!(
+            c.filter.ext,
+            Some(vec!["jpg".to_string(), "png".to_string()])
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_keys_and_invalid_modes() {
+        assert!(toml::from_str::<Config>("[scan]\nmod = 'deep'\n").is_err());
+        let config: Config = toml::from_str("[scan]\nmode = 'carve-everything'\n").unwrap();
+        assert!(validate(&config)
+            .unwrap_err()
+            .to_string()
+            .contains("scan.mode"));
     }
 }

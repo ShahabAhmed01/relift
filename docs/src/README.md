@@ -13,7 +13,7 @@ Relift scans disk images and raw devices without writing to them, records what i
 - **Read-only by construction** – `ReadOnlySource` exposes no write method; the engine cannot modify the source device
 - **Byte-for-byte recovery** verified against synthetic fixtures with SHA-256
 - **Filesystem metadata recovery** – FAT12/16/32, exFAT, NTFS, ext2/3/4 (fixture-validated); HFS+, APFS, Btrfs and XFS parsers are implemented but experimental
-- **Signature carving** – 36 structurally validated formats, including JPEG, PNG, PDF, ZIP, MP4, MP3, SQLite, FLAC, RAR5, OLE, MPEG-TS, and ISO 9660 (full list in [Supported Formats](formats.md))
+- **Signature carving** – 153 registered identifiers, including marker-only entries; only validator-backed formats emit candidates, and validation maturity varies (full registry in [Supported Formats](formats.md))
 - **Session-based workflow** – scan → session → recover → report, with checkpoint resume
 - **Cross-platform** – Windows, macOS, and Linux
 - **No telemetry** – fully offline by default

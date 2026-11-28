@@ -11,6 +11,32 @@ relift [GLOBAL_OPTIONS] <COMMAND> [COMMAND_OPTIONS]
 | `--json` | Emit machine-readable JSON on stdout |
 | `--help` | Show help |
 | `--version` | Print version |
+| `--config <FILE>` | Use a TOML config file; otherwise search `./relift.toml` and the user config directory. Applies to `scan`, `list`, and `recover`. |
+
+Config values are defaults. Explicit command-line values take precedence. Unknown
+keys and invalid modes/confidence labels are rejected. Supported settings:
+
+```toml
+[scan]
+mode = "deep"                 # quick or deep
+include_live = false
+carve = false
+max_candidates = 1000000
+
+[recover]
+verify = true
+min_confidence = "likely"
+
+[output]
+dest = "/mnt/recovery"
+
+[filter]
+ext = ["jpg", "png"]
+format = ["pdf"]
+name = ["IMG_"]
+path = ["DCIM"]
+min_confidence = "likely"
+```
 
 ## Commands
 
@@ -35,13 +61,15 @@ relift scan <SOURCE> --session <DIR> [OPTIONS]
 | `<SOURCE>` | Disk image path or raw device (e.g., `image.dd`, `\\.\PhysicalDrive1`) |
 | `--session <DIR>` | New or empty directory for session output; an existing interrupted session with `--resume` (required) |
 | `--resume` | Continue an interrupted session. Uses the session's recorded options and requires an unchanged source |
-| `--mode <MODE>` | Scan preset: `quick` (metadata only) or `deep` (metadata + validating carving) (default: `quick`) |
+| `--mode <MODE>` | Scan preset: `quick` (metadata only) or `deep` (metadata + validating carving). Default: config value or `quick`. |
 | `--live` | Also list files that are still allocated |
+| `--no-live` | Disable live entries, including a config default |
 | `--carve` | Run signature carving in addition to metadata recovery (implied by `--mode deep`) |
+| `--no-carve` | Disable carving, including config and deep-mode defaults |
 | `--volume <INDEX>` | Scan only this volume index (repeatable) |
 | `--offset <BYTES>` | Manual volume offset in bytes (requires `--length`) |
 | `--length <BYTES>` | Manual volume length in bytes (requires `--offset`) |
-| `--max-candidates <N>` | Stop after this many candidates (default: 1,000,000) |
+| `--max-candidates <N>` | Stop after this many candidates (default: config value or 1,000,000) |
 | `--json` | Machine-readable JSON output |
 
 **Examples:**
@@ -126,11 +154,12 @@ relift recover <SESSION> --dest <DIR> [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `<SESSION>` | Session directory produced by `relift scan` |
-| `--dest <DIR>` | Destination directory (must be on a different physical device) |
+| `--dest <DIR>` | Destination directory (must be on a different physical device); can come from `[output].dest` |
 | `--source <PATH>` | Re-open this source instead of the path recorded in the session |
 | `--filter <EXPR>` | Filter candidates (repeatable): same expressions as `relift list` |
 | `--dry-run` | Plan only: validate source and destination, list what would be written. No files are written and the session is not modified. |
 | `--no-verify` | Do not re-read each output file after writing it (verification is on by default) |
+| `--verify` | Re-read each output file, overriding a config setting that disables verification |
 | `--min-confidence <LABEL>` | Skip candidates below this confidence (`verified`, `likely`, `partial`, `unverified`) |
 | `--id <N>` | Recover only these candidate IDs (repeatable) |
 | `--json` | Machine-readable JSON output |
@@ -222,6 +251,42 @@ relift completions bash > /etc/bash_completion.d/relift
 relift completions powershell > relift.ps1
 ```
 
+### `relift partitions` and `relift partitions-scan`
+
+`partitions` reads an existing MBR/GPT/APM table. `partitions-scan` checks
+sector boundaries for known filesystem signatures and probes likely volume
+starts; reported ranges are estimates for review, not a repaired partition
+table. `--session` writes a catalog-only session and does not scan files.
+
+```sh
+relift partitions image.dd --probe
+relift partitions-scan image.dd --max-bytes 500G --session ./partition-catalog
+```
+
+### `relift info`, `relift verify`, and `relift session`
+
+`info` prints source or session identity information. `verify` streams the
+recovered outputs and checks their SHA-256 values against the session log;
+paths outside the recorded destination are rejected. Partial recovery records
+are reported as incomplete. `session --full` includes the candidate listing.
+
+```sh
+relift info image.dd --verbose
+relift verify ./session --json
+relift session ./session --full
+```
+
+### `relift virtual-disk` and `relift forensic-image`
+
+These commands inspect container metadata only. They do not make a container
+scannable through `relift scan`; several formats and virtual-disk readers remain
+incomplete. Convert the input to a raw image before scanning.
+
+### `relift self-update` and `relift mcp`
+
+These are status stubs. `self-update` does not query or install releases, and
+`mcp` does not start a server.
+
 ## Exit codes
 
 | Code | Constant | Meaning |
@@ -233,16 +298,14 @@ relift completions powershell > relift.ps1
 | 4 | `EXIT_MISMATCH` | Source mismatch (session source != actual source) |
 | 5 | `EXIT_PARTIAL` | Partial (some files failed or were incomplete) |
 
-## Planned but not yet implemented
+## Not implemented
 
-The following are documented in `AGENTS.md` as planned work and are **not**
-part of the current CLI:
+The following options and services are not part of the current CLI:
 
-- `relift info`, `relift verify`, `relift session`, `relift self-update`
 - `--mode formatted`, `--mode lost-partition`
 - `--quiet`, `--dry-run` on `scan`
 - `--preserve-paths`, `--preserve-times`, `--on-conflict` on `recover`
 - `--map`, `--passes`, `--rate-limit` on `image`
 - Filter expressions: `mime:`, `size:`, `date:`, `conf:`, `hash:`
-- Configuration files (`--config`, `config.toml`)
 - JSON Schema files (`docs/schemas/`)
+- Resumable, bad-sector-aware image mapfiles and retry passes

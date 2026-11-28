@@ -1,6 +1,6 @@
 # Build status
 
-Last verified: 2026-11-15 on Windows 11 x86_64.
+Last full local verification: 2026-11-28 on Windows 11 x86_64. Frontend and installer checks below were last run on 2026-11-15.
 Toolchains: Rust 1.100.0 MSVC, Rust 1.90.0 MSVC, Node.js 26.13.0.
 
 ## Local verification
@@ -9,7 +9,7 @@ Toolchains: Rust 1.100.0 MSVC, Rust 1.90.0 MSVC, Node.js 26.13.0.
 |---|---|
 | Rust formatting | PASS: cargo fmt --all -- --check |
 | Rust lints | PASS: cargo clippy --workspace --all-targets -- -D warnings |
-| Workspace tests | PASS on stable and Rust 1.90.0: 94 tests |
+| Workspace tests | PASS on Windows local audit: 112 tests (`cargo test --workspace --all-targets`) |
 | Rust documentation | PASS: cargo doc --workspace --no-deps |
 | Frontend dependency install | PASS: npm ci |
 | Svelte and TypeScript checks | PASS: npm run check, 0 errors and 0 warnings |
@@ -18,7 +18,7 @@ Toolchains: Rust 1.100.0 MSVC, Rust 1.90.0 MSVC, Node.js 26.13.0.
 | Windows Tauri packages | PASS: MSI and NSIS installers built locally |
 | Full development dependency audit | One low-severity transitive deepmerge advisory remains; no upstream patched version is available |
 
-The current release-workflow source passed [cross-platform CI run 43701255160](https://github.com/ShahabAhmed01/relift/actions/runs/43701255160), including frontend, dependency/license, documentation, and Linux/macOS/Windows Rust jobs on stable and Rust 1.90. The [v0.1.0 release workflow](https://github.com/ShahabAhmed01/relift/actions/runs/43701736196) built all 12 binaries and generated SHA256SUMS; its entries were checked against GitHub's asset digests. The published [v0.1.0 preview](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) is unsigned and not notarized. The benchmark job was skipped because CI did not request benchmark execution.
+An earlier release-workflow revision passed [cross-platform CI run 43701255160](https://github.com/ShahabAhmed01/relift/actions/runs/43701255160), including frontend, dependency/license, documentation, and Linux/macOS/Windows Rust jobs on stable and Rust 1.90. The [v0.1.0 release workflow](https://github.com/ShahabAhmed01/relift/actions/runs/43701736196) built all 12 binaries and generated SHA256SUMS; its entries were checked against GitHub's asset digests. The published [v0.1.0 preview](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0) is unsigned and not notarized. The benchmark job was skipped because CI did not request benchmark execution. Current changes have not yet run in GitHub Actions; pushing this update will trigger CI.
 
 ## Workspace
 

@@ -1,13 +1,13 @@
-# Relift S-Tier Implementation Summary
+# Relift Implementation Inventory
 
 ## Overview
 
-This document summarizes the major features implemented to transform Relift into an S-tier, dominating file recovery tool that surpasses all competitors (TestDisk/PhotoRec, DMDE, R-Studio, UFS Explorer, Recuva, Windows File Recovery).
+This inventory replaces earlier unsupported claims of parity and dominance. Relift remains an early preview; use the [support matrix](docs/src/support-matrix.md), [verification record](docs/src/VERIFICATION.md), and [competitive analysis](docs/research/COMPETITIVE_ANALYSIS.md) for current evidence and scope.
 
-## Phase 1: Critical Gaps - COMPLETED ✅
+## Phase 1: Partition and image workflows - PARTIAL
 
 ### 1.1 Partition Recovery & Lost Partition Detection
-**Status: COMPLETE**
+**Status: LOST-PARTITION SIGNATURE SCAN IMPLEMENTED; REPAIR NOT IMPLEMENTED**
 
 New module: `crates/relift-core/src/partitions.rs`
 
@@ -17,25 +17,25 @@ Features implemented:
 - **APM parsing**: Apple Partition Map support
 - **Filesystem signature scanning**: Scans entire disk for NTFS, exFAT, FAT32/16/12, ext2/3/4, HFS+, APFS, Btrfs, XFS, ReFS, ISO 9660 signatures
 - **Partition size estimation**: Reads filesystem-specific size fields (NTFS $Boot, exFAT boot sector, FAT BPB, ext superblock)
-- **Partition table repair**: Virtual reconstruction from signature scan
+- **Partition layout**: The library can assemble a virtual inspection layout; it does not repair or write a partition table
 
 New CLI commands:
 - `relift partitions <source> [--probe]` - Show partition table with filesystem probing
 - `relift partitions-scan <source> [--max-bytes] [--session <dir>]` - Scan for lost partitions
 
 ### 1.2 Virtual Disk Support
-**Status: CORE FORMATS COMPLETE**
+**Status: PARTIAL INSPECTION ONLY; NOT INTEGRATED WITH SCANNING**
 
 New module: `crates/relift-core/src/virtual_disk.rs`
 
-Implemented formats:
+Formats with reader/inspection code (coverage is incomplete and not equivalent to scan support):
 - **VHD** (Hyper-V): Fixed and dynamic disks, Block Allocation Table (BAT) support
 - **VHDX** (Hyper-V v2): Region tables, BAT, metadata regions, logical/physical sector sizes
 - **VMDK** (VMware): Monolithic flat, monolithic sparse, split sparse, grain directories/tables
 - **VDI** (VirtualBox): Dynamic, fixed, differencing disks, block maps
 - **Raw disk images**: Direct passthrough
 
-Placeholder (not yet implemented):
+Not implemented:
 - QCOW/QCOW2 (QEMU) - structure defined, parsing incomplete
 - DMG (macOS) - placeholder
 - Parallels HDD/HDS - placeholder
@@ -45,9 +45,9 @@ New CLI commands:
 - `relift forensic-image <source> [--verbose]` - Inspect forensic images (placeholder)
 
 ### 1.3 Forensic Image Formats
-**Status: FRAMEWORK READY**
+**Status: NOT IMPLEMENTED**
 
-Framework implemented in `virtual_disk.rs` with `open_forensic_image()` function. Placeholders for:
+The extension dispatcher exists, but currently returns `NotImplemented` for:
 - E01/Ex01 (EnCase)
 - AFF/AFF4
 - Full implementation pending
@@ -67,8 +67,10 @@ Framework implemented in `virtual_disk.rs` with `open_forensic_image()` function
 
 ## Phase 3: Carving & Signature Excellence - EXISTING (Strong Foundation)
 
-### 3.1 Validating Carving (36 Formats)
-All formats have structural validators:
+### 3.1 Signature registry and validators
+The registry contains 153 identifiers, including marker-only entries. Only candidates accepted by implemented validators can be emitted. The tested validator set is listed in the [verification record](docs/src/VERIFICATION.md); registered identifiers are not a count of equally validated formats.
+
+Examples of covered file families include:
 - Images: JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF
 - Documents: PDF, DOCX, XLSX, PPTX
 - Archives: ZIP, 7z, RAR4, RAR5, gzip, bzip2, xz, zstd, TAR, ISO 9660
@@ -82,7 +84,7 @@ All formats have structural validators:
 - Handled by existing ZIP validator (shared PK\x03\x04 magic)
 - Dedicated ZIP64 validator planned
 
-## Phase 4: Advanced Features - FRAMEWORK READY
+## Phase 4: Advanced Features - PLANNED
 
 ### 4.1 Search Index Integration (Unique Differentiator)
 **Planned**: Windows Search Index (Windows.edb), macOS Spotlight, Linux Tracker
@@ -117,18 +119,18 @@ All formats have structural validators:
 ## Phase 7: GUI Excellence - EXISTING (Tauri + Svelte 5)
 
 Current GUI features:
-- Source selection (devices, images, virtual disks)
+- Source selection (devices and raw images)
 - Quick/Deep scan with real-time progress
 - Result filtering and preview
 - Destination selection with safety validation
 - Recovery with hash verification
 - Cancel scan/recovery
 
-Missing from CLI (to be added):
-- Imaging with progress
+The GUI does not expose several CLI features:
+- Imaging
 - Report export (JSON/HTML/CSV)
 - Checkpoint resume
-- Session management
+- Full session management
 
 ## Phase 8: Platform & Distribution - IN PROGRESS
 
@@ -138,13 +140,13 @@ Missing from CLI (to be added):
 - Linux AppImage/GPG signing - pending
 
 ### 8.2 Package Manager Submissions
-- Homebrew ✅ (manifest ready)
-- winget ✅ (manifest ready)
-- Scoop ✅ (manifest ready)
+- Homebrew (template only; not submitted)
+- winget (template only; not submitted)
+- Scoop (template only; not submitted)
 - Chocolatey - pending
-- AUR ✅ (manifest ready)
-- Flatpak ✅ (manifest ready)
-- Snap ✅ (manifest ready)
+- AUR (template only; not submitted)
+- Flatpak (template only; not submitted)
+- Snap (template only; not submitted)
 - Nixpkgs - pending
 - Fedora COPR / openSUSE OBS - pending
 
@@ -192,7 +194,7 @@ Missing from CLI (to be added):
 
 ## Testing Status
 
-All tests pass: **92 tests** (81 unit + 11 end-to-end)
+The original inventory snapshot recorded 92 tests. The current local test count is maintained in [test results](docs/TEST_RESULTS.md).
 
 ```
 test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
@@ -210,14 +212,14 @@ New tests added:
 |---------|--------|-------------------|------|----------------------|
 | Cost | Free, no tiers | Free | Freemium | Paid |
 | Open Source | ✅ GPL-3.0+ | ✅ GPLv2+ | ❌ | ❌ |
-| Read-only enforced | ✅ Code-level | Docs only | ❌ | ❌ |
-| Destination separation | ✅ Enforced | ❌ | ❌ | ❌ |
-| Validated carving | ✅ 153 formats | Magic only | Custom sigs | Custom sigs |
-| SHA-256 verification | ✅ | ❌ | ❌ | Partial |
-| Sessions/resume | ✅ | ❌ | ❌ | Partial |
-| Partition recovery | ✅ NEW | ✅ | ✅ | ✅ |
-| Virtual disks | ✅ VHD/VHDX/VMDK/VDI | ❌ | ✅ | ✅ |
-| Forensic images | Framework | ❌ | ❌ | ✅ |
+| Read-only source access | Implemented; see threat model | See linked comparative research | Not assessed here | Not assessed here |
+| Destination separation | Raw-device same-disk refusal; image files require user volume choice | See linked comparative research | Not assessed here | Not assessed here |
+| Carving | 153 registered IDs; validator-backed subset emits candidates | See linked comparative research | Not assessed here | Not assessed here |
+| SHA-256 verification | Available during recovery; may be disabled | See linked comparative research | Not assessed here | Not assessed here |
+| Sessions/resume | Scan resume implemented; recovery resume not implemented | See linked comparative research | Not assessed here | Not assessed here |
+| Partition recovery | Lost-signature scan; no partition table write | See linked comparative research | Not assessed here | Not assessed here |
+| Virtual disks | Partial inspection; scan integration absent | See linked comparative research | Not assessed here | Not assessed here |
+| Forensic images | E01/AFF/AFF4 not implemented | See linked comparative research | Not assessed here | Not assessed here |
 | Hex editor | Planned | ❌ | ✅ | ✅ |
 | S.M.A.R.T. monitoring | Planned | ❌ | ✅ | ✅ |
 | File preview | Limited | ❌ | Limited | ✅ |
@@ -228,11 +230,11 @@ New tests added:
 
 ## Unique Differentiators (Relift Only)
 
-1. **Read-only by construction** - Enforced at type system level, not documentation
-2. **Destination separation enforced** - Cannot accidentally write to source
-3. **Validated carving** - Every format has structural validator, zero false positives on random data
-4. **SHA-256 verification** - Every recovered file verified
-5. **Resumable sessions** - Checkpoint-based, survives interruption
+1. **Read-only source access** - Source access is exposed through a read-only interface
+2. **Destination safety** - Raw-device same-disk recovery is refused; image-file destinations need a user-selected separate volume
+3. **Validated carving** - Only validator-accepted candidates emit; validator coverage and maturity vary
+4. **SHA-256 verification** - Recovery can verify output hashes; verification can be disabled
+5. **Resumable scans** - Checkpoint-based scan resume is implemented; recovery resume is not
 6. **Search index integration** (planned) - Recover filenames from Windows Search/Spotlight/Tracker
 7. **Completely free, no tiers, no telemetry** - GPL-3.0-or-later
 8. **Cross-platform native** - Windows/Linux/macOS with same engine
@@ -271,7 +273,7 @@ New tests added:
 
 ## Conclusion
 
-Relift now has **core S-tier capabilities** that exceed TestDisk/PhotoRec in safety, validation, and usability, while matching DMDE in virtual disk support and approaching R-Studio/UFS Explorer in feature breadth. The unique combination of **code-enforced safety**, **validated carving**, **SHA-256 verification**, and **resumable sessions** makes it the most trustworthy free recovery tool available.
+Relift has useful safety and workflow foundations, but broad recovery accuracy and feature parity have not been established through real-media testing. The highest-value work is validating parsers on representative media, then adding damaged-drive imaging and broader filesystem and container support.
 
 The foundation is solid for adding the remaining differentiating features (search index integration, hex editor, RAID, encryption detection) to become the undisputed #1 free/open-source recovery tool.
 

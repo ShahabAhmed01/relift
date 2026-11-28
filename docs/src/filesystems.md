@@ -30,7 +30,7 @@ ReFS, F2FS, ZFS, ReiserFS, ISO 9660, and UDF may be identified by probing, but m
 
 ## Scan mode
 
-Quick mode scans supported filesystem metadata. Deep mode also runs the registered signature validators. Formatted-volume and lost-partition scan modes are not implemented. See docs/CLI.md for exact options.
+Quick mode scans supported filesystem metadata. Deep mode also runs the registered signature validators. The separate `partitions-scan` command searches for lost partition boot-sector signatures and stores its results in a catalog-only session; it does not reconstruct partition tables or recover files directly. See [CLI](CLI.md) for exact options.
 
 ## Evidence boundary
 

@@ -24,7 +24,7 @@ Only raw images are supported. Imaging is a single copy pass; there is no map-fi
 
 ## Verification
 
-The current Rust workspace has 94 tests. On 2026-11-15, tests passed on stable and Rust 1.90.0. The Svelte and TypeScript checks and production build passed. A local Windows Tauri build generated MSI and NSIS installer packages.
+The current Rust workspace has 112 tests; the full workspace suite passed on 2026-11-28 on Windows. Earlier checks on stable and Rust 1.90.0, the Svelte and TypeScript checks, the production build, and a local Windows Tauri installer build were recorded on 2026-11-15. Carving registers 153 format identifiers, but only structurally validated entries can emit candidates; see docs/src/formats.md for coverage details.
 
 All recovery accuracy evidence is synthetic. No physical drive or representative real-media corpus has been validated. Open release gates are listed in docs/GAP_REPORT.md.
 

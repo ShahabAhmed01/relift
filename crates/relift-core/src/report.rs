@@ -5,7 +5,7 @@
 //! fit in memory. Every value that came from a filesystem is escaped for the
 //! target format.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
@@ -13,7 +13,9 @@ use serde::Serialize;
 
 use crate::candidate::DataLocation;
 use crate::error::{Error, Result};
+use crate::safety::{ensure_destination_directory, DestinationDirectory};
 use crate::session::{load_header, now_iso, CandidateReader, SessionHeader};
+use crate::source::SourceKind;
 use crate::util::human_bytes;
 use crate::VERSION;
 
@@ -59,22 +61,30 @@ pub fn write_report(
     limit: usize,
 ) -> Result<ReportInfo> {
     let header = load_header(session_dir)?;
-    if let Some(parent) = out.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent).map_err(|e| Error::Io {
-                offset: 0,
-                source: e,
-            })?;
+    let parent = out
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let canonical_parent = if header.source.kind == SourceKind::RawDevice {
+        ensure_destination_directory(&header.source, parent)?
+    } else {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|source| Error::Io { offset: 0, source })?;
         }
-    }
-    let file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(out)
-        .map_err(|e| Error::Io {
-            offset: 0,
-            source: e,
-        })?;
+        std::fs::canonicalize(parent).map_err(|source| Error::Io { offset: 0, source })?
+    };
+    let name = out.file_name().ok_or_else(|| {
+        Error::UnsafeDestination(format!(
+            "report path {} does not name a file",
+            out.display()
+        ))
+    })?;
+    let output_root = DestinationDirectory::open(&canonical_parent)?;
+    let mut output = output_root.create_new_file(Path::new(name))?;
+    let file = output.file.take().ok_or_else(|| {
+        Error::Other("new report file did not contain an open file handle".into())
+    })?;
+    let output_path = canonical_parent.join(name);
     let mut writer = BufWriter::new(file);
     let generated = now_iso();
     let mut listed = 0u64;
@@ -118,8 +128,11 @@ pub fn write_report(
         offset: 0,
         source: e,
     })?;
+    drop(writer);
+    // Keep the output's parent directory handle alive until writing completes.
+    let _output_guard = output;
     Ok(ReportInfo {
-        path: out.to_string_lossy().to_string(),
+        path: output_path.to_string_lossy().to_string(),
         format: format.as_str().to_string(),
         candidates_listed: listed,
         candidates_total: header.summary.candidates,

@@ -24,6 +24,7 @@ use crate::carve::CarveSummary;
 use crate::error::{Error, Result};
 use crate::fs::{FsInfo, FsSummary};
 use crate::partitions::PartitionTable;
+use crate::safety::{ensure_destination_directory, validate_destination};
 use crate::source::SourceIdentity;
 use crate::util::unix_to_iso;
 use crate::{SCHEMA_VERSION, VERSION};
@@ -225,7 +226,14 @@ impl Session {
         source: SourceIdentity,
         options: SessionOptions,
     ) -> Result<Self> {
-        let dir = dir.as_ref().to_path_buf();
+        // Sessions are written during scanning, so their storage location is
+        // subject to the same physical-device separation rule as recovered
+        // files. In particular, never create a session on the raw source disk.
+        let dir = if source.kind == crate::source::SourceKind::RawDevice {
+            ensure_destination_directory(&source, dir.as_ref())?
+        } else {
+            dir.as_ref().to_path_buf()
+        };
         if dir.exists() {
             let meta = fs::metadata(&dir).map_err(|e| Error::Session(e.to_string()))?;
             if !meta.is_dir() {
@@ -293,7 +301,11 @@ impl Session {
     /// highest surviving ID. The caller is responsible for validating that the
     /// source and options still match; see `scan::run_scan`.
     pub fn resume(dir: impl AsRef<Path>, mut header: SessionHeader) -> Result<Self> {
-        let dir = dir.as_ref().to_path_buf();
+        let dir = if header.source.kind == crate::source::SourceKind::RawDevice {
+            validate_destination(&header.source, dir.as_ref())?
+        } else {
+            dir.as_ref().to_path_buf()
+        };
         let checkpoint = header.checkpoint.clone().ok_or_else(|| {
             Error::Session(
                 "session has no scan checkpoint; start a new scan instead of resuming".into(),

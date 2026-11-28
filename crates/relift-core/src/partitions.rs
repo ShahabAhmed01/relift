@@ -3,8 +3,10 @@
 //! This module handles MBR, GPT, and APM partition tables, plus
 //! filesystem signature scanning for lost/deleted partition recovery.
 
+use std::collections::HashSet;
+
 use crate::error::{Error, Result};
-use crate::fs::{FsInfo, FsKind, probe};
+use crate::fs::{probe, FsInfo, FsKind};
 use crate::source::ReadOnlySource;
 
 /// Maximum partition entries to scan for (prevents runaway on corrupt disks)
@@ -105,7 +107,9 @@ pub fn read_partition_table(src: &dyn ReadOnlySource) -> Result<PartitionTable> 
 
     // If still no volumes, treat whole source as one volume
     if table.volumes.is_empty() {
-        table.volumes.push(Volume::new_simple(0, 0, source_len, None));
+        table
+            .volumes
+            .push(Volume::new_simple(0, 0, source_len, None));
     }
 
     // Probe filesystem on each volume
@@ -152,10 +156,22 @@ fn read_mbr(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable>
             continue;
         }
 
-        let offset = start_lba * SECTOR_SIZE;
-        let length = num_sectors * SECTOR_SIZE;
+        let Some(offset) = start_lba.checked_mul(SECTOR_SIZE) else {
+            table.warnings.push(format!(
+                "MBR partition {}: start sector overflows byte offset",
+                i
+            ));
+            continue;
+        };
+        let Some(length) = num_sectors.checked_mul(SECTOR_SIZE) else {
+            table.warnings.push(format!(
+                "MBR partition {}: sector count overflows byte length",
+                i
+            ));
+            continue;
+        };
 
-        if offset >= source_len || offset + length > source_len {
+        if offset >= source_len || length > source_len - offset {
             table.warnings.push(format!(
                 "MBR partition {}: exceeds source bounds (offset={}, length={}, source={})",
                 i, offset, length, source_len
@@ -207,9 +223,13 @@ fn parse_extended_partition(
 ) -> Result<Vec<Volume>> {
     let mut logical = Vec::new();
     let mut current_ebr_offset = extended.offset;
+    let mut visited = HashSet::new();
 
-    loop {
-        if current_ebr_offset + 512 > source_len {
+    for _ in 0..MAX_PARTITIONS {
+        if !visited.insert(current_ebr_offset)
+            || current_ebr_offset > source_len
+            || source_len - current_ebr_offset < 512
+        {
             break;
         }
         let sector = src.read_vec(current_ebr_offset, 512)?;
@@ -221,24 +241,29 @@ fn parse_extended_partition(
         let entry1 = &sector[446..462];
         let part_type1 = entry1[4];
         let start_lba1 = u32::from_le_bytes([entry1[8], entry1[9], entry1[10], entry1[11]]) as u64;
-        let num_sectors1 = u32::from_le_bytes([entry1[12], entry1[13], entry1[14], entry1[15]]) as u64;
+        let num_sectors1 =
+            u32::from_le_bytes([entry1[12], entry1[13], entry1[14], entry1[15]]) as u64;
 
         if part_type1 != 0x00 && num_sectors1 > 0 {
-            let offset = current_ebr_offset + start_lba1 * SECTOR_SIZE;
-            let length = num_sectors1 * SECTOR_SIZE;
-            if offset < source_len && offset + length <= source_len {
-                logical.push(Volume {
-                    index: 0, // Will be re-indexed
-                    offset,
-                    length,
-                    scheme: PartitionScheme::Mbr,
-                    type_hint: mbr_type_name(part_type1).to_string(),
-                    label: None,
-                    filesystem: None,
-                    bootable: false,
-                    partition_type: Some(part_type1),
-                    partition_guid: None,
-                });
+            let offset = start_lba1
+                .checked_mul(SECTOR_SIZE)
+                .and_then(|relative| current_ebr_offset.checked_add(relative));
+            let length = num_sectors1.checked_mul(SECTOR_SIZE);
+            if let (Some(offset), Some(length)) = (offset, length) {
+                if offset < source_len && length <= source_len - offset {
+                    logical.push(Volume {
+                        index: 0, // Will be re-indexed
+                        offset,
+                        length,
+                        scheme: PartitionScheme::Mbr,
+                        type_hint: mbr_type_name(part_type1).to_string(),
+                        label: None,
+                        filesystem: None,
+                        bootable: false,
+                        partition_type: Some(part_type1),
+                        partition_guid: None,
+                    });
+                }
             }
         }
 
@@ -251,7 +276,13 @@ fn parse_extended_partition(
             break;
         }
 
-        current_ebr_offset = extended.offset + start_lba2 * SECTOR_SIZE;
+        let Some(next_offset) = start_lba2
+            .checked_mul(SECTOR_SIZE)
+            .and_then(|relative| extended.offset.checked_add(relative))
+        else {
+            break;
+        };
+        current_ebr_offset = next_offset;
         if logical.len() >= MAX_PARTITIONS {
             break;
         }
@@ -328,48 +359,69 @@ fn read_gpt(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable>
     }
 
     let header_size = u32::from_le_bytes([header[12], header[13], header[14], header[15]]) as u64;
-    if header_size < 92 {
+    if !(92..=512).contains(&header_size) {
         return Err(Error::Corrupt("Invalid GPT header size".into()));
     }
 
     let current_lba = u64::from_le_bytes([
-        header[24], header[25], header[26], header[27],
-        header[28], header[29], header[30], header[31],
+        header[24], header[25], header[26], header[27], header[28], header[29], header[30],
+        header[31],
     ]);
     if current_lba != 1 {
         return Err(Error::Corrupt("GPT header not at LBA 1".into()));
     }
 
     let _first_usable = u64::from_le_bytes([
-        header[40], header[41], header[42], header[43],
-        header[44], header[45], header[46], header[47],
+        header[40], header[41], header[42], header[43], header[44], header[45], header[46],
+        header[47],
     ]);
     let _last_usable = u64::from_le_bytes([
-        header[48], header[49], header[50], header[51],
-        header[52], header[53], header[54], header[55],
+        header[48], header[49], header[50], header[51], header[52], header[53], header[54],
+        header[55],
     ]);
 
     let partition_entry_lba = u64::from_le_bytes([
-        header[72], header[73], header[74], header[75],
-        header[76], header[77], header[78], header[79],
+        header[72], header[73], header[74], header[75], header[76], header[77], header[78],
+        header[79],
     ]);
     let num_entries = u32::from_le_bytes([header[80], header[81], header[82], header[83]]) as u64;
     let entry_size = u32::from_le_bytes([header[84], header[85], header[86], header[87]]) as u64;
 
-    if entry_size < 128 || num_entries > 128 * 1024 {
+    if !(128..=4096).contains(&entry_size)
+        || !entry_size.is_multiple_of(8)
+        || num_entries > 128 * 1024
+    {
         return Err(Error::Corrupt("Invalid GPT entry size/count".into()));
     }
 
     // Read partition entries
-    let entries_offset = partition_entry_lba * SECTOR_SIZE;
-    let entries_size = num_entries * entry_size;
-    let entries_data = src.read_vec(entries_offset, entries_size.min(128 * 1024))?;
+    let entries_offset = partition_entry_lba
+        .checked_mul(SECTOR_SIZE)
+        .ok_or_else(|| Error::Corrupt("GPT entry offset overflows".into()))?;
+    let entries_size = num_entries
+        .checked_mul(entry_size)
+        .ok_or_else(|| Error::Corrupt("GPT entry array size overflows".into()))?;
+    if entries_offset > source_len {
+        return Err(Error::Corrupt(
+            "GPT entry array is outside the source".into(),
+        ));
+    }
+    let bounded_entries_size = entries_size
+        .min(128 * 1024)
+        .min(source_len - entries_offset);
+    let entries_data = src.read_vec(entries_offset, bounded_entries_size)?;
 
     let mut table = PartitionTable {
         scheme: PartitionScheme::Gpt,
         volumes: Vec::new(),
         warnings: Vec::new(),
     };
+    if bounded_entries_size < entries_size {
+        table.warnings.push(format!(
+            "GPT partition entry array was truncated to {} bytes",
+            bounded_entries_size
+        ));
+    }
 
     for i in 0..num_entries as usize {
         let entry_off = i * entry_size as usize;
@@ -388,25 +440,38 @@ fn read_gpt(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable>
         let part_guid = &entry[16..32];
 
         let first_lba = u64::from_le_bytes([
-            entry[32], entry[33], entry[34], entry[35],
-            entry[36], entry[37], entry[38], entry[39],
+            entry[32], entry[33], entry[34], entry[35], entry[36], entry[37], entry[38], entry[39],
         ]);
         let last_lba = u64::from_le_bytes([
-            entry[40], entry[41], entry[42], entry[43],
-            entry[44], entry[45], entry[46], entry[47],
+            entry[40], entry[41], entry[42], entry[43], entry[44], entry[45], entry[46], entry[47],
         ]);
 
         if last_lba < first_lba {
             continue;
         }
 
-        let offset = first_lba * SECTOR_SIZE;
-        let length = (last_lba - first_lba + 1) * SECTOR_SIZE;
-
-        if offset >= source_len || offset + length > source_len {
+        let Some(offset) = first_lba.checked_mul(SECTOR_SIZE) else {
             table.warnings.push(format!(
-                "GPT partition {}: exceeds source bounds", i
+                "GPT partition {}: start LBA overflows byte offset",
+                i
             ));
+            continue;
+        };
+        let Some(length) = last_lba
+            .checked_sub(first_lba)
+            .and_then(|sectors| sectors.checked_add(1))
+            .and_then(|sectors| sectors.checked_mul(SECTOR_SIZE))
+        else {
+            table
+                .warnings
+                .push(format!("GPT partition {}: sector range overflows", i));
+            continue;
+        };
+
+        if offset >= source_len || length > source_len - offset {
+            table
+                .warnings
+                .push(format!("GPT partition {}: exceeds source bounds", i));
             continue;
         }
 
@@ -414,15 +479,16 @@ fn read_gpt(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable>
         let name_bytes = &entry[56..128];
         let name = String::from_utf16_lossy(
             &name_bytes
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .take_while(|&c| c != 0)
-                .collect::<Vec<_>>()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|chunk| u16::from_le_bytes(*chunk))
+                .take_while(|&character| character != 0)
+                .collect::<Vec<_>>(),
         );
 
         let attrs = u64::from_le_bytes([
-            entry[48], entry[49], entry[50], entry[51],
-            entry[52], entry[53], entry[54], entry[55],
+            entry[48], entry[49], entry[50], entry[51], entry[52], entry[53], entry[54], entry[55],
         ]);
         let bootable = attrs & 1 != 0; // Bit 0: platform required
 
@@ -447,7 +513,9 @@ fn read_gpt(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable>
     if backup_header_lba > 1 {
         let backup_header = src.read_vec(backup_header_lba * SECTOR_SIZE, 512)?;
         if backup_header.len() >= 8 && &backup_header[0..8] == b"EFI PART" {
-            table.warnings.push("Backup GPT header found at end of disk".into());
+            table
+                .warnings
+                .push("Backup GPT header found at end of disk".into());
         }
     }
 
@@ -550,8 +618,12 @@ fn read_apm(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable>
             continue;
         }
 
-        let part_name = String::from_utf8_lossy(&entry[48..80]).trim_end_matches('\0').to_string();
-        let part_type = String::from_utf8_lossy(&entry[80..112]).trim_end_matches('\0').to_string();
+        let part_name = String::from_utf8_lossy(&entry[48..80])
+            .trim_end_matches('\0')
+            .to_string();
+        let part_type = String::from_utf8_lossy(&entry[80..112])
+            .trim_end_matches('\0')
+            .to_string();
         let start_sector = u32::from_be_bytes([entry[12], entry[13], entry[14], entry[15]]) as u64;
         let num_sectors = u32::from_be_bytes([entry[16], entry[17], entry[18], entry[19]]) as u64;
 
@@ -572,7 +644,11 @@ fn read_apm(src: &dyn ReadOnlySource, source_len: u64) -> Result<PartitionTable>
             length,
             scheme: PartitionScheme::Apm,
             type_hint: part_type,
-            label: if part_name.is_empty() { None } else { Some(part_name) },
+            label: if part_name.is_empty() {
+                None
+            } else {
+                Some(part_name)
+            },
             filesystem: None,
             bootable: false,
             partition_type: None,
@@ -593,12 +669,13 @@ pub fn scan_lost_partitions(
     progress: &mut dyn FnMut(u64, u64),
 ) -> Result<Vec<Volume>> {
     let source_len = src.len();
-    let scan_limit = max_scan_bytes.unwrap_or(MAX_SIGNATURE_SCAN_SECTORS * SECTOR_SIZE).min(source_len);
+    let scan_limit = max_scan_bytes
+        .unwrap_or(MAX_SIGNATURE_SCAN_SECTORS.saturating_mul(SECTOR_SIZE))
+        .min(source_len);
 
     let mut found = Vec::new();
     let mut scanned = 0u64;
-    const CHUNK: u64 = 16 * 1024 * 1024; // 16 MB chunks
-    const STRIDE: u64 = 512; // Scan every sector
+    const CHUNK: usize = 16 * 1024 * 1024; // 16 MB chunks
 
     // Known filesystem signatures with their offsets within the volume
     struct FsSignature {
@@ -609,71 +686,148 @@ pub fn scan_lost_partitions(
     }
 
     const SIGNATURES: &[FsSignature] = &[
-        FsSignature { name: "NTFS", kind: FsKind::Ntfs, offset: 3, signature: b"NTFS    " },
-        FsSignature { name: "exFAT", kind: FsKind::ExFat, offset: 3, signature: b"EXFAT   " },
-        FsSignature { name: "FAT32", kind: FsKind::Fat32, offset: 82, signature: b"FAT32   " },
-        FsSignature { name: "FAT16", kind: FsKind::Fat16, offset: 54, signature: b"FAT16   " },
-        FsSignature { name: "FAT12", kind: FsKind::Fat12, offset: 54, signature: b"FAT12   " },
-        FsSignature { name: "ext2/3/4", kind: FsKind::Ext4, offset: 0x438, signature: b"\x53\xEF" }, // Magic at superblock offset 0x38
-        FsSignature { name: "HFS+", kind: FsKind::HfsPlus, offset: 1024, signature: b"H+" },
-        FsSignature { name: "APFS", kind: FsKind::Apfs, offset: 0, signature: b"NXSB" },
-        FsSignature { name: "Btrfs", kind: FsKind::Btrfs, offset: 0x10040, signature: b"_BHRfS_M" },
-        FsSignature { name: "XFS", kind: FsKind::Xfs, offset: 0, signature: b"XFSB" },
-        FsSignature { name: "ReFS", kind: FsKind::Refs, offset: 3, signature: b"ReFS" },
-        FsSignature { name: "ISO 9660", kind: FsKind::Iso9660, offset: 0x8001, signature: b"CD001" },
+        FsSignature {
+            name: "NTFS",
+            kind: FsKind::Ntfs,
+            offset: 3,
+            signature: b"NTFS    ",
+        },
+        FsSignature {
+            name: "exFAT",
+            kind: FsKind::ExFat,
+            offset: 3,
+            signature: b"EXFAT   ",
+        },
+        FsSignature {
+            name: "FAT32",
+            kind: FsKind::Fat32,
+            offset: 82,
+            signature: b"FAT32   ",
+        },
+        FsSignature {
+            name: "FAT16",
+            kind: FsKind::Fat16,
+            offset: 54,
+            signature: b"FAT16   ",
+        },
+        FsSignature {
+            name: "FAT12",
+            kind: FsKind::Fat12,
+            offset: 54,
+            signature: b"FAT12   ",
+        },
+        FsSignature {
+            name: "ext2/3/4",
+            kind: FsKind::Ext4,
+            offset: 0x438,
+            signature: b"\x53\xEF",
+        }, // Magic at superblock offset 0x38
+        FsSignature {
+            name: "HFS+",
+            kind: FsKind::HfsPlus,
+            offset: 1024,
+            signature: b"H+",
+        },
+        FsSignature {
+            name: "APFS",
+            kind: FsKind::Apfs,
+            offset: 0,
+            signature: b"NXSB",
+        },
+        FsSignature {
+            name: "Btrfs",
+            kind: FsKind::Btrfs,
+            offset: 0x10040,
+            signature: b"_BHRfS_M",
+        },
+        FsSignature {
+            name: "XFS",
+            kind: FsKind::Xfs,
+            offset: 0,
+            signature: b"XFSB",
+        },
+        FsSignature {
+            name: "ReFS",
+            kind: FsKind::Refs,
+            offset: 3,
+            signature: b"ReFS",
+        },
+        FsSignature {
+            name: "ISO 9660",
+            kind: FsKind::Iso9660,
+            offset: 0x8001,
+            signature: b"CD001",
+        },
     ];
 
-    let mut sector_buf = vec![0u8; CHUNK as usize];
+    let max_probe_span = SIGNATURES
+        .iter()
+        .map(|s| s.offset.saturating_add(s.signature.len() as u64))
+        .max()
+        .unwrap_or(1);
+    let overlap = max_probe_span.div_ceil(SECTOR_SIZE) * SECTOR_SIZE;
+    let step = CHUNK as u64 - overlap;
+    let mut sector_buf = vec![0u8; CHUNK];
 
     while scanned < scan_limit {
-        let remaining = scan_limit - scanned;
-        let read_len = remaining.min(CHUNK) as usize;
-        let read_len = read_len + SIGNATURES.iter().map(|s| s.signature.len()).max().unwrap_or(0);
-
-        let read_len_clamped = read_len.min(sector_buf.len());
-        let actual_read = src.read_at(scanned, &mut sector_buf[..read_len_clamped])?;
+        let candidate_span = step.min(scan_limit - scanned);
+        let wanted = candidate_span
+            .saturating_add(max_probe_span)
+            .min(source_len - scanned) as usize;
+        let mut actual_read = 0usize;
+        while actual_read < wanted {
+            let n = src.read_at(
+                scanned + actual_read as u64,
+                &mut sector_buf[actual_read..wanted],
+            )?;
+            if n == 0 {
+                break;
+            }
+            actual_read += n;
+        }
         if actual_read == 0 {
             break;
         }
 
-        // Scan each sector boundary in this chunk
+        // Scan source-aligned sector starts. The overlapping tail guarantees
+        // signatures with large in-volume offsets are visible in this chunk.
         let mut sector_offset = 0u64;
-        while sector_offset < actual_read as u64 {
+        while sector_offset < candidate_span {
             let abs_offset = scanned + sector_offset;
             if abs_offset >= scan_limit {
                 break;
             }
 
             for sig in SIGNATURES {
-                let sig_offset = abs_offset + sig.offset;
-                if sig_offset + sig.signature.len() as u64 > scanned + actual_read as u64 {
+                let relative = (sector_offset + sig.offset) as usize;
+                let end = relative + sig.signature.len();
+                if end > actual_read {
                     continue;
                 }
-                if sig_offset >= source_len {
-                    continue;
-                }
-
-                // Read signature bytes
-                let buf = src.read_vec(sig_offset, sig.signature.len() as u64).ok();
-                if let Some(buf) = buf {
-                    if buf == sig.signature {
-                        // Verify with full probe
-                        let vol_ref = crate::fs::VolumeRef::new(abs_offset, source_len.saturating_sub(abs_offset));
-                        if let Some(fs_info) = probe(src, &vol_ref) {
-                            if fs_info.kind == sig.kind {
-                                // Check if we already found this partition
-                                let is_duplicate = found.iter().any(|v: &Volume| {
-                                    v.offset == abs_offset && v.length > 0
-                                });
-                                if !is_duplicate {
-                                    // Estimate partition size by probing
-                                    let estimated_len = estimate_partition_size(src, abs_offset, sig.kind, source_len);
+                if &sector_buf[relative..end] == sig.signature {
+                    let vol_ref = crate::fs::VolumeRef::new(
+                        abs_offset,
+                        source_len.saturating_sub(abs_offset),
+                    );
+                    if let Some(fs_info) = probe(src, &vol_ref) {
+                        if fs_info.kind == sig.kind {
+                            let is_duplicate = found
+                                .iter()
+                                .any(|v: &Volume| v.offset == abs_offset && v.length > 0);
+                            if !is_duplicate {
+                                let estimated_len =
+                                    estimate_partition_size(src, abs_offset, sig.kind, source_len)
+                                        .min(source_len.saturating_sub(abs_offset));
+                                if estimated_len > 0 {
                                     found.push(Volume {
                                         index: found.len() as u32,
                                         offset: abs_offset,
                                         length: estimated_len,
                                         scheme: PartitionScheme::None,
-                                        type_hint: format!("{} (found by signature scan)", sig.name),
+                                        type_hint: format!(
+                                            "{} (found by signature scan)",
+                                            sig.name
+                                        ),
                                         label: None,
                                         filesystem: Some(fs_info),
                                         bootable: false,
@@ -687,10 +841,10 @@ pub fn scan_lost_partitions(
                 }
             }
 
-            sector_offset += STRIDE;
+            sector_offset += SECTOR_SIZE;
         }
 
-        scanned += actual_read as u64;
+        scanned = scanned.saturating_add(step).min(scan_limit);
         progress(scanned, scan_limit);
     }
 
@@ -701,7 +855,7 @@ pub fn scan_lost_partitions(
     let mut merged: Vec<Volume> = Vec::new();
     for vol in found {
         if let Some(last) = merged.last_mut() {
-            if vol.offset < last.offset + last.length {
+            if vol.offset < last.offset.saturating_add(last.length) {
                 // Overlapping - keep the one with filesystem info
                 if vol.filesystem.is_some() && last.filesystem.is_none() {
                     *last = vol;
@@ -720,7 +874,12 @@ pub fn scan_lost_partitions(
     Ok(merged)
 }
 
-fn estimate_partition_size(src: &dyn ReadOnlySource, offset: u64, kind: FsKind, source_len: u64) -> u64 {
+fn estimate_partition_size(
+    src: &dyn ReadOnlySource,
+    offset: u64,
+    kind: FsKind,
+    source_len: u64,
+) -> u64 {
     // Try to read filesystem-specific size information
     let _vol_ref = crate::fs::VolumeRef::new(offset, source_len.saturating_sub(offset));
 
@@ -730,13 +889,17 @@ fn estimate_partition_size(src: &dyn ReadOnlySource, offset: u64, kind: FsKind, 
             if let Ok(boot) = src.read_vec(offset, 512) {
                 if boot.len() >= 48 {
                     let total_sectors = u64::from_le_bytes([
-                        boot[40], boot[41], boot[42], boot[43],
-                        boot[44], boot[45], boot[46], boot[47],
+                        boot[40], boot[41], boot[42], boot[43], boot[44], boot[45], boot[46],
+                        boot[47],
                     ]);
                     let bytes_per_sector = u16::from_le_bytes([boot[11], boot[12]]) as u64;
                     let sectors_per_cluster = boot[13] as u64;
                     if bytes_per_sector > 0 && sectors_per_cluster > 0 {
-                        return total_sectors * bytes_per_sector;
+                        if let Some(size) = total_sectors.checked_mul(bytes_per_sector) {
+                            if size > 0 {
+                                return size.min(source_len.saturating_sub(offset));
+                            }
+                        }
                     }
                 }
             }
@@ -745,12 +908,15 @@ fn estimate_partition_size(src: &dyn ReadOnlySource, offset: u64, kind: FsKind, 
             if let Ok(boot) = src.read_vec(offset, 512) {
                 if boot.len() >= 88 {
                     let total_sectors = u64::from_le_bytes([
-                        boot[72], boot[73], boot[74], boot[75],
-                        boot[76], boot[77], boot[78], boot[79],
+                        boot[72], boot[73], boot[74], boot[75], boot[76], boot[77], boot[78],
+                        boot[79],
                     ]);
-                    let bytes_per_sector = 1u64 << boot[108];
-                    if bytes_per_sector > 0 {
-                        return total_sectors * bytes_per_sector;
+                    if let Some(bytes_per_sector) = 1u64.checked_shl(boot[108] as u32) {
+                        if let Some(size) = total_sectors.checked_mul(bytes_per_sector) {
+                            if size > 0 {
+                                return size.min(source_len.saturating_sub(offset));
+                            }
+                        }
                     }
                 }
             }
@@ -759,11 +925,18 @@ fn estimate_partition_size(src: &dyn ReadOnlySource, offset: u64, kind: FsKind, 
             if let Ok(boot) = src.read_vec(offset, 512) {
                 if boot.len() >= 36 {
                     let total_sectors16 = u16::from_le_bytes([boot[19], boot[20]]) as u64;
-                    let total_sectors32 = u32::from_le_bytes([boot[32], boot[33], boot[34], boot[35]]) as u64;
-                    let total_sectors = if total_sectors16 > 0 { total_sectors16 } else { total_sectors32 };
+                    let total_sectors32 =
+                        u32::from_le_bytes([boot[32], boot[33], boot[34], boot[35]]) as u64;
+                    let total_sectors = if total_sectors16 > 0 {
+                        total_sectors16
+                    } else {
+                        total_sectors32
+                    };
                     let bytes_per_sector = u16::from_le_bytes([boot[11], boot[12]]) as u64;
                     if bytes_per_sector > 0 && total_sectors > 0 {
-                        return total_sectors * bytes_per_sector;
+                        if let Some(size) = total_sectors.checked_mul(bytes_per_sector) {
+                            return size.min(source_len.saturating_sub(offset));
+                        }
                     }
                 }
             }
@@ -774,9 +947,12 @@ fn estimate_partition_size(src: &dyn ReadOnlySource, offset: u64, kind: FsKind, 
                 if sb.len() >= 20 {
                     let blocks_count = u32::from_le_bytes([sb[4], sb[5], sb[6], sb[7]]) as u64;
                     let log_block_size = sb[24] as u64;
-                    let block_size = 1024u64 << log_block_size;
-                    if blocks_count > 0 && block_size > 0 {
-                        return blocks_count * block_size;
+                    if let Some(block_size) = 1024u64.checked_shl(log_block_size as u32) {
+                        if blocks_count > 0 && block_size > 0 {
+                            if let Some(size) = blocks_count.checked_mul(block_size) {
+                                return size.min(source_len.saturating_sub(offset));
+                            }
+                        }
                     }
                 }
             }
@@ -818,13 +994,13 @@ mod tests {
     #[test]
     fn reads_mbr_with_primary_partitions() {
         let mut file = NamedTempFile::new().unwrap();
-        // Disk needs to be large enough for partitions: 
+        // Disk needs to be large enough for partitions:
         // Part 1: 2048 + 200000 = 202048 sectors
         // Part 2: 202048 + 100000 = 302048 sectors
         // Total: 302048 sectors * 512 = ~154 MB
         let total_sectors = 302048 + 1000; // extra space
         let mut disk = vec![0u8; total_sectors * 512];
-        
+
         // MBR signature
         disk[510] = 0x55;
         disk[511] = 0xAA;
@@ -875,32 +1051,42 @@ mod tests {
         disk[524..528].copy_from_slice(&92u32.to_le_bytes()); // header size
         disk[536..544].copy_from_slice(&1u64.to_le_bytes()); // current LBA
         disk[552..560].copy_from_slice(&34u64.to_le_bytes()); // first usable
-        disk[560..568].copy_from_slice(&((total_sectors as u64 - 34) as u64).to_le_bytes()); // last usable
+        disk[560..568].copy_from_slice(&(total_sectors as u64 - 34).to_le_bytes()); // last usable
         disk[584..592].copy_from_slice(&2u64.to_le_bytes()); // partition entry LBA
         disk[592..596].copy_from_slice(&4u32.to_le_bytes()); // num entries
         disk[596..600].copy_from_slice(&128u32.to_le_bytes()); // entry size
 
         // Entry 1: EFI System (LBA 34..+2048)
         let entry_off = 2 * 512; // LBA 2
-        disk[entry_off..entry_off+16].copy_from_slice(
-            b"\x28\x73\x2A\xC1\x1F\xF8\xD2\x11\xBA\x4B\x00\xA0\xC9\x3E\xC9\x3B"
-        );
-        disk[entry_off+32..entry_off+40].copy_from_slice(&34u64.to_le_bytes());
-        disk[entry_off+40..entry_off+48].copy_from_slice(&((34+2048-1) as u64).to_le_bytes());
+        disk[entry_off..entry_off + 16]
+            .copy_from_slice(b"\x28\x73\x2A\xC1\x1F\xF8\xD2\x11\xBA\x4B\x00\xA0\xC9\x3E\xC9\x3B");
+        disk[entry_off + 32..entry_off + 40].copy_from_slice(&34u64.to_le_bytes());
+        disk[entry_off + 40..entry_off + 48]
+            .copy_from_slice(&((34 + 2048 - 1) as u64).to_le_bytes());
         // Name: "EFI" (UTF-16LE, 36 chars = 72 bytes)
-        let name_utf16: Vec<u8> = "EFI".encode_utf16().chain(std::iter::repeat(0)).take(36).flat_map(|c| c.to_le_bytes()).collect();
-        disk[entry_off+56..entry_off+56+72].copy_from_slice(&name_utf16);
+        let name_utf16: Vec<u8> = "EFI"
+            .encode_utf16()
+            .chain(std::iter::repeat(0))
+            .take(36)
+            .flat_map(|c| c.to_le_bytes())
+            .collect();
+        disk[entry_off + 56..entry_off + 56 + 72].copy_from_slice(&name_utf16);
 
         // Entry 2: Microsoft Basic Data (LBA 2082..+100000)
         let entry_off2 = entry_off + 128;
-        disk[entry_off2..entry_off2+16].copy_from_slice(
-            b"\xA2\xA0\xD0\xEB\xE5\xB9\x33\x44\x87\xC0\x68\xB6\xB7\x26\x99\xC7"
-        );
-        disk[entry_off2+32..entry_off2+40].copy_from_slice(&2082u64.to_le_bytes());
-        disk[entry_off2+40..entry_off2+48].copy_from_slice(&((2082+100000-1) as u64).to_le_bytes());
+        disk[entry_off2..entry_off2 + 16]
+            .copy_from_slice(b"\xA2\xA0\xD0\xEB\xE5\xB9\x33\x44\x87\xC0\x68\xB6\xB7\x26\x99\xC7");
+        disk[entry_off2 + 32..entry_off2 + 40].copy_from_slice(&2082u64.to_le_bytes());
+        disk[entry_off2 + 40..entry_off2 + 48]
+            .copy_from_slice(&((2082 + 100000 - 1) as u64).to_le_bytes());
         // Name: "Windows" (UTF-16LE, 36 chars = 72 bytes)
-        let name2_utf16: Vec<u8> = "Windows".encode_utf16().chain(std::iter::repeat(0)).take(36).flat_map(|c| c.to_le_bytes()).collect();
-        disk[entry_off2+56..entry_off2+56+72].copy_from_slice(&name2_utf16);
+        let name2_utf16: Vec<u8> = "Windows"
+            .encode_utf16()
+            .chain(std::iter::repeat(0))
+            .take(36)
+            .flat_map(|c| c.to_le_bytes())
+            .collect();
+        disk[entry_off2 + 56..entry_off2 + 56 + 72].copy_from_slice(&name2_utf16);
 
         file.write_all(&disk).unwrap();
         file.flush().unwrap();
@@ -912,5 +1098,92 @@ mod tests {
         assert_eq!(table.volumes.len(), 2);
         assert_eq!(table.volumes[0].type_hint, "EFI System");
         assert_eq!(table.volumes[1].type_hint, "MS Basic Data");
+    }
+
+    #[test]
+    fn lost_partition_scan_checks_sector_signatures_from_the_chunk_buffer() {
+        let mut file = NamedTempFile::new().unwrap();
+        let mut disk = vec![0u8; 1024 * 1024];
+        let start = 4 * SECTOR_SIZE as usize;
+        disk[start + 3..start + 11].copy_from_slice(b"NTFS    ");
+        disk[start + 11..start + 13].copy_from_slice(&512u16.to_le_bytes());
+        disk[start + 13] = 8;
+        disk[start + 40..start + 48].copy_from_slice(&2000u64.to_le_bytes());
+        disk[start + 48..start + 56].copy_from_slice(&2u64.to_le_bytes());
+        disk[start + 56..start + 64].copy_from_slice(&3u64.to_le_bytes());
+        disk[start + 64] = (-10i8) as u8;
+        disk[start + 68] = (-12i8) as u8;
+        disk[start + 510..start + 512].copy_from_slice(&[0x55, 0xaa]);
+        file.write_all(&disk).unwrap();
+        file.flush().unwrap();
+
+        let src = FileSource::open(file.path()).unwrap();
+        let mut progress_updates = Vec::new();
+        let mut progress = |done, total| progress_updates.push((done, total));
+        let volumes = scan_lost_partitions(&src, None, &mut progress).unwrap();
+
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].offset, start as u64);
+        assert_eq!(volumes[0].filesystem.as_ref().unwrap().kind, FsKind::Ntfs);
+        assert_eq!(volumes[0].length, 2000 * 512);
+        assert!(!progress_updates.is_empty());
+    }
+
+    #[test]
+    fn gpt_partition_range_overflow_is_reported_and_skipped() {
+        let mut file = NamedTempFile::new().unwrap();
+        let mut disk = vec![0u8; 256 * 512];
+        disk[510] = 0x55;
+        disk[511] = 0xAA;
+        disk[450] = 0xEE;
+        disk[512..520].copy_from_slice(b"EFI PART");
+        disk[524..528].copy_from_slice(&92u32.to_le_bytes());
+        disk[536..544].copy_from_slice(&1u64.to_le_bytes());
+        disk[584..592].copy_from_slice(&2u64.to_le_bytes());
+        disk[592..596].copy_from_slice(&1u32.to_le_bytes());
+        disk[596..600].copy_from_slice(&128u32.to_le_bytes());
+        disk[1024] = 1; // Non-empty partition type GUID
+        disk[1056..1064].copy_from_slice(&1u64.to_le_bytes());
+        disk[1064..1072].copy_from_slice(&u64::MAX.to_le_bytes());
+
+        file.write_all(&disk).unwrap();
+        let src = FileSource::open(file.path()).unwrap();
+        let table = read_gpt(&src, disk.len() as u64).unwrap();
+
+        assert!(table.volumes.is_empty());
+        assert!(table
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("overflows")));
+    }
+
+    #[test]
+    fn extended_partition_ebr_cycles_are_stopped() {
+        let mut file = NamedTempFile::new().unwrap();
+        let mut disk = vec![0u8; 16 * 512];
+        for lba in [1usize, 2] {
+            let offset = lba * 512;
+            disk[offset + 510] = 0x55;
+            disk[offset + 511] = 0xAA;
+            disk[offset + 462 + 4] = 0x0F;
+            disk[offset + 462 + 8..offset + 462 + 12].copy_from_slice(&1u32.to_le_bytes());
+        }
+        file.write_all(&disk).unwrap();
+        let src = FileSource::open(file.path()).unwrap();
+        let extended = Volume {
+            index: 0,
+            offset: 512,
+            length: disk.len() as u64 - 512,
+            scheme: PartitionScheme::Mbr,
+            type_hint: "Extended".into(),
+            label: None,
+            filesystem: None,
+            bootable: false,
+            partition_type: Some(0x0F),
+            partition_guid: None,
+        };
+
+        let logical = parse_extended_partition(&src, &extended, disk.len() as u64).unwrap();
+        assert!(logical.is_empty());
     }
 }

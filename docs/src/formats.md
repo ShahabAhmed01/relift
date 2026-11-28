@@ -7,8 +7,8 @@ complete, uncorrupted, or openable in every application.
 
 The implementation is in
 [`crates/relift-core/src/carve.rs`](https://github.com/ShahabAhmed01/relift/blob/main/crates/relift-core/src/carve.rs).
-The 153 formats below are registered for carving; a format without a working
-validator is not emitted.
+The 153 identifiers below are registered for carving; marker-only entries
+without a working validator are not emitted.
 
 ## Registered formats
 

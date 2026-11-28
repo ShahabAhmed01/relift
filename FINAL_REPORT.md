@@ -6,11 +6,15 @@
 **Toolchain verified:** Rust 1.100.0 MSVC (MSRV 1.90.0 also tested), Node.js 26.13.0, Windows 11 x86_64
 **License:** GPL-3.0-or-later
 
+> Historical audit snapshot from 2026-11-27. Its implementation and distribution
+> claims describe that checkout; use the current support matrix and verification
+> record for present status.
+
 ---
 
 ## A. Executive summary
 
-Relift is a free, open-source, cross-platform deleted-file recovery tool for raw disk images and drives. It combines filesystem metadata recovery (NTFS $MFT, FAT12/16/32, exFAT, ext2/3/4) with structurally validated signature carving (153 formats), enforces read-only source access, refuses unsafe (same-device) recovery destinations, verifies recovered output with SHA-256, and keeps resumable, inspectable sessions.
+Relift is a free, open-source, cross-platform deleted-file recovery tool for raw disk images and drives. It combines filesystem metadata recovery (NTFS $MFT, FAT12/16/32, exFAT, ext2/3/4) with a registry of 153 carving identifiers, of which only a subset has structural validators. It uses read-only source access, refuses unsafe raw-device destinations, can verify recovered output with SHA-256, and keeps resumable scan sessions.
 
 **What was wrong at the start of this session:**
 - The carver's scan note falsely claimed RAR5, OLE, FLAC, and ISO 9660 are not carved, although each has a registered structural validator (claim drift).
@@ -159,9 +163,9 @@ The existing `docs/assets/screenshots/*.png` files remain placeholders (identica
 - Discussions: enabled (was disabled).
 - License: GNU GPLv3 (GPL-3.0-or-later).
 
-**README / docs:** README already professional and honest (v0.1.0 preview status, unsigned assets, synthetic-validation caveat). No SEO claims were added that the implementation does not support. `llms.txt` / `llms-full.txt` already reflect 36 formats and 94 tests.
+**README / docs (as recorded on 2026-11-27):** The prior snapshot noted preview status, unsigned assets, and synthetic-validation limits. It described the then-current `llms.txt` / `llms-full.txt` as reflecting 36 formats and 94 tests; later audits corrected the registry and test count.
 
-**No broken badges were added.** Existing badges: CI, release v0.1.0 preview, license, MSRV, tests-94-passing.
+**Badge state at that snapshot:** CI, release v0.1.0 preview, license, MSRV, tests-94-passing. The test count is updated in the current README.
 
 ---
 

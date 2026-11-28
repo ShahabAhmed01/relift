@@ -32,9 +32,15 @@ pub use candidate::{
     Segment,
 };
 pub use error::{Error, Result};
-pub use partitions::{PartitionScheme, PartitionTable, Volume, read_partition_table, scan_lost_partitions, repair_partition_table};
+pub use partitions::{
+    read_partition_table, repair_partition_table, scan_lost_partitions, PartitionScheme,
+    PartitionTable, Volume,
+};
 pub use source::{FileSource, ReadOnlySource, SourceIdentity};
-pub use virtual_disk::{VirtualDiskFormat, VirtualDiskInfo, VirtualDiskReader, open_virtual_disk, open_virtual_disk_chain, open_forensic_image};
+pub use virtual_disk::{
+    open_forensic_image, open_virtual_disk, open_virtual_disk_chain, VirtualDiskFormat,
+    VirtualDiskInfo, VirtualDiskReader,
+};
 
 /// Tool version recorded in sessions and reports.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

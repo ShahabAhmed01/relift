@@ -12,7 +12,7 @@ Sessions use a JSON header and JSONL records. A completed session can be reused.
 
 ## Evidence boundaries
 
-FAT, exFAT, NTFS, and ext2/3/4 have deterministic synthetic fixture coverage with byte-exact SHA-256 recovery checks. HFS+, APFS, Btrfs, and XFS have deterministic probe fixtures, but metadata-based deleted-file recovery on those filesystems is experimental and not end-to-end validated. Carving registers 36 formats and emits only candidates accepted by their validators; see docs/src/formats.md. No real physical drive or representative real-media corpus has been validated.
+FAT, exFAT, NTFS, and ext2/3/4 have deterministic synthetic fixture coverage with byte-exact SHA-256 recovery checks. HFS+, APFS, Btrfs, and XFS have deterministic probe fixtures, but metadata-based deleted-file recovery on those filesystems is experimental and not end-to-end validated. Carving registers 153 format identifiers, including marker-only entries; only formats with structural validators can emit candidates, and their maturity varies. See docs/src/formats.md. No real physical drive or representative real-media corpus has been validated.
 
 ## Operational safety
 

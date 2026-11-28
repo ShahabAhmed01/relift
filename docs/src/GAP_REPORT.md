@@ -106,6 +106,9 @@ deliberate, and tracked.
 
 - No simulated or mock results; every fixture-validated recovery is compared
   byte-for-byte with SHA-256.
-- No faked benchmarks, screenshots, stars, reviews, or release claims.
+- Unverified screenshot/video assets remain in `docs/assets/`; their provenance
+  is contradictory, one supposed GUI image is an editor/agent conversation, and
+  CLI screenshots expose a local Windows profile path. Do not publish or use
+  them as evidence; current-build recapture and privacy review are pending.
 - No telemetry; default offline.
 - Unsupported filesystems are identified and reported, never silently claimed.

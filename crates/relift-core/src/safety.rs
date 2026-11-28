@@ -79,6 +79,122 @@ pub fn validate_destination(source: &SourceIdentity, dest: &Path) -> Result<Path
     Ok(canonical)
 }
 
+/// Validate a destination path without creating it. If some trailing
+/// directories do not exist yet, the nearest existing ancestor is checked
+/// against the source and the missing suffix is returned as an absolute path.
+/// This is used by dry runs, which must not create directories as a side
+/// effect.
+pub fn validate_destination_path(source: &SourceIdentity, dest: &Path) -> Result<PathBuf> {
+    let absolute = absolute_path(dest)?;
+    let mut existing = absolute.as_path();
+    loop {
+        match fs::metadata(existing) {
+            Ok(meta) => {
+                if !meta.is_dir() {
+                    return Err(Error::UnsafeDestination(format!(
+                        "destination {} is not a directory",
+                        existing.display()
+                    )));
+                }
+                let canonical = validate_destination(source, existing)?;
+                let suffix = absolute.strip_prefix(existing).map_err(|_| {
+                    Error::UnsafeDestination(format!(
+                        "could not resolve destination path {}",
+                        absolute.display()
+                    ))
+                })?;
+                return Ok(canonical.join(suffix));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                existing = existing.parent().ok_or_else(|| {
+                    Error::UnsafeDestination(format!(
+                        "destination {} has no existing parent directory",
+                        absolute.display()
+                    ))
+                })?;
+            }
+            Err(error) => {
+                return Err(Error::UnsafeDestination(format!(
+                    "could not inspect destination {}: {error}",
+                    existing.display()
+                )));
+            }
+        }
+    }
+}
+
+/// Create a destination directory only after proving its existing parent is
+/// separate from the evidence source. Missing path components are created
+/// relative to retained directory handles without following symlinks.
+pub fn ensure_destination_directory(source: &SourceIdentity, dest: &Path) -> Result<PathBuf> {
+    let absolute = absolute_path(dest)?;
+    match fs::metadata(&absolute) {
+        Ok(meta) if meta.is_dir() => return validate_destination(source, &absolute),
+        Ok(_) => {
+            return Err(Error::UnsafeDestination(format!(
+                "destination {} is not a directory",
+                absolute.display()
+            )))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(Error::UnsafeDestination(format!(
+                "could not inspect destination {}: {error}",
+                absolute.display()
+            )))
+        }
+    }
+
+    let parent = absolute.parent().ok_or_else(|| {
+        Error::UnsafeDestination(format!(
+            "destination {} has no parent directory",
+            absolute.display()
+        ))
+    })?;
+    let safe_parent = ensure_destination_directory(source, parent)?;
+    let name = absolute.file_name().ok_or_else(|| {
+        Error::UnsafeDestination(format!(
+            "destination {} does not name a directory",
+            absolute.display()
+        ))
+    })?;
+    let root = DestinationDirectory::open(&safe_parent)?;
+    let (created, ancestors) = root.open_or_create_parent(Path::new(name))?;
+    drop(created);
+    drop(ancestors);
+
+    let created_path = safe_parent.join(name);
+    validate_destination(source, &created_path)
+}
+
+fn absolute_path(path: &Path) -> Result<PathBuf> {
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|source| Error::Io { offset: 0, source })?
+            .join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(_) => normalized.push(component.as_os_str()),
+        }
+    }
+    if !normalized.is_absolute() {
+        return Err(Error::UnsafeDestination(format!(
+            "destination {} is not an absolute path",
+            path.display()
+        )));
+    }
+    Ok(normalized)
+}
+
 /// A handle to a validated output root. Child directories and files are opened
 /// relative to this handle so a changed symlink cannot redirect recovery writes.
 pub(crate) struct DestinationDirectory {

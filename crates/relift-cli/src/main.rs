@@ -5,7 +5,7 @@
 //! into a session directory, `recover` writes only below an explicitly chosen
 //! destination, and `image` writes a new file with `create_new`.
 
-use std::io::{IsTerminal, Write};
+use std::io::{BufRead, BufReader, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -24,7 +24,7 @@ use relift_core::scan::{run_scan, ScanProgress, ScanRequest};
 use relift_core::session::{load_header, ManualVolume, SessionHeader, SessionStatus};
 use relift_core::source::open_source;
 use relift_core::util::{human_bytes, human_duration};
-use relift_core::virtual_disk::{open_virtual_disk, open_forensic_image};
+use relift_core::virtual_disk::{open_forensic_image, open_virtual_disk};
 use relift_core::{SCHEMA_VERSION, VERSION};
 use serde::Serialize;
 
@@ -126,16 +126,24 @@ struct ScanArgs {
     resume: bool,
 
     /// Scan preset: quick (metadata only) or deep (metadata + carving).
-    #[arg(long, value_enum, default_value_t = ScanMode::Quick, value_name = "MODE")]
-    mode: ScanMode,
+    #[arg(long, value_enum, value_name = "MODE")]
+    mode: Option<ScanMode>,
 
     /// Also list files that are still allocated.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_live")]
     live: bool,
 
+    /// Do not include files that are still allocated (overrides config).
+    #[arg(long, conflicts_with = "live")]
+    no_live: bool,
+
     /// Run signature carving in addition to metadata recovery.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_carve")]
     carve: bool,
+
+    /// Disable signature carving (overrides config and the deep preset).
+    #[arg(long, conflicts_with = "carve")]
+    no_carve: bool,
 
     /// Scan only this volume index (repeatable).
     #[arg(long = "volume", value_name = "INDEX")]
@@ -150,8 +158,8 @@ struct ScanArgs {
     length: Option<String>,
 
     /// Stop after this many candidates.
-    #[arg(long, default_value_t = 1_000_000, value_name = "N")]
-    max_candidates: usize,
+    #[arg(long, value_name = "N")]
+    max_candidates: Option<usize>,
 }
 
 #[derive(Debug, Args)]
@@ -179,7 +187,7 @@ struct RecoverArgs {
 
     /// Destination directory. Must be separate from the evidence.
     #[arg(long, value_name = "DIR")]
-    dest: PathBuf,
+    dest: Option<PathBuf>,
 
     /// Plan only: validate source and destination and list what would be written.
     #[arg(long)]
@@ -194,8 +202,12 @@ struct RecoverArgs {
     source: Option<PathBuf>,
 
     /// Do not re-read each output file after writing it.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "verify")]
     no_verify: bool,
+
+    /// Re-read each output file after writing it (overrides config).
+    #[arg(long, conflicts_with = "no_verify")]
+    verify: bool,
 
     /// Skip candidates below this confidence.
     #[arg(long, value_name = "LABEL")]
@@ -303,10 +315,6 @@ struct InfoArgs {
 struct VerifyArgs {
     /// Session directory produced by `relift scan`/`relift recover`.
     session: PathBuf,
-
-    /// Re-read recovered files and compare SHA-256 against stored hashes.
-    #[arg(long)]
-    verify_hashes: bool,
 }
 
 #[derive(Debug, Args)]
@@ -353,11 +361,19 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<u8> {
-    let config = config::load_config(cli.config.as_deref())?;
     match cli.command {
-        Command::Scan(args) => cmd_scan(args, cli.json, &config),
-        Command::List(args) => cmd_list(args, cli.json),
-        Command::Recover(args) => cmd_recover(args, cli.json, &config),
+        Command::Scan(args) => {
+            let config = config::load_config(cli.config.as_deref())?;
+            cmd_scan(args, cli.json, &config)
+        }
+        Command::List(args) => {
+            let config = config::load_config(cli.config.as_deref())?;
+            cmd_list(args, cli.json, &config)
+        }
+        Command::Recover(args) => {
+            let config = config::load_config(cli.config.as_deref())?;
+            cmd_recover(args, cli.json, &config)
+        }
         Command::Image(args) => cmd_image(args, cli.json),
         Command::Devices => cmd_devices(cli.json),
         Command::Doctor => cmd_doctor(cli.json),
@@ -396,28 +412,35 @@ fn cmd_scan(args: ScanArgs, json: bool, config: &config::Config) -> anyhow::Resu
         );
     }
     let mut request = ScanRequest::new(&args.session);
-    // Config-file defaults apply first; CLI arguments override them.
-    request.include_live = config.scan.include_live.unwrap_or(args.live);
-    if config.scan.carve.unwrap_or(false) {
-        request.carve = true;
-    }
-    request.carve = args.carve || request.carve || args.mode == ScanMode::Deep;
+    // Config-file values are defaults; explicit CLI flags take precedence.
+    request.include_live = if args.live {
+        true
+    } else if args.no_live {
+        false
+    } else {
+        config.scan.include_live.unwrap_or(false)
+    };
+    let configured_mode = config.scan.mode.as_deref().map(|mode| {
+        if mode.trim().eq_ignore_ascii_case("deep") {
+            ScanMode::Deep
+        } else {
+            ScanMode::Quick
+        }
+    });
+    let mode = args.mode.or(configured_mode).unwrap_or(ScanMode::Quick);
+    request.carve = if args.no_carve {
+        false
+    } else {
+        args.carve || mode == ScanMode::Deep || config.scan.carve.unwrap_or(false)
+    };
     request.volume_indices = args.volume.clone();
     request.manual_volume = manual_volume;
-    request.max_candidates = config
-        .scan
+    request.max_candidates = args
         .max_candidates
-        .unwrap_or(args.max_candidates)
+        .or(config.scan.max_candidates)
+        .unwrap_or(config::DEFAULT_MAX_CANDIDATES)
         .max(1);
     request.resume = args.resume;
-
-    // Config-file scan mode ("quick" or "deep") enables carving when deep.
-    if let Some(mode) = &config.scan.mode {
-        let mode_deep = mode.trim().to_ascii_lowercase() == "deep";
-        if mode_deep {
-            request.carve = true;
-        }
-    }
 
     let mut printer = Progress::new(!json);
     let header = {
@@ -453,6 +476,7 @@ fn cmd_recover(args: RecoverArgs, json: bool, config: &config::Config) -> anyhow
             .recover
             .min_confidence
             .as_deref()
+            .or(config.filter.min_confidence.as_deref())
             .map(parse_confidence)
             .transpose()?,
     };
@@ -461,11 +485,24 @@ fn cmd_recover(args: RecoverArgs, json: bool, config: &config::Config) -> anyhow
     } else {
         Some(args.id.iter().copied().collect())
     };
-    let filter = CandidateFilter::parse_all(&args.filter)?;
-    let dest = prepare_destination(&args.dest)?;
+    let filters = merge_filter_expressions(&args.filter, &config.filter);
+    let filter = CandidateFilter::parse_all(&filters)?;
+    let dest = args
+        .dest
+        .or_else(|| config.output.dest.as_ref().map(PathBuf::from))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "recovery destination is required; use --dest or set [output].dest in config"
+            )
+        })?;
     let mut options = RecoverOptions::new(dest);
-    // Config default: verify enabled unless --no-verify or config says otherwise.
-    options.verify = config.recover.verify.unwrap_or(true) && !args.no_verify;
+    options.verify = if args.verify {
+        true
+    } else {
+        config.recover.verify.unwrap_or(true)
+            && !config.recover.no_verify.unwrap_or(false)
+            && !args.no_verify
+    };
     options.min_confidence = min_confidence;
     options.ids = ids;
     options.filter = filter;
@@ -637,38 +674,43 @@ fn cmd_version(json: bool) -> anyhow::Result<u8> {
 fn cmd_partitions(args: PartitionsArgs, json: bool) -> anyhow::Result<u8> {
     let src = open_source(&args.source)
         .with_context(|| format!("could not open source {}", args.source.display()))?;
-    
+
     let table = read_partition_table(src.as_ref())?;
-    
+
     if json {
         print_json(&table)?;
         return Ok(EXIT_OK);
     }
-    
+
     println!("source:     {}", args.source.display());
     println!("scheme:     {:?}", table.scheme);
     println!("partitions: {}", table.volumes.len());
-    
+
     for warning in &table.warnings {
         println!("warning:    {warning}");
     }
-    
+
     if table.volumes.is_empty() {
         println!("no partitions found");
         return Ok(EXIT_OK);
     }
-    
+
     println!();
-    println!("{:<4} {:<12} {:>14} {:>14} {:<10} {:<20} {}",
-        "NUM", "SCHEME", "OFFSET", "SIZE", "BOOT", "TYPE", "FS");
+    println!(
+        "{:<4} {:<12} {:>14} {:>14} {:<10} {:<20} FS",
+        "NUM", "SCHEME", "OFFSET", "SIZE", "BOOT", "TYPE"
+    );
     println!("{}", "-".repeat(100));
-    
+
     for vol in &table.volumes {
         let boot = if vol.bootable { "*" } else { "" };
-        let fs = vol.filesystem.as_ref()
+        let fs = vol
+            .filesystem
+            .as_ref()
             .map(|f| f.kind.as_str())
             .unwrap_or("-");
-        println!("{:<4} {:<12} {:>14} {:>14} {:<10} {:<20} {}",
+        println!(
+            "{:<4} {:<12} {:>14} {:>14} {:<10} {:<20} {}",
             vol.index,
             format!("{:?}", vol.scheme).to_lowercase(),
             human_bytes(vol.offset),
@@ -682,7 +724,11 @@ fn cmd_partitions(args: PartitionsArgs, json: bool) -> anyhow::Result<u8> {
         }
         if args.probe {
             if let Some(fs) = &vol.filesystem {
-                println!("      fs: {} (label: {})", fs.kind.as_str(), fs.label.as_deref().unwrap_or("-"));
+                println!(
+                    "      fs: {} (label: {})",
+                    fs.kind.as_str(),
+                    fs.label.as_deref().unwrap_or("-")
+                );
                 for (k, v) in &fs.details {
                     println!("        {k}: {v}");
                 }
@@ -692,53 +738,96 @@ fn cmd_partitions(args: PartitionsArgs, json: bool) -> anyhow::Result<u8> {
             }
         }
     }
-    
+
     Ok(EXIT_OK)
 }
 
 fn cmd_partitions_scan(args: PartitionsScanArgs, json: bool) -> anyhow::Result<u8> {
     let src = open_source(&args.source)
         .with_context(|| format!("could not open source {}", args.source.display()))?;
-    
-    let max_bytes = args.max_bytes.as_deref().map(|s| parse_bytes(s, "max-bytes")).transpose()?;
-    
+
+    let max_bytes = args
+        .max_bytes
+        .as_deref()
+        .map(|s| parse_bytes(s, "max-bytes"))
+        .transpose()?;
+
     let mut progress = |done: u64, total: u64| {
         if !json {
-            let percent = if total == 0 { 100 } else { ((done as u128 * 100) / total as u128) as u32 };
-            eprint!("\rscan: {:>3}%  {} / {}", percent, human_bytes(done), human_bytes(total));
+            let percent = if total == 0 {
+                100
+            } else {
+                ((done as u128 * 100) / total as u128) as u32
+            };
+            eprint!(
+                "\rscan: {:>3}%  {} / {}",
+                percent,
+                human_bytes(done),
+                human_bytes(total)
+            );
             let _ = std::io::stderr().flush();
         }
     };
-    
+
     let volumes = scan_lost_partitions(src.as_ref(), max_bytes, &mut progress)?;
-    
+
     if !json {
         eprintln!();
     }
-    
+
+    let catalog_session = if let Some(session_dir) = &args.session {
+        use relift_core::session::Session;
+        let mut session = Session::create(session_dir, src.identity(), Default::default())?;
+        session.header_mut().partition_table = Some(relift_core::partitions::PartitionTable {
+            scheme: relift_core::partitions::PartitionScheme::None,
+            volumes: volumes.clone(),
+            warnings: vec![
+                "Reconstructed from signature scan; catalog only, no file recovery scan was run"
+                    .into(),
+            ],
+        });
+        session.finish(relift_core::session::SessionStatus::Complete)?;
+        Some(session_dir.display().to_string())
+    } else {
+        None
+    };
+
     if json {
-        print_json(&volumes)?;
+        if let Some(session) = catalog_session {
+            print_json(&serde_json::json!({ "session": session, "volumes": volumes }))?;
+        } else {
+            print_json(&volumes)?;
+        }
         return Ok(EXIT_OK);
     }
-    
+
     println!("source:       {}", args.source.display());
     println!("found:        {} potential partition(s)", volumes.len());
-    
+
     if volumes.is_empty() {
         println!("no lost partitions found");
+        if let Some(session) = catalog_session {
+            println!("catalog:      {session}");
+            println!("next:         relift session {session}");
+        }
         return Ok(EXIT_OK);
     }
-    
+
     println!();
-    println!("{:<4} {:>14} {:>14} {:<20} {}",
-        "NUM", "OFFSET", "SIZE", "TYPE", "FS");
+    println!(
+        "{:<4} {:>14} {:>14} {:<20} FS",
+        "NUM", "OFFSET", "SIZE", "TYPE"
+    );
     println!("{}", "-".repeat(80));
-    
+
     for vol in &volumes {
-        let fs = vol.filesystem.as_ref()
+        let fs = vol
+            .filesystem
+            .as_ref()
             .map(|f| f.kind.as_str())
             .unwrap_or("-");
-        println!("{:<4} {:>14} {:>14} {:<20} {}",
+        println!(
+            "{:<4} {:>14} {:>14} {:<20} {}",
             vol.index,
             human_bytes(vol.offset),
             human_bytes(vol.length),
@@ -757,51 +846,59 @@ fn cmd_partitions_scan(args: PartitionsScanArgs, json: bool) -> anyhow::Result<u
             }
         }
     }
-    
-    if let Some(session_dir) = &args.session {
-        // Create a session with the found volumes
-        use relift_core::scan::{run_scan, ScanRequest, ScanProgress};
-        use relift_core::session::Session;
-        use std::sync::atomic::AtomicBool;
-        use std::sync::Arc;
-        
-        let mut session = Session::create(session_dir, src.identity(), Default::default())?;
-        session.header_mut().partition_table = Some(relift_core::partitions::PartitionTable {
-            scheme: relift_core::partitions::PartitionScheme::None,
-            volumes: volumes.clone(),
-            warnings: vec!["Reconstructed from signature scan".into()],
-        });
-        session.finish(relift_core::session::SessionStatus::Complete)?;
+
+    if let Some(session) = catalog_session {
         println!();
-        println!("session:      {}", session_dir.display());
-        println!("next:         relift scan {} --resume", session_dir.display());
+        println!("catalog:      {session}");
+        println!("next:         relift session {session}");
     }
-    
+
     Ok(EXIT_OK)
 }
 
 fn cmd_virtual_disk(args: VirtualDiskArgs, json: bool) -> anyhow::Result<u8> {
     let reader = open_virtual_disk(&args.source)
         .with_context(|| format!("could not open virtual disk {}", args.source.display()))?;
-    
+
     let info = reader.info();
-    
+
     if json {
         print_json(info)?;
         return Ok(EXIT_OK);
     }
-    
+
     println!("source:        {}", args.source.display());
     println!("format:        {:?}", info.format);
-    println!("virtual size:  {} ({})", info.virtual_size, human_bytes(info.virtual_size));
-    println!("physical size: {} ({})", info.physical_size, human_bytes(info.physical_size));
-    println!("block size:    {} ({})", info.block_size, human_bytes(info.block_size));
+    println!(
+        "virtual size:  {} ({})",
+        info.virtual_size,
+        human_bytes(info.virtual_size)
+    );
+    println!(
+        "physical size: {} ({})",
+        info.physical_size,
+        human_bytes(info.physical_size)
+    );
+    println!(
+        "block size:    {} ({})",
+        info.block_size,
+        human_bytes(info.block_size)
+    );
     println!("sector size:   {}", info.sector_size);
-    println!("sparse:        {}", if info.is_sparse { "yes" } else { "no" });
-    println!("compressed:    {}", if info.is_compressed { "yes" } else { "no" });
-    println!("encrypted:     {}", if info.is_encrypted { "yes" } else { "no" });
+    println!(
+        "sparse:        {}",
+        if info.is_sparse { "yes" } else { "no" }
+    );
+    println!(
+        "compressed:    {}",
+        if info.is_compressed { "yes" } else { "no" }
+    );
+    println!(
+        "encrypted:     {}",
+        if info.is_encrypted { "yes" } else { "no" }
+    );
     println!("description:   {}", info.description);
-    
+
     if let Some(uuid) = &info.uuid {
         println!("uuid:          {uuid}");
     }
@@ -814,35 +911,43 @@ fn cmd_virtual_disk(args: VirtualDiskArgs, json: bool) -> anyhow::Result<u8> {
             println!("  - {}", c.display());
         }
     }
-    
+
     if args.verbose {
         println!("description:   {}", info.description);
     }
-    
+
     Ok(EXIT_OK)
 }
 
 fn cmd_forensic_image(args: ForensicImageArgs, json: bool) -> anyhow::Result<u8> {
     let reader = open_forensic_image(&args.source)
         .with_context(|| format!("could not open forensic image {}", args.source.display()))?;
-    
+
     let info = reader.info();
-    
+
     if json {
         print_json(info)?;
         return Ok(EXIT_OK);
     }
-    
+
     println!("source:        {}", args.source.display());
     println!("format:        {:?}", info.format);
-    println!("virtual size:  {} ({})", info.virtual_size, human_bytes(info.virtual_size));
-    println!("physical size: {} ({})", info.physical_size, human_bytes(info.physical_size));
+    println!(
+        "virtual size:  {} ({})",
+        info.virtual_size,
+        human_bytes(info.virtual_size)
+    );
+    println!(
+        "physical size: {} ({})",
+        info.physical_size,
+        human_bytes(info.physical_size)
+    );
     println!("description:   {}", info.description);
-    
+
     if args.verbose {
         println!("uuid:          {:?}", info.uuid);
     }
-    
+
     Ok(EXIT_OK)
 }
 
@@ -882,7 +987,11 @@ fn cmd_info(args: InfoArgs, json: bool) -> anyhow::Result<u8> {
     } else {
         println!("source:        {}", identity.path);
         println!("kind:          {:?}", identity.kind);
-        println!("size:          {} ({})", identity.size, human_bytes(identity.size));
+        println!(
+            "size:          {} ({})",
+            identity.size,
+            human_bytes(identity.size)
+        );
         println!("sector size:   {}", src.sector_size());
         println!("fingerprint:   {}", identity.fingerprint);
         if let Some(d) = &identity.device_id {
@@ -901,51 +1010,77 @@ fn cmd_verify(args: VerifyArgs, json: bool) -> anyhow::Result<u8> {
     let mut ok = 0u64;
     let mut failed = 0u64;
     let mut missing = 0u64;
+    let mut partial = 0u64;
+    let mut failures: Vec<String> = Vec::new();
     if recovered_path.exists() {
-        let contents = std::fs::read_to_string(&recovered_path)?;
-        for line in contents.lines() {
-            let line = line.trim();
-            if line.is_empty() {
+        let file = std::fs::File::open(&recovered_path)?;
+        let reader = BufReader::new(file);
+        for (line_number, line) in reader.lines().enumerate() {
+            let line = line?;
+            if line.trim().is_empty() {
                 continue;
             }
-            let record: serde_json::Value = match serde_json::from_str(line) {
-                Ok(v) => v,
-                Err(_) => continue,
+            let record: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(value) => value,
+                Err(error) => {
+                    failed += 1;
+                    failures.push(format!(
+                        "line {}: invalid recovery record: {error}",
+                        line_number + 1
+                    ));
+                    continue;
+                }
             };
-            checked += 1;
             let status = record.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            match status {
+                "recovered" => {}
+                "partial" => partial += 1,
+                "failed" | "skipped" | "planned" => continue,
+                _ => {
+                    failed += 1;
+                    failures.push(format!(
+                        "line {}: unknown recovery status {status:?}",
+                        line_number + 1
+                    ));
+                    continue;
+                }
+            }
+            checked += 1;
             let output = record.get("output_path").and_then(|v| v.as_str());
             let stored_hash = record.get("sha256").and_then(|v| v.as_str());
-            if status != "recovered" && status != "partial" {
-                continue;
-            }
-            let Some(path) = output else {
+            let (Some(output), Some(stored_hash)) = (output, stored_hash) else {
                 missing += 1;
+                failures.push(format!(
+                    "line {}: output path or SHA-256 is missing",
+                    line_number + 1
+                ));
                 continue;
             };
-            let Some(stored) = stored_hash else {
+            let Some(destination) = header.destination.as_deref() else {
                 missing += 1;
+                failures.push(format!(
+                    "line {}: session has no recorded destination",
+                    line_number + 1
+                ));
                 continue;
             };
-            match std::fs::read(path) {
-                Ok(bytes) => {
-                    let actual = relift_core::hash::hash_bytes(&bytes);
-                    if actual == stored {
-                        ok += 1;
-                    } else {
-                        failed += 1;
-                        if json {
-                            // collected below
-                        } else {
-                            println!("hash mismatch: {path}");
-                        }
-                    }
-                }
-                Err(_) => {
+            let path = match confined_output_path(Path::new(destination), Path::new(output)) {
+                Ok(path) => path,
+                Err(error) => {
                     failed += 1;
-                    if !json {
-                        println!("missing or unreadable: {path}");
-                    }
+                    failures.push(format!("line {}: {error}", line_number + 1));
+                    continue;
+                }
+            };
+            match relift_core::hash::hash_file(&path) {
+                Ok(actual) if relift_core::hash::digest_eq(&actual, stored_hash) => ok += 1,
+                Ok(_) => {
+                    failed += 1;
+                    failures.push(format!("{}: SHA-256 mismatch", path.display()));
+                }
+                Err(error) => {
+                    failed += 1;
+                    failures.push(format!("{}: {error}", path.display()));
                 }
             }
         }
@@ -956,7 +1091,9 @@ fn cmd_verify(args: VerifyArgs, json: bool) -> anyhow::Result<u8> {
         "ok": ok,
         "failed": failed,
         "missing": missing,
-        "all_verified": failed == 0 && missing == 0 && checked > 0,
+        "partial": partial,
+        "failures": failures,
+        "all_verified": failed == 0 && missing == 0 && partial == 0 && checked > 0,
     });
     if json {
         print_json(&result)?;
@@ -966,21 +1103,33 @@ fn cmd_verify(args: VerifyArgs, json: bool) -> anyhow::Result<u8> {
         println!("verified:      {ok}");
         println!("failed:        {failed}");
         println!("missing:       {missing}");
-        if failed == 0 && missing == 0 && checked > 0 {
+        println!("partial:       {partial}");
+        for failure in &failures {
+            println!("  {failure}");
+        }
+        if failed == 0 && missing == 0 && partial == 0 && checked > 0 {
             println!("status:        all recovered files verified");
+        } else if partial > 0 && failed == 0 && missing == 0 {
+            println!("status:        hashes verified, but recovery contains partial files");
         } else if checked == 0 {
             println!("status:        no recovered files found in session");
         } else {
             println!("status:        verification had failures");
         }
     }
-    Ok(EXIT_OK)
+    Ok(
+        if failed == 0 && missing == 0 && partial == 0 && checked > 0 {
+            EXIT_OK
+        } else {
+            EXIT_PARTIAL
+        },
+    )
 }
 
 fn cmd_session(args: SessionArgs, json: bool) -> anyhow::Result<u8> {
     let header = relift_core::session::load_header(&args.session)
         .with_context(|| format!("could not read session {}", args.session.display()))?;
-    let info = serde_json::json!({
+    let mut info = serde_json::json!({
         "session_id": header.session_id,
         "tool": header.tool,
         "tool_version": header.tool_version,
@@ -998,6 +1147,18 @@ fn cmd_session(args: SessionArgs, json: bool) -> anyhow::Result<u8> {
         "warnings": header.warnings,
         "error": header.error,
     });
+    let full_candidates = if args.full {
+        Some(
+            relift_core::session::load_candidates(&args.session).with_context(|| {
+                format!("could not load candidates from {}", args.session.display())
+            })?,
+        )
+    } else {
+        None
+    };
+    if let Some(candidates) = &full_candidates {
+        info["candidates"] = serde_json::to_value(candidates)?;
+    }
     if json {
         print_json(&info)?;
     } else {
@@ -1005,16 +1166,40 @@ fn cmd_session(args: SessionArgs, json: bool) -> anyhow::Result<u8> {
         println!("tool:          {} {}", header.tool, header.tool_version);
         println!("created:       {}", header.created);
         println!("status:        {:?}", header.status);
-        println!("source:        {} ({:?})", header.source.path, header.source.kind);
-        println!("size:          {} ({})", header.source.size, human_bytes(header.source.size));
+        println!(
+            "source:        {} ({:?})",
+            header.source.path, header.source.kind
+        );
+        println!(
+            "size:          {} ({})",
+            header.source.size,
+            human_bytes(header.source.size)
+        );
         println!("candidates:    {}", header.summary.candidates);
         println!("deleted:       {}", header.summary.deleted);
         println!("with content:  {}", header.summary.with_content);
+        if let Some(candidates) = &full_candidates {
+            println!("\ncandidates: {}", candidates.len());
+            println!("id  confidence  format      name                                       path");
+            for candidate in candidates {
+                println!(
+                    "{:<3} {:<10} {:<10} {:<42} {}",
+                    candidate.id,
+                    candidate.confidence.label.as_str(),
+                    candidate.format,
+                    candidate.name,
+                    candidate.path
+                );
+            }
+        }
         if let Some(d) = &header.destination {
             println!("destination:   {d}");
         }
         if let Some(r) = &header.recovery {
-            println!("recovered:     {} succeeded, {} failed, {} partial", r.succeeded, r.failed, r.partial);
+            println!(
+                "recovered:     {} succeeded, {} failed, {} partial",
+                r.succeeded, r.failed, r.partial
+            );
         }
         for w in &header.warnings {
             println!("warning: {w}");
@@ -1071,14 +1256,20 @@ fn cmd_mcp(args: McpArgs, json: bool) -> anyhow::Result<u8> {
     Ok(EXIT_OK)
 }
 
-fn cmd_list(args: ListArgs, json: bool) -> anyhow::Result<u8> {
+fn cmd_list(args: ListArgs, json: bool, config: &config::Config) -> anyhow::Result<u8> {
     let candidates = relift_core::session::load_candidates(&args.session)
         .with_context(|| format!("could not load candidates from {}", args.session.display()))?;
     let min_confidence = match args.min_confidence.as_deref() {
         Some(value) => Some(parse_confidence(value)?),
-        None => None,
+        None => config
+            .filter
+            .min_confidence
+            .as_deref()
+            .map(parse_confidence)
+            .transpose()?,
     };
-    let filter = CandidateFilter::parse_all(&args.filter)?;
+    let filters = merge_filter_expressions(&args.filter, &config.filter);
+    let filter = CandidateFilter::parse_all(&filters)?;
 
     let mut listed: Vec<&relift_core::candidate::Candidate> = candidates
         .iter()
@@ -1131,6 +1322,65 @@ fn cmd_list(args: ListArgs, json: bool) -> anyhow::Result<u8> {
         }
     }
     Ok(EXIT_OK)
+}
+
+/// Merge config filters as defaults on a per-field basis. A CLI filter for one
+/// field replaces that field's config default while defaults for other fields
+/// remain active.
+fn merge_filter_expressions(cli: &[String], config: &config::FilterConfig) -> Vec<String> {
+    let cli_fields: std::collections::HashSet<String> = cli
+        .iter()
+        .filter_map(|expression| expression.split_once(':'))
+        .map(|(field, _)| field.trim().to_ascii_lowercase())
+        .collect();
+    let mut merged = cli.to_vec();
+    for (field, values) in [
+        ("ext", config.ext.as_ref()),
+        ("format", config.format.as_ref()),
+        ("name", config.name.as_ref()),
+        ("path", config.path.as_ref()),
+    ] {
+        if cli_fields.contains(field) {
+            continue;
+        }
+        if let Some(values) = values.filter(|values| !values.is_empty()) {
+            merged.push(format!("{field}:{}", values.join(",")));
+        }
+    }
+    merged
+}
+
+fn confined_output_path(destination: &Path, output: &Path) -> anyhow::Result<PathBuf> {
+    let root = std::fs::canonicalize(destination).with_context(|| {
+        format!(
+            "could not resolve recorded recovery destination {}",
+            destination.display()
+        )
+    })?;
+    let requested = if output.is_absolute() {
+        output.to_path_buf()
+    } else {
+        root.join(output)
+    };
+    let canonical = std::fs::canonicalize(&requested).with_context(|| {
+        format!(
+            "output file is missing or inaccessible: {}",
+            requested.display()
+        )
+    })?;
+    if !canonical.starts_with(&root) {
+        bail!(
+            "output path escapes the recorded recovery destination: {}",
+            requested.display()
+        );
+    }
+    if !canonical.is_file() {
+        bail!(
+            "recovery output is not a regular file: {}",
+            canonical.display()
+        );
+    }
+    Ok(canonical)
 }
 
 fn cmd_completions(args: CompletionsArgs) -> anyhow::Result<u8> {
@@ -1242,16 +1492,8 @@ fn print_recovery_summary(summary: &RecoverySummary) {
     }
 }
 
-fn prepare_destination(dest: &Path) -> anyhow::Result<PathBuf> {
-    if !dest.exists() {
-        std::fs::create_dir_all(dest)
-            .with_context(|| format!("could not create destination {}", dest.display()))?;
-    }
-    Ok(dest.to_path_buf())
-}
-
 fn parse_confidence(value: &str) -> anyhow::Result<ConfidenceLabel> {
-    match value.to_ascii_lowercase().as_str() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "verified" => Ok(ConfidenceLabel::Verified),
         "likely" => Ok(ConfidenceLabel::Likely),
         "partial" => Ok(ConfidenceLabel::Partial),
@@ -1454,5 +1696,35 @@ mod tests {
         assert_eq!(recovery_exit_code(0, 0), EXIT_OK);
         assert_eq!(recovery_exit_code(1, 0), EXIT_PARTIAL);
         assert_eq!(recovery_exit_code(0, 1), EXIT_PARTIAL);
+    }
+
+    #[test]
+    fn cli_filter_replaces_config_default_for_same_field() {
+        let config = config::FilterConfig {
+            ext: Some(vec!["jpg".into(), "png".into()]),
+            format: Some(vec!["pdf".into()]),
+            name: Some(vec!["scan".into()]),
+            path: None,
+            min_confidence: None,
+        };
+        let merged = merge_filter_expressions(&["ext:tiff".into()], &config);
+        assert_eq!(merged, vec!["ext:tiff", "format:pdf", "name:scan"]);
+        CandidateFilter::parse_all(&merged).unwrap();
+    }
+
+    #[test]
+    fn verify_output_path_must_remain_under_recorded_destination() {
+        let base = std::env::temp_dir().join(format!("relift-verify-path-{}", std::process::id()));
+        let root = base.join("recovery");
+        let outside = base.join("outside.bin");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("good.bin"), b"inside").unwrap();
+        std::fs::write(&outside, b"outside").unwrap();
+
+        assert!(confined_output_path(&root, Path::new("good.bin")).is_ok());
+        assert!(confined_output_path(&root, &outside).is_err());
+        assert!(confined_output_path(&root, Path::new("missing.bin")).is_err());
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

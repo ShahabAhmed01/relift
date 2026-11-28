@@ -12,10 +12,10 @@ means there is code plus at least a deterministic fixture or end-to-end test.
 | exFAT | ✓ | Fixture-validated | Entry sets, allocation bitmap, NoFatChain |
 | NTFS | ✓ | Fixture-validated | $MFT records, resident/non-resident data, sparse runs |
 | ext2/3/4 | ✓ | Fixture-validated | Inodes, direct/indirect blocks, extent trees, sparse/unwritten runs |
-| HFS+ | ✓ | Experimental (probe-tested) | Catalog B-tree and extent descriptors; probe fixture exists, metadata recovery not verified |
-| APFS | ✓ | Experimental (probe-tested) | Container/volume headers and B-tree inode scan; probe fixture exists, metadata recovery not verified |
-| Btrfs | ✓ | Experimental (probe-tested) | Root/chunk tree probing and inode items; probe fixture exists, metadata recovery not verified |
-| XFS | ✓ | Experimental (probe-tested) | AG headers and inode B+tree scan; probe fixture exists, metadata recovery not verified |
+| HFS+ | ✗ | Experimental (probe-tested) | Detected by probe; deleted-file metadata recovery is not implemented |
+| APFS | ✗ | Experimental (probe-tested) | Container/volume detection fixture exists; deleted-file metadata recovery is not implemented |
+| Btrfs | ✗ | Experimental (probe-tested) | Detected by probe; deleted-file metadata recovery is not implemented |
+| XFS | ✗ | Experimental (probe-tested) | Detected by probe; deleted-file metadata recovery is not implemented |
 | ReFS, F2FS, ZFS, ReiserFS, ISO 9660, UDF | ✗ | Identified only | Detected by `probe()`; metadata recovery not implemented |
 
 **Legend**
@@ -51,12 +51,14 @@ There is no io_uring, `O_DIRECT`, or OS-specific direct-I/O path.
 | Format | Read | Write | Notes |
 |--------|------|-------|-------|
 | Raw image (`.img`, `.dd`, `.001`, any block file) | ✓ | ✓ | Imaging writes a raw image plus SHA-256 manifest |
-| E01/Ex01, AFF4, VHD/VHDX, VMDK, QCOW2, DMG/UDIF | ✗ | ✗ | Not implemented; convert to raw first |
+| E01/Ex01, AFF4, VHD/VHDX, VMDK, QCOW2, DMG/UDIF | Partial inspection only | ✗ | Some CLI metadata readers exist, but scanning is not integrated and some readers are incomplete; convert to raw first |
 
 ## Carved format support
 
-Every emitted carve must pass a structural validator. There are 153 registered
-format identifiers:
+Every emitted carve must pass a structural validator. The registry contains
+153 format identifiers, including marker-only entries that cannot emit
+candidates yet. This count is not the number of equally mature, fixture-tested,
+or end-to-end-validated formats.
 
 | Category | Formats |
 |----------|---------|
@@ -97,9 +99,11 @@ changes, so this table cannot drift silently.
 | SHA-256 verification | ✓ | ✓ | Default on |
 | Destination safety | ✓ | ✓ | Blocks the same physical device |
 | Disk imaging | ✓ | ✗ | CLI only |
+| Lost-partition signature scan | ✓ | ✗ | `relift partitions-scan`; estimated candidates for review, no table repair |
 | Imaging map file and multi-pass resume | ✗ | ✗ | Not implemented; `relift image` performs a single copy pass |
+| TOML config defaults | ✓ | ✗ | `--config` applies to scan, list, and recover; CLI values override config |
 | JSON output | ✓ | ✗ | `--json` |
-| JSON/CSV/HTML/Markdown reports | ✓ | ✗ | `relift report` |
+| JSON/CSV/HTML reports | ✓ | ✗ | `relift report` |
 | Shell completions | ✓ | ✗ | `relift completions` |
 | Self-tests (`doctor`) | ✓ | ✓ | Permission and device checks |
 | `relift info` (source/session inspection) | ✓ | ✗ | `--json` supported |

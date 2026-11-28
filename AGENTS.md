@@ -10,8 +10,8 @@ SD). It uses:
 
 - **Filesystem metadata recovery** (NTFS $MFT, FAT/exFAT directories, ext4
   inodes, APFS B-trees) for original names/paths/timestamps
-- **Validating signature carving** (153 formats with structural checks: CRC,
-  Huffman, box tree, etc.)
+- **Signature carving** (153 registered format identifiers; some are markers
+  only. Every emitted candidate must pass a format-specific validator.)
 - **Strict read-only** on source; recovery only to a different physical volume
 
 ## Installation
@@ -36,8 +36,10 @@ Flatpak, Snap) remain templates only and have not been submitted or verified.
 
 1. **Never write to the source device.** Relift enforces this, but agents must
    not bypass it.
-2. **Always recover to a different physical volume.** Verify with
-   `lsblk`/`diskutil`/`Get-PhysicalDisk` before specifying `--dest`.
+2. **Keep all output off the evidence device.** Verify that `--session` and
+   `--dest` are on a different physical device for raw-device scans. For
+   image-file scans, keep recovery output on a separate physical volume too.
+   Use `lsblk`/`diskutil`/`Get-PhysicalDisk` before specifying output paths.
 3. **Use `--dry-run` first.** Preview what would be recovered without writing.
 4. **Ask the human** before touching any physical device. Confirm source path
    and destination.
@@ -96,6 +98,35 @@ relift recover ./session --dest /mnt/recovery --id 123 --id 456 --json
 
 ## Machine-readable interfaces
 
+### TOML configuration
+
+`--config FILE` applies defaults to `scan`, `list`, and `recover`; explicit CLI
+options override config values. Without an explicit path Relift checks
+`./relift.toml`, then the user config directory. Unknown keys and invalid modes
+or confidence labels are rejected.
+
+```toml
+[scan]
+mode = "deep"
+include_live = false
+carve = true
+max_candidates = 1000000
+
+[recover]
+verify = true
+min_confidence = "likely"
+
+[output]
+dest = "/mnt/recovery"
+
+[filter]
+ext = ["jpg", "png"]
+format = ["pdf"]
+name = ["IMG_"]
+path = ["DCIM"]
+min_confidence = "likely"
+```
+
 ### JSON output (`--json`)
 
 All commands support `--json` for machine-readable output.
@@ -141,20 +172,21 @@ relift completions fish > ~/.config/fish/completions/relift.fish
 relift completions powershell > relift.ps1
 ```
 
-## Planned but not yet implemented
+## Incomplete or not implemented
 
-The following are tracked in `docs/GAP_REPORT.md` and are **not** part of the
-current release:
+The following are tracked in `docs/src/GAP_REPORT.md`:
 
 - **MCP server** (`relift mcp`): no MCP server is implemented. The Claude
   Desktop config shown below does not work yet.
 - **TUI**: no terminal user interface; CLI and GUI are the supported interfaces.
-- **Self-update** (`relift self-update`): not implemented.
-- **Image formats**: only raw images (`.img`, `.dd`) are supported. E01/AFF4/
-  VHD/VMDK/QCOW2/DMG must be converted to raw first.
-- **`relift info`, `relift verify`, `relift session`**: not implemented as
-  separate commands.
-- **Configuration files** (`--config`, `config.toml`): not implemented.
+- **Self-update** (`relift self-update`): status stub; no update check or install.
+- **MCP** (`relift mcp`): status stub; no server starts.
+- **Scanning virtual/forensic images**: inspection is partial and not integrated
+  with `scan`. Convert E01/AFF4/VHD/VMDK/QCOW2/DMG to raw before scanning.
+- **Lost-partition recovery**: `relift partitions-scan` reports signature-based
+  candidate ranges but does not repair a partition table or scan those ranges.
+- **Resumable imaging**: `relift image` is single-pass and has no ddrescue-style
+  mapfile, bad-sector retry, or resume.
 - **Code signing / notarization**: release artifacts are unsigned.
 
 ### MCP server (planned, not implemented)

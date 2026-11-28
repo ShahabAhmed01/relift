@@ -21,7 +21,7 @@ retracted or corrected when the code or tests no longer support it.
 |---|---|---|---|---|---|
 | S1 | `ReadOnlySource` exposes no write method | Trait has only `len`, `sector_size`, `read_at`, `identity`, `description`, `read_exact_at`, `read_vec` | fixture-validated | `crates/relift-core/src/source.rs` | Yes |
 | S2 | Source is opened read-only on all platforms | `GENERIC_READ` only (Windows), `O_RDONLY` (Linux/macOS) | implemented | `crates/relift-core/src/source.rs` | Yes |
-| S3 | Destination on same physical device as source is refused | `validate_destination` resolves ancestry and rejects same-disk | unit-tested | `crates/relift-core/src/safety.rs` | Yes |
+| S3 | A raw-device destination on the same physical disk is refused | `validate_destination` resolves raw-device ancestry and rejects same-disk; image sources are checked against the source file itself | unit-tested | `crates/relift-core/src/safety.rs` | Yes |
 | S4 | Output files created with `create_new` (no overwrite) | `CapabilityOpenOptions::create_new(true)` | unit-tested | `crates/relift-core/src/safety.rs` | Yes |
 | S5 | Traversal components rejected in output paths | `sanitize_relative` rejects `..`, `.`, absolute, prefix | unit-tested | `crates/relift-core/src/safety.rs` | Yes |
 | S6 | Recovery refuses a source whose size/fingerprint differs from session | `run_recovery` compares `size` and `fingerprint` | unit-tested | `crates/relift-core/src/recover.rs` | Yes |
@@ -45,14 +45,15 @@ retracted or corrected when the code or tests no longer support it.
 
 | ID | Claim | Evidence | Level | Location | Verified |
 |---|---|---|---|---|---|
-| C1 | 36 registered formats, each with a structural validator | `registered_format_count_is_stable` test asserts 36 unique formats | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
-| C2 | Random data produces zero false positives | Unit tests: `random_bytes_rejects_new_carvers`, `random_mz_is_rejected` | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
+| C1 | 153 unique format identifiers are registered; some entries are marker-only and cannot emit candidates | `registered_format_count_is_stable` asserts the registry count; the dispatch path emits only when a validator returns a result | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
+| C2 | Fixed noise patterns produce no candidates in the tested fixtures | Unit tests: `random_bytes_rejects_new_carvers`, `random_mz_is_rejected`; this is not a general false-positive rate | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
 | C3 | MPEG-TS requires >=4 consecutive valid 188-byte packets | Unit test: `mpegts_rejects_random_sync_bytes` | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
 | C4 | Valid MPEG-TS is still carved | Unit test: `valid_mpegts_is_carved` | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
 | C5 | Chunk overlap >= max signature length - 1 | Unit test: `overlap_covers_longest_signature` | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
 | C6 | Signatures spanning chunk boundaries are found | Unit test: `signatures_at_chunk_boundaries_are_found` | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
 | C7 | ZIP64 is not separately emitted | Code comment: shares `PK\x03\x04` magic with ZIP validator | implemented | `crates/relift-core/src/carve.rs` | Yes |
 | C8 | Unvalidated carves are never emitted | `validate()` returns `Option`; only `Some` candidates are emitted | implemented | `crates/relift-core/src/carve.rs` | Yes |
+| C9 | CR3, RAF, MRW and DDS require format-specific structure before emission | Validator tests include accepted synthetic samples and malformed headers/bounds | unit-tested | `crates/relift-core/src/carve.rs` | Yes |
 
 ## Filesystem detection claims
 
@@ -72,6 +73,9 @@ retracted or corrected when the code or tests no longer support it.
 | L2 | `--json` produces machine-readable output | Contract test: `scan_json_is_valid_and_recovery_rejects_a_changed_source` | unit-tested | `crates/relift-cli/tests/contract.rs` | Yes |
 | L3 | `--resume` continues a cancelled session | Contract test: `scan_resume_continues_a_cancelled_session_and_rejects_a_changed_source` | unit-tested | `crates/relift-cli/tests/contract.rs` | Yes |
 | L4 | `--dry-run` validates without writing | Unit test: `dry_run_plans_without_writing_or_mutating_the_session` | unit-tested | `crates/relift-core/src/recover.rs` | Yes |
+| L5 | `partitions-scan` checks signatures from a buffered chunk and bounds estimated volume sizes | Synthetic NTFS signature scan fixture | unit-tested | `crates/relift-core/src/partitions.rs` | Yes |
+| L6 | Config scan/list/recover settings are applied and unknown fields are rejected | Config parser tests plus CLI filter precedence tests | unit-tested | `crates/relift-cli/src/config.rs`, `crates/relift-cli/src/main.rs` | Yes |
+| L7 | `relift verify` streams hashes and rejects output paths outside the saved destination | Streaming `hash_file`, canonical path confinement helper, and confinement test | unit-tested | `crates/relift-cli/src/main.rs` | Yes |
 
 ## Imaging claims
 
@@ -98,8 +102,8 @@ retracted or corrected when the code or tests no longer support it.
 
 If any of the following change, the corresponding documentation must be updated at the same time:
 
-- The number of registered carve formats (36): `registered_format_count_is_stable` test, `docs/src/formats.md`, `docs/src/support-matrix.md`, README, `llms.txt`, `llms-full.txt`.
-- The test count (100): README badge and text.
+- The number of registered carve identifiers (153): `registered_format_count_is_stable` test, `docs/src/formats.md`, `docs/src/support-matrix.md`, README, `llms.txt`, `llms-full.txt`.
+- The test count: README badge and text, `docs/TEST_RESULTS.md`, `docs/src/VERIFICATION.md`.
 - Filesystem support levels: `docs/src/support-matrix.md`, `docs/src/limitations.md`, README.
 - Exit codes: `docs/src/CLI.md`, README, `crates/relift-cli/src/main.rs`.
 - The source read-only invariant: `crates/relift-core/src/source.rs`, `docs/decisions/ADR-0002-read-only-invariant.md`.

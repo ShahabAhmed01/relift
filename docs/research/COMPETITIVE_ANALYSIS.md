@@ -1,112 +1,52 @@
-# Competitive analysis — Relift vs. established recovery applications
+# Open source recovery landscape and Relift gaps
 
-**Research date:** 2026-11-27
-**Product:** Relift (free, open-source, GPL-3.0-or-later)
-**Sources:** official product documentation and repositories (CGSecurity TestDisk/PhotoRec docs, Microsoft Windows File Recovery docs, R-Studio/UFS Explorer pricing pages). All capability claims below are labeled as verified (from the source named) or assumption (reasoned from public docs, not independently tested by Relift).
+**Reviewed:** 2026-11-28
 
-## How to read this document
+**Scope:** Representative public projects and their documented behavior. This is not an exhaustive GitHub census or a head-to-head recovery benchmark. Product claims below come from the linked primary project documentation. Relift has not been tested against a shared real-media corpus.
 
-- **Verified** = stated by the product's official documentation, repository, or release notes; confirmed at research date.
-- **Assumption** = inferred from public documentation; not independently verified by the Relift project.
-- Relift claims are drawn from `docs/src/support-matrix.md`, `docs/src/VERIFICATION.md`, and the relift-core implementation, all validated against the code and test suite on 2026-11-27.
+## Projects that define useful baselines
 
-This analysis deliberately avoids SEO-style ranking claims, fabricated comparisons, and manipulated popularity figures. It states where Relift is behind, where it is comparable, and where it can realistically be preferred.
+| Project | Main strength | What Relift should learn from it |
+|---|---|---|
+| [TestDisk and PhotoRec](https://github.com/cgsecurity/testdisk) | Partition and boot-sector recovery; PhotoRec carving across hundreds of format families; Windows, Linux and macOS support | Partition discovery and filesystem breadth are mature domains. PhotoRec's docs discuss per-format selection, interrupted-run recovery, and the limits of fragmented-file carving. Relift should grow format coverage only with validators and ground-truth fixtures. |
+| [GNU ddrescue](https://www.gnu.org/software/ddrescue/manual/ddrescue_manual.html) | Resilient acquisition of failing media using a persistent mapfile, resumable passes and selective retries | Relift's current image command is a single forward copy. A durable mapfile, resume, retry policy and explicit bad-range accounting are higher value than another shallow image-container parser. |
+| [The Sleuth Kit](https://github.com/sleuthkit/sleuthkit) | Reusable forensic filesystem analysis libraries and command-line tools | Mature engines can extend filesystem support faster than writing many new parsers. Any integration needs a careful license, packaging, source-safety and evidence-provenance review. |
+| [RecovMe](https://github.com/trevnedai/recovme) | Open-source GUI and CLI orchestration around established recovery engines | A product can provide a coherent workflow by coordinating proven tools instead of cloning every parser. Relift can retain its native engine while adding opt-in adapters where the license and security boundary permit. |
+| [Foremost](https://github.com/korczis/foremost) | Small, configurable header/footer data carving utility | User-defined signatures and clear per-format controls are useful, but a header/footer match alone is weak recovery evidence. Any custom format support should expose validation strength and avoid presenting unvalidated bytes as verified. |
 
-## Products compared
+PhotoRec documents more than 480 extensions across roughly 300 file families, supports selecting formats, and warns that fragmentation can make carved files incomplete. TestDisk documents partition recovery and undelete workflows across several filesystem families. GNU ddrescue's mapfile records which areas have been copied or remain problematic so a run can continue without rereading successful regions. These are source-documented capabilities, not Relift benchmark results.
 
-| Product | License | Cost | Platform | Interface |
-|---|---|---|---|---|
-| Relift | GPL-3.0-or-later | Free | Windows, Linux, macOS | CLI + Tauri GUI |
-| TestDisk / PhotoRec | GPL v2+ | Free | Windows, Linux, macOS | CLI/TUI (PhotoRec has QPhotoRec) |
-| Windows File Recovery | Proprietary (Microsoft) | Free | Windows | CLI (`winfr`) |
-| Recuva | Proprietary | Free tier; paid Pro | Windows | GUI |
-| DMDE | Proprietary | Free tier (limited); paid | Windows | GUI |
-| R-Studio | Proprietary | $49.99–$79.99 one-time (per Capterra, 2026) | Windows, Linux, macOS | GUI |
-| UFS Explorer | Proprietary | $69.95–$699.95 (per vendor site, 2026) | Windows | GUI |
+## Relift as implemented in this checkout
 
-Pricing and tier details for proprietary products come from public vendor/reseller pages at research date and may have changed. Relift has no paid tier.
+- The Rust workspace has a shared recovery core, CLI, Tauri/Svelte GUI, fixture toolkit and benchmarks.
+- The source abstraction has no write operation. Raw-device destination checks reject destinations whose physical backing cannot be proven separate.
+- Metadata recovery is end-to-end fixture-tested for FAT12/16/32, exFAT, NTFS and ext2/3/4. HFS+, APFS, Btrfs and XFS remain experimental; their detection fixtures do not prove deleted-file recovery.
+- The carver registry contains 153 format identifiers. Some registry entries are markers without an emitting validator; the number 153 is not a count of equally mature or end-to-end-tested formats. Candidates are emitted only when their format validator accepts the structure.
+- Sessions store JSON and JSONL records and support CLI resume at volume checkpoints. Large-source identity uses sampled blocks, so a change in an unsampled region may not be detected.
+- Recovery verifies output bytes by default. `relift verify` independently streams SHA-256 checks and confines output paths to the session's recorded destination.
+- `relift partitions-scan` looks for known filesystem signatures and probes candidates. Its estimates are leads for inspection, not proof of a recoverable partition or a write-ready partition table.
+- Virtual-disk and forensic-image commands are not end-to-end scan support. Some readers are incomplete, some formats return `NotImplemented`, and `open_source` still reads regular raw image files and raw devices.
+- TOML settings apply to scan, list and recover; unknown config keys and invalid defaults are rejected.
 
-## Capability matrix
+The support boundary and validation evidence are maintained in the [support matrix](../src/support-matrix.md), [verification record](../src/VERIFICATION.md), and [claims ledger](../src/claims-ledger.md).
 
-| Capability | Relift | TestDisk / PhotoRec | Windows File Recovery | Recuva (free) | R-Studio / UFS Explorer |
-|---|---|---|---|---|---|
-| Cost | Free, no tier | Free | Free | Free tier, paid Pro | Paid |
-| Open source | Yes | Yes | No | No | No |
-| Cross-platform | Win/Linux/macOS | Win/Linux/macOS | Windows | Windows | Win/Linux/macOS |
-| GUI | Yes (Tauri + Svelte) | No (CLI/TUI); QPhotoRec basic | No | Yes | Yes |
-| CLI | Yes | Yes | Yes | No | Limited |
-| Read-only source by construction | Yes | Yes (read-only scan) | Yes | Yes | Yes |
-| Destination separation enforced | Yes | No | No | No | No |
-| Source immutability guarantee | Verified | Not stated | Not stated | Not stated | Not stated |
-| Deleted-file metadata recovery (FAT/exFAT/NTFS/ext4) | Verified on fixtures | Verified (FAT/exFAT/NTFS/ext2) | Verified (NTFS) | Verified (assumption) | Verified (assumption) |
-| Deep scan / signature carving | Yes, 153 formats | Yes (PhotoRec, hundreds of signatures) | Yes (signature mode) | Yes | Yes |
-| Structurally validated carving | Yes (every format validated) | No (magic + header, more false positives) | Partial | Assumption | Assumption |
-| Lost partition detection | No | Yes | No | No | Yes |
-| Raw disk image support | Yes | Yes | No | No | Yes |
-| Virtual disk (VHD/VMDK/QCOW2/DMG) | No | No | No | No | Yes (assumption) |
-| E01/EWF evidence images | No | No | No | No | Yes (R-Studio, assumption) |
-| SHA-256 recovery verification | Yes | No | No | No | Assumption |
-| Sessions and resume | Yes | No | No | No | Partial (assumption) |
-| Preview | Limited (assumption) | No | No | Yes | Yes |
-| Filtering/search | Yes | Minimal | Limited | Yes | Yes |
-| Reporting (JSON/CSV/HTML) | JSON CLI; HTML report | No | No | No | Yes (assumption) |
-| Pause/resume scan | No | No | No | No | Partial (assumption) |
-| Imaging / bad-sector handling | Single-pass imaging | No | No | No | Yes (assumption) |
-| SSD TRIM handling | Documents limitation | Documents limitation | Documents limitation | N/A | Documents limitation |
-| Telemetry / tracking | None | None | Microsoft Store app | Unknown | Unknown |
-| Account registration required | No | No | Microsoft Store | No | No |
+## What Relift should add next
 
-## Per-product notes
+1. **Resumable, bad-sector-aware imaging.** Add a versioned mapfile, durable checkpoints, bounded retry passes, output verification and interruption tests. Keep the source handle read-only and require a separate destination before the first write.
+2. **A real-media validation corpus.** Obtain legally redistributable or user-generated fixtures with known ground truth. Record source provenance, filesystem, deletion method, expected bytes and hashes. Publish false-positive, byte-accuracy and path/name recovery results.
+3. **Broader metadata support through maintained engines.** Prototype an optional Sleuth Kit adapter for filesystems Relift does not implement. Verify license compatibility, binary provenance, no-write behavior, and a clear distinction between native and delegated results before shipping it.
+4. **Safer partition workflows.** Improve lost-partition candidate validation, size confidence and user review. Never silently write a reconstructed partition table.
+5. **Honest parser coverage.** Track registered signatures, validators, positive fixtures, malformed-input fixtures and real-corpus validation as separate measures. Prefer fewer well-validated formats over a large headline count.
+6. **Operational usability.** Add bounded-memory candidate pagination to the GUI/CLI, clear cancellation and resume semantics, exportable scan diagnostics, and signed reproducible release artifacts.
 
-### TestDisk / PhotoRec (CGSecurity)
+These are ranked by recovery risk reduction and user value. They are roadmap items, not current features. No comparative accuracy or speed claim is justified until Relift and peer tools are run on the same published corpus and hardware.
 
-**Verified:** GPL v2+, free, runs on Windows/Linux/macOS. TestDisk detects many filesystems (NTFS, FAT12/16/32, exFAT, ext2/3/4, btrfs, HFS, XFS, ReiserFS, UFS, ZFS, APFS, and more) and can undelete files from FAT, exFAT, NTFS, and ext2. PhotoRec performs signature carving across hundreds of file signatures. Official docs note PhotoRec recovers data but not original filenames in most cases, and that ext3/ext4 deleted-file data locations are generally unavailable. TestDisk's documentation reports fragmented files are not recovered reliably.
+## References
 
-**Relift compared:** Relift matches TestDisk on the core deleted-file use case for FAT/exFAT/NTFS/ext4, adds structurally validated carving (fewer false positives than raw signature matching), a GUI, destination separation enforcement, SHA-256 verification, and resumable sessions. Relift trails TestDisk on lost-partition detection, broader filesystem coverage (btrfs, XFS, HFS, ReiserFS, UFS, ZFS partition-level), and the sheer breadth of PhotoRec's signature list. PhotoRec carves more formats but without structural validation, so it emits more false positives and does not preserve original filenames.
-
-### Windows File Recovery (Microsoft)
-
-**Verified:** Free Microsoft Store tool, Windows only, CLI (`winfr`). Supports NTFS, FAT, exFAT, ReFS. Modes: Regular/Extensive/Signature. Documentation states NTFS recently-deleted files use Regular mode; older deletions, formatting, and corruption use Extensive; signature mode for non-NTFS.
-
-**Relift compared:** Relift is cross-platform and adds a GUI, whereas Windows File Recovery is Windows-only and CLI-only. Relift's destination-separation enforcement and session resume go beyond what the tool documents. Relift does not support ReFS; Windows File Recovery does.
-
-### Recuva / DMDE (Windows, freemium)
-
-**Assumption:** Recuva offers a free GUI with a paid Pro tier; DMDE offers a free tier with recovery limits and paid unlocks. Both are Windows-focused.
-
-**Relift compared:** Relift is entirely free with no file-count, size, or feature tiers, and is cross-platform. Relift's read-only and destination-safety guarantees are explicit and enforced in code, which freemium GUI tools often do not document as enforceable invariants.
-
-### R-Studio / UFS Explorer (paid, commercial)
-
-**Verified:** Proprietary, one-time or per-seat pricing (public pages list roughly $49.99–$79.99 for R-Studio and $69.95–$699.95 for UFS Explorer tiers at research date). Marketed for RAID, virtual disks, E01/EWF evidence images, and severely damaged filesystems.
-
-**Relift compared:** Relift cannot yet match RAID reconstruction, virtual-disk containers, E01/EWF, or deep damaged-filesystem repair. These are documented gaps in `docs/src/GAP_REPORT.md`. Relift's advantage is cost (free), openness (GPLv3+, auditable), cross-platform availability, offline-first operation with no telemetry, and explicit enforcement that the source is never written to.
-
-## Where Relift can realistically be preferred
-
-1. **Price and openness.** Completely free, no tiers, no paid unlocks, GPLv3+ source auditable by anyone. For users who cannot or will not pay $50–$700, Relift is the only option in this comparison that is both free and open source across Windows, Linux, and macOS.
-
-2. **Safety guarantees.** Relift enforces read-only source access and destination separation at the code level (`ReadOnlySource` exposes no write method; `safety.rs` refuses same-device destinations and confines writes). These are testable invariants, not documentation promises.
-
-3. **Validated carving.** Relift's 36 carved formats each pass a structural validator before a candidate is emitted. Random data produces zero false positives (tested). This contrasts with raw magic-byte carvers that emit more false positives.
-
-4. **Recovered-output verification.** SHA-256 verification of recovered bytes against what was written back, plus resumable, inspectable sessions.
-
-5. **Cross-platform CLI + GUI.** One tool, same engine, on Windows, Linux, and macOS, with both scriptable JSON CLI output and a desktop GUI.
-
-## Where Relift trails today (honest gaps)
-
-- **Lost partition detection.** TestDisk and commercial tools reconstruct lost partitions; Relift scans a single volume/image.
-- **Broader filesystem coverage.** btrfs, XFS, HFS+, ReiserFS, UFS, ZFS partition-level recovery is not implemented; HFS+/APFS/Btrfs/XFS are probe-identified but metadata recovery is experimental.
-- **Virtual disk and evidence containers.** VHD/VHDX, VMDK, QCOW2, DMG, E01/EWF are not supported; only raw images.
-- **Damaged/RAID filesystem repair.** No boot-sector repair, RAID reconstruction, or heavily corrupted-filesystem handling.
-- **Real-media validation corpus.** All Relift recovery evidence is synthetic-fixture based; no physical drive or representative real-volume corpus has been validated (see `docs/src/VERIFICATION.md`).
-
-These gaps are tracked in `docs/src/GAP_REPORT.md` and are research targets, not claimed capabilities.
-
-## Competitive positioning statement
-
-Relift is not positioned as a clone of TestDisk, R-Studio, or Windows File Recovery. It is positioned as the free, open-source, cross-platform recovery tool that enforces source safety, validates every carved file, verifies recovered output, and keeps source and destination strictly separated — with no paid tier, no telemetry, and no account requirement. Users who need partition recovery, RAID reconstruction, virtual-disk containers, or evidence-image formats should use TestDisk or a commercial suite; users who want a free, transparent, safety-first tool for deleted files on disk images and drives are Relift's target audience.
-
-
-
+- [PhotoRec documentation](https://github.com/cgsecurity/testdisk_documentation/blob/master/photorec.rst)
+- [TestDisk and PhotoRec repository](https://github.com/cgsecurity/testdisk)
+- [GNU ddrescue manual](https://www.gnu.org/software/ddrescue/manual/ddrescue_manual.html)
+- [The Sleuth Kit repository](https://github.com/sleuthkit/sleuthkit)
+- [RecovMe repository](https://github.com/trevnedai/recovme)
+- [Foremost repository](https://github.com/korczis/foremost)
+- [Relift support matrix](../src/support-matrix.md)

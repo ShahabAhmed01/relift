@@ -16,7 +16,7 @@ Relift scans disk images and raw devices without writing to them, records what i
 [![Release](https://img.shields.io/badge/release-v0.1.0%20preview-orange)](https://github.com/ShahabAhmed01/relift/releases/tag/v0.1.0)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.90%2B-blue)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-100%20passing-brightgreen)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-112%20passing-brightgreen)](https://github.com/ShahabAhmed01/relift/actions/workflows/ci.yml)
 
 ## Why Relift
 
@@ -27,15 +27,18 @@ the safety of the evidence over the speed of the recovery.
 - **Read-only by construction.** `ReadOnlySource` exposes no write method, so
   the recovery engine cannot modify the source. Imaging and recovery write only
   to an explicitly selected destination.
-- **Destination separation is checked before any write.** Relift refuses a
-  destination that resolves to the same physical device as the source, including
-  partition and stacked-device ancestry on Linux.
+- **Raw-device output is checked before writes.** Relift refuses a session or
+  recovery destination on the same physical disk as a raw source, including
+  partition and stacked-device ancestry on Linux. For image-file sources,
+  choose a separate physical volume manually.
 - **Recovery is verified, not assumed.** Recovered files are hashed with SHA-256
   by default. The check proves the destination bytes match what was read back;
   it does not prove they match an unknown original file.
 - **Carving requires structural validation.** A magic-byte match alone is never
-  emitted as a candidate. The 153 registered formats each pass a structural
-  validator before a candidate is reported.
+  emitted as a candidate. The registry has 153 format identifiers, including
+  marker-only entries; candidates are emitted only when a format validator
+  accepts their structure. Registry size is not a count of equally mature
+  formats.
 - **Sessions are inspectable and resumable.** Scan results are stored as
   JSON/JSONL, and an interrupted scan can continue with `relift scan --resume`
   after the source identity is revalidated.
@@ -48,7 +51,7 @@ the safety of the evidence over the speed of the recovery.
 |---|---|---|
 | Filesystem metadata recovery | FAT12/16/32, exFAT, NTFS, ext2/3/4 | Fixture-validated end to end with SHA-256 |
 | Filesystem detection | HFS+, APFS, Btrfs, XFS, ReFS, F2FS, ZFS, ReiserFS, ISO 9660, UDF | HFS+/APFS/Btrfs/XFS have probe fixtures; the rest are detection-only |
-| Signature carving | 153 formats with structural validators | Unit-tested valid, truncated, and random inputs |
+| Signature carving | 153 registered identifiers; only validator-backed formats emit | Unit-tested inputs; no real-media corpus |
 | Sparse files | Holes and unwritten extents keep byte offsets | Fixture-tested |
 | CLI | scan, recover, image, devices, doctor, report, completions | Process-level contract tests |
 | GUI | source selection, scan progress, filtering, preview, recovery | Tauri 2 + Svelte 5; see [GUI docs](docs/src/GUI.md) |
@@ -122,35 +125,39 @@ Other commands:
 ```sh
 relift devices      # list visible devices and access status
 relift doctor       # run local self-tests
-relift report ./session --format html --dest report.html
+relift partitions-scan image.dd --session ./partition-catalog
+relift verify ./session --json
+relift report ./session --format html --out report.html
 ```
+
+The CLI accepts a TOML config file with `--config FILE`, or searches for
+`./relift.toml` and the user config file. Config defaults apply to `scan`,
+`list`, and `recover`; CLI values override them. See the
+[CLI reference](docs/src/CLI.md) for the schema and all options.
 
 See the [CLI reference](docs/src/CLI.md) for every option and the exit-code contract.
 
-## Demo
+## Synthetic demo
 
-A demonstration of Relift recovering deleted files from a synthetic FAT32
-image is captured in `docs/assets/demo/`. It covers the CLI flow
-(`scan --mode deep` → `list` → `recover --dry-run` → `recover` → independent
-SHA-256 check against a pre-deletion manifest) and documents the result.
+Synthetic demo data, scripts, and scan-session artifacts are kept in
+`docs/assets/demo/`. The accompanying screenshots and video have contradictory
+provenance and are not product evidence: CLI images expose a local Windows
+profile path, and at least one supposed GUI screenshot shows an editor/agent
+conversation rather than Relift. They are not embedded here. See
+[`PROVENANCE.md`](docs/assets/demo/PROVENANCE.md) before using any demo artifact.
 
-- Scripts (reproducible): `docs/assets/demo/scripts/` (genimg generator,
-  run-demo, verify)
-- Evidence: `docs/assets/demo/manifest.sha256` (pre-deletion hashes) and
-  `docs/assets/demo/session/` (scan JSON/JSONL)
-- Full record: `docs/assets/demo/PROVENANCE.md` (commit SHA, environment,
-  every command with exit code, hash-match table, limits)
+On Windows, the PowerShell runner creates a fresh synthetic image, scans it,
+and shows a dry run. It requires an existing destination on a different
+physical disk;
+writing recovered files requires `-WriteRecoveredFiles` and typing `RECOVER`
+after reviewing the dry-run summary:
 
-> Captured from commit `c9978317c82038ca38772b83ea3e3d7845ea16ca` on Windows 10
-> using synthetic test images; see `docs/assets/demo/PROVENANCE.md`.
-
-![Demo](docs/assets/demo/relift-demo.gif)
-
-Genuine screenshots and a 90-second demo video were captured from the real
-program running on commit `c997831`. All screenshots under
-`docs/assets/screenshots/` are genuine captures of the running CLI and GUI,
-replacing the previous placeholder files. See `docs/assets/demo/PROVENANCE.md`
-for full capture details, environment, and per-asset provenance.
+```powershell
+powershell -File docs/assets/demo/scripts/run-demo.ps1 `
+  -ReliftPath .\target\release\relift.exe `
+  -DemoDirectory .\relift-demo `
+  -RecoveryDestination E:\relift-recovery
+```
 
 ## Exit codes
 
@@ -167,7 +174,9 @@ for full capture details, environment, and per-asset provenance.
 
 The desktop app uses Tauri 2 and Svelte 5. It supports source selection, quick and deep scans with real progress events, result filtering and preview, destination selection, and recovery with hash verification. Imaging, report export, and checkpoint resume remain CLI-only.
 
-Genuine screenshots of the running application are not yet checked in. The files under `docs/assets/screenshots/` are placeholder captures and do not show the Relift GUI. To capture real screenshots, build the GUI and follow the procedure in [docs/GUI_CAPTURE.md](docs/GUI_CAPTURE.md) using a deterministic synthetic fixture.
+The GUI images in the repository have not been verified as captures of the
+application. Re-capture from the current build before using visuals to describe
+product features.
 
 ## Evidence and limitations
 
@@ -206,6 +215,7 @@ The sweep result is below its 4 GB/s target and regressed against the previous l
 - [CLI reference](docs/src/CLI.md)
 - [Architecture](docs/src/architecture.md)
 - [Support matrix](docs/src/support-matrix.md)
+- [Competitive analysis](docs/research/COMPETITIVE_ANALYSIS.md)
 - [Threat model](docs/src/threat-model.md)
 - [Limitations](docs/src/limitations.md)
 - [Gap report](docs/src/GAP_REPORT.md)
@@ -222,7 +232,7 @@ cargo test --workspace --all-targets
 cargo doc --workspace --no-deps
 ```
 
-The suite has 100 tests: core unit tests, end-to-end recovery tests (FAT32, exFAT, NTFS, ext4), fixture tests, CLI unit and process-level contract tests, GUI DTO contract tests, carver validation tests, filesystem probe tests, and resume tests. CI runs the same suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
+The current workspace run passed 112 tests across core, CLI, GUI, testkit, and end-to-end targets. CI runs the suite on Linux, macOS, and Windows with stable Rust and the 1.90 MSRV. These tests use deterministic synthetic fixtures; they do not establish recovery accuracy on real volumes.
 
 ## Security
 

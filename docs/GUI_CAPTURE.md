@@ -2,7 +2,7 @@
 
 **Status:** OWNER TASK — requires a graphical desktop environment.
 
-The screenshots currently checked in under `docs/assets/screenshots/` (gui-home.png, gui-scan.png, gui-results.png, gui-recover.png) are **not** genuine captures of the running Relift GUI. They are identical placeholder images (a VS Code window). Do not use them as product evidence.
+The screenshots under `docs/assets/screenshots/` are **not verified captures of the running Relift GUI**. Audit found that `gui-home.png` shows an editor/agent conversation rather than Relift, while CLI images expose a local Windows profile path. Their capture history is unavailable. Do not use any of these files as product evidence; re-capture from the current build and review them for private paths.
 
 ## What to capture
 

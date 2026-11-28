@@ -1,44 +1,32 @@
-# Relift S-Tier Roadmap: Dominating the File Recovery Landscape
+# Relift Recovery Tool Roadmap
 
 ## Executive Summary
 
-Relift is already a strong contender with unique strengths: **read-only by construction**, **destination separation enforcement**, **structurally validated carving**, **SHA-256 verification**, and **resumable sessions**. However, to become the undisputed #1 free/open-source recovery tool that dominates even paid competitors, we need to close critical gaps and add differentiating features.
+This is an aspirational engineering roadmap, not a ranking or a claim of parity. Relift is an early preview with synthetic-fixture evidence. Current implementation status is in the [support matrix](docs/src/support-matrix.md); representative project comparisons and source links are in the [competitive analysis](docs/research/COMPETITIVE_ANALYSIS.md).
 
 ## Current Competitive Position
 
-| Area | Relift | TestDisk/PhotoRec | DMDE | R-Studio/UFS Explorer |
-|------|--------|-------------------|------|----------------------|
-| Cost | Free, no tiers | Free | Freemium (4k files) | Paid ($50-$700) |
-| Open Source | ✅ GPL-3.0+ | ✅ GPLv2+ | ❌ | ❌ |
-| Cross-platform | ✅ Win/Lin/macOS | ✅ Win/Lin/macOS | ✅ Win/Lin/macOS | ✅ Win/Lin/macOS |
-| GUI | ✅ Tauri+Svelte | ❌ (QPhotoRec basic) | ✅ Dense | ✅ Professional |
-| Read-only enforced | ✅ Code-level | Docs only | ❌ | ❌ |
-| Destination separation | ✅ Enforced | ❌ | ❌ | ❌ |
-| Validated carving | ✅ 153 formats | Magic only | Custom sigs | Custom sigs |
-| SHA-256 verification | ✅ | ❌ | ❌ | Partial |
-| Sessions/resume | ✅ | ❌ | ❌ | Partial |
-| Partition recovery | ❌ | ✅ | ✅ | ✅ |
-| Virtual disks | ❌ | ❌ | ✅ | ✅ |
-| Forensic images (E01) | ❌ | ❌ | ❌ | ✅ |
-| RAID reconstruction | ❌ | Basic | ✅ | ✅ |
-| Encryption support | ❌ | ❌ | ❌ | ✅ |
-| Hex editor | ❌ | ❌ | ✅ | ✅ |
-| S.M.A.R.T. monitoring | ❌ | ❌ | ✅ | ✅ |
-| File preview | Limited | ❌ | Limited | ✅ Full |
-| Search index integration | ❌ | ❌ | ❌ | ❌ (Recover has it) |
-| Custom signatures | ❌ | ❌ | ✅ | ✅ |
+| Area | Relift status today |
+|------|----------------------|
+| Source protection | Read-only source abstraction. Raw-device recovery checks for a different physical disk; image-file recovery checks only that output is not the image file, so users must choose another physical volume. |
+| Carving | 153 identifiers are registered, including marker-only entries. Only validator-backed formats can emit candidates; validation maturity differs. |
+| Filesystem recovery | Fixture-tested metadata recovery for FAT, exFAT, NTFS, and ext2/3/4. Other parsers are experimental or detection-only. |
+| Partition handling | Reads existing MBR/GPT/APM tables and scans for lost-partition signatures. It does not repair a partition table or restore one to disk. |
+| Virtual/forensic images | Some virtual-disk formats have inspection code, but scanning is not integrated. QCOW reads and DMG, Parallels, E01, and AFF/AFF4 support are not implemented. |
+| Recovery workflow | Scan sessions can resume. Recovery reports SHA-256 when verification is enabled; recovery itself is not resumable. |
+| Distribution and validation | Preview release is unsigned. Evidence is synthetic; no representative real-media corpus has been validated. |
 
 ## Phase 1: Critical Gaps (Must Have for Parity)
 
 ### 1.1 Partition Recovery & Lost Partition Detection
-**Priority: CRITICAL** - TestDisk's #1 feature
+**Priority: HIGH** - Mature recovery suites have broader partition workflows.
 - Scan for filesystem signatures across entire disk
-- Reconstruct partition tables (MBR/GPT)
-- Recover deleted/lost partitions
-- Boot sector backup/restore for FAT/NTFS/ext
+- Validate and reconstruct partition layouts for inspection (current recovery is a signature scan)
+- Recover deleted/lost partitions with filesystem metadata where possible
+- Boot sector analysis and repair planning for FAT/NTFS/ext
 
 ### 1.2 Virtual Disk Support
-**Priority: CRITICAL** - R-Studio/UFS Explorer/DMDE/Recover all have this
+**Priority: HIGH** - Support is partial and is not connected to scan/recovery.
 - VHD/VHDX (Hyper-V)
 - VMDK (VMware - flat, sparse, split, delta, snapshot chains)
 - QCOW/QCOW2 (QEMU/KVM)
@@ -332,11 +320,11 @@ Priority additions:
 
 ## Success Metrics
 
-1. **Recovery Accuracy**: >95% on validated corpus (vs ~70-80% for PhotoRec)
-2. **False Positive Rate**: <0.1% on random data (validated carving)
-3. **Scan Speed**: >4 GB/s signature sweep (target met)
-4. **Memory**: <350 MB RSS for 4 TB scan (target)
-5. **Platform Coverage**: 100% feature parity Win/Lin/macOS
+1. **Recovery accuracy target**: >95% byte accuracy on a published, ground-truth corpus; not measured yet
+2. **False positive target**: <0.1% on representative data; not measured yet
+3. **Scan speed target**: >=4 GB/s signature sweep; latest local benchmark is recorded in the README and methodology
+4. **Memory target**: <350 MB RSS for a 4 TB scan; not measured yet
+5. **Platform coverage target**: all supported workflows exercised on Windows, Linux, and macOS; full feature parity is not assumed
 6. **Community**: 10k+ GitHub stars, 100+ contributors
 7. **Package Managers**: Available in all major repos
 8. **Citations**: Referenced in academic/forensic literature

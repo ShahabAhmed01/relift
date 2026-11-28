@@ -1218,19 +1218,19 @@ const MARKERS: &[Marker] = &[
     Marker {
         format: "cr3",
         ext: "cr3",
-        magic: b"ftypcr3",
+        magic: b"ftypcrx ",
         adjust: -4,
     },
     Marker {
         format: "raf",
         ext: "raf",
-        magic: b"RAF",
+        magic: b"FUJIFILMCCD-RAW ",
         adjust: 0,
     },
     Marker {
         format: "mrw",
         ext: "mrw",
-        magic: b"MRW",
+        magic: b"\x00MRM",
         adjust: 0,
     },
     // ===== Additional image / disc =====
@@ -1834,7 +1834,7 @@ fn validate(
         "rw2" => validate_rw2(src, start, limit),
         "x3f" => validate_x3f(src, start, limit),
         "crw" => validate_crw(src, start, limit),
-        "cr3" => validate_mp4(src, start, limit),
+        "cr3" => validate_cr3(src, start, limit),
         "raf" => validate_raf(src, start, limit),
         "mrw" => validate_mrw(src, start, limit),
         "dds" => validate_dds(src, start, limit),
@@ -2437,9 +2437,6 @@ fn u16_at(src: &dyn ReadOnlySource, off: u64, le: bool, limit: u64) -> Option<u1
 }
 
 fn validate_mp4(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
-    if start < 4 {
-        return None;
-    }
     let mut pos = start;
     let mut boxes = 0u32;
     let mut saw_ftyp = false;
@@ -4581,39 +4578,300 @@ fn validate_crw(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Vali
     Some(Validated::new(512, 90).note("CRW: Canon CIFF RAW header validated"))
 }
 
+fn validate_cr3(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
+    // CR3 is an ISO-BMFF container. The marker is the ftyp box type followed
+    // by Canon's "crx " major brand; validate the remaining box chain too.
+    let header = read_bounded(src, start, 16, limit)?;
+    if &header[4..8] != b"ftyp" || &header[8..12] != b"crx " {
+        return None;
+    }
+    let container = validate_mp4(src, start, limit)?;
+    Some(container.note("CR3: Canon crx ftyp brand and ISO-BMFF boxes validated"))
+}
+
 fn validate_raf(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
-    // Fujifilm RAF: "RAF" magic followed by TIFF header.
-    let h = read_bounded(src, start, 7, limit)?;
-    if &h[0..3] != b"RAF" {
+    // Fujifilm RAF's big-endian offset directory includes a JPEG preview, a
+    // metadata container, and a TIFF-based CFA/raw payload.
+    let h = read_bounded(src, start, 108, limit)?;
+    if &h[..16] != b"FUJIFILMCCD-RAW " {
         return None;
     }
-    // RAF files typically start with "RAF" + version + TIFF header.
-    let tiff = read_bounded(src, start + 3, 4, limit)?;
-    if tiff != b"II*\0" && tiff != b"MM\x00*" {
+    if !h[16..20].iter().all(u8::is_ascii_digit) {
         return None;
     }
-    Some(Validated::new(512, 90).note("RAF: Fujifilm RAW header + TIFF magic validated"))
+    let dir_version = u32_be(&h, 60)?;
+    if !matches!(dir_version, 0x0100 | 0x0159) {
+        return None;
+    }
+    let jpeg_off = u32_be(&h, 84)? as u64;
+    let jpeg_len = u32_be(&h, 88)? as u64;
+    let meta_off = u32_be(&h, 92)? as u64;
+    let meta_len = u32_be(&h, 96)? as u64;
+    let cfa_off = u32_be(&h, 100)? as u64;
+    let cfa_len = u32_be(&h, 104)? as u64;
+    if jpeg_off < 108 || jpeg_len < 4 || cfa_off < 108 || cfa_len < 8 {
+        return None;
+    }
+    let jpeg_start = start.checked_add(jpeg_off)?;
+    let jpeg_end = jpeg_start.checked_add(jpeg_len)?;
+    let cfa_start = start.checked_add(cfa_off)?;
+    let cfa_end = cfa_start.checked_add(cfa_len)?;
+    if jpeg_end > limit || cfa_end > limit || cfa_end - start > MAX_RAF {
+        return None;
+    }
+    // The embedded preview must be a structurally valid JPEG contained by
+    // the declared range, and the raw payload must begin with a TIFF header.
+    let jpeg = validate_jpeg(src, jpeg_start, jpeg_end)?;
+    if jpeg.length > jpeg_len {
+        return None;
+    }
+    let tiff = read_bounded(src, cfa_start, 4, cfa_end)?;
+    if tiff != b"II*\0" && tiff != b"MM\0*" {
+        return None;
+    }
+    if meta_len > 0 {
+        let meta_end = start.checked_add(meta_off)?.checked_add(meta_len)?;
+        if meta_off < 108 || meta_end > limit || meta_end - start > MAX_RAF {
+            return None;
+        }
+        let meta = read_bounded(src, start + meta_off, meta_len, meta_end)?;
+        if meta.len() < 4 {
+            return None;
+        }
+        let records = u32_be(&meta, 0)? as usize;
+        let mut pos = 4usize;
+        for _ in 0..records {
+            let record_header = meta.get(pos..pos.checked_add(4)?)?;
+            let record_len = u16_be(record_header, 2)? as usize;
+            pos = pos.checked_add(4)?.checked_add(record_len)?;
+            if pos > meta.len() {
+                return None;
+            }
+        }
+        if pos != meta.len() {
+            return None;
+        }
+        return Some(
+            Validated::new(meta_end.max(jpeg_end).max(cfa_end) - start, 93).note(
+                "RAF: offset directory, JPEG preview, metadata records and CFA TIFF validated",
+            ),
+        );
+    }
+    Some(
+        Validated::new(jpeg_end.max(cfa_end) - start, 92)
+            .note("RAF: offset directory, JPEG preview and CFA TIFF validated"),
+    )
 }
 
 fn validate_mrw(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
-    // Minolta MRW: "MRW" magic.
-    let h = read_bounded(src, start, 3, limit)?;
-    if h != b"MRW" {
+    // MRW stores a big-endian MRM block container followed by packed sensor
+    // data. PRD contains the sensor dimensions and stored bits per pixel.
+    let header = read_bounded(src, start, 8, limit)?;
+    if &header[..4] != b"\0MRM" {
         return None;
     }
-    Some(Validated::new(512, 88).note("MRW: Minolta RAW header validated"))
+    let block_bytes = u32_be(&header, 4)? as u64;
+    let data_start = start.checked_add(8)?.checked_add(block_bytes)?;
+    if block_bytes < 8 || data_start > limit || data_start - start > MAX_MRW {
+        return None;
+    }
+    let mut pos = start + 8;
+    let mut dimensions: Option<(u64, u64, u64)> = None;
+    let mut blocks = 0u32;
+    while pos < data_start {
+        let block_header = read_bounded(src, pos, 8, data_start)?;
+        let block_size = u32_be(&block_header, 4)? as u64;
+        let block_end = pos.checked_add(8)?.checked_add(block_size)?;
+        if block_end > data_start {
+            return None;
+        }
+        if &block_header[..4] == b"\0PRD" {
+            if dimensions.is_some() || block_size < 24 {
+                return None;
+            }
+            let prd = read_bounded(src, pos + 8, 24, block_end)?;
+            let height = u16_be(&prd, 8)? as u64;
+            let width = u16_be(&prd, 10)? as u64;
+            let bits_per_pixel = prd[16] as u64;
+            if width == 0 || height == 0 || width > 20_000 || height > 20_000 {
+                return None;
+            }
+            if !matches!(bits_per_pixel, 8 | 10 | 12 | 14 | 16) {
+                return None;
+            }
+            dimensions = Some((width, height, bits_per_pixel));
+        }
+        pos = block_end;
+        blocks += 1;
+        if blocks > 4096 {
+            return None;
+        }
+    }
+    if pos != data_start {
+        return None;
+    }
+    let (width, height, bits) = dimensions?;
+    let raw_bits = width.checked_mul(height)?.checked_mul(bits)?;
+    let raw_bytes = raw_bits.checked_add(7)?.checked_div(8)?;
+    let file_len = data_start.checked_sub(start)?.checked_add(raw_bytes)?;
+    if file_len > MAX_MRW || start.checked_add(file_len)? > limit {
+        return None;
+    }
+    Some(
+        Validated::new(file_len, 93)
+            .note("MRW: MRM blocks, PRD dimensions and raw payload length validated"),
+    )
 }
 
 fn validate_dds(src: &dyn ReadOnlySource, start: u64, limit: u64) -> Option<Validated> {
-    // DirectDraw Surface: "DDS " magic + DDS header.
-    let h = read_bounded(src, start, 4, limit)?;
-    if h != b"DDS " {
+    // Validate the canonical 124-byte DDS_HEADER / 32-byte pixel-format
+    // structure, then derive the image payload length for supported layouts.
+    let h = read_bounded(src, start, 128, limit)?;
+    if &h[..4] != b"DDS " || u32_le(&h, 4)? != 124 || u32_le(&h, 76)? != 32 {
         return None;
     }
-    let header = read_bounded(src, start, 128, limit)?;
-    let _dw_size = u32_le(&header, 4)?;
-    let _dw_flags = u32_le(&header, 8)?;
-    Some(Validated::new(128, 90).note("DDS: DirectDraw Surface header validated"))
+    let flags = u32_le(&h, 8)?;
+    let height = u32_le(&h, 12)? as u64;
+    let width = u32_le(&h, 16)? as u64;
+    let pitch_or_linear = u32_le(&h, 20)? as u64;
+    let depth = u32_le(&h, 24)? as u64;
+    let declared_mips = u32_le(&h, 28)? as u64;
+    let pf_flags = u32_le(&h, 80)?;
+    let fourcc = &h[84..88];
+    let rgb_bits = u32_le(&h, 88)? as u64;
+    let caps2 = u32_le(&h, 112)?;
+    const DDSD_HEIGHT: u32 = 0x2;
+    const DDSD_WIDTH: u32 = 0x4;
+    const DDSD_PITCH: u32 = 0x8;
+    const DDSD_PIXELFORMAT: u32 = 0x1000;
+    const DDSD_MIPMAPCOUNT: u32 = 0x20000;
+    const DDSD_DEPTH: u32 = 0x800000;
+    const DDPF_FOURCC: u32 = 0x4;
+    const DDPF_RGB: u32 = 0x40;
+    if flags & (DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT)
+        != DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT
+        || width == 0
+        || height == 0
+        || width > 32_768
+        || height > 32_768
+    {
+        return None;
+    }
+    let mut volume = caps2 & 0x200000 != 0;
+    let mut cube_faces = if caps2 & 0x200 != 0 {
+        let faces = (caps2 & 0xfc00).count_ones() as u64;
+        if faces == 0 {
+            return None;
+        }
+        faces
+    } else {
+        1
+    };
+    if volume && (depth == 0 || flags & DDSD_DEPTH == 0 || cube_faces != 1) {
+        return None;
+    }
+    let mips = if flags & DDSD_MIPMAPCOUNT != 0 {
+        declared_mips
+    } else {
+        1
+    };
+    let mut header_bytes = 128u64;
+    let mut array_size = 1u64;
+    let mut block_bytes = None;
+    let mut bits_per_pixel = None;
+    if pf_flags & DDPF_FOURCC != 0 {
+        match fourcc {
+            b"DXT1" | b"BC1 " | b"ATI1" | b"BC4U" | b"BC4S" => block_bytes = Some(8),
+            b"DXT2" | b"DXT3" | b"DXT4" | b"DXT5" | b"BC2 " | b"BC3 " | b"ATI2" | b"BC5U"
+            | b"BC5S" => block_bytes = Some(16),
+            b"DX10" => {
+                header_bytes = 148;
+                let dx10 = read_bounded(src, start + 128, 20, limit)?;
+                let format = u32_le(&dx10, 0)?;
+                let dimension = u32_le(&dx10, 4)?;
+                let misc = u32_le(&dx10, 8)?;
+                array_size = u32_le(&dx10, 12)? as u64;
+                if array_size == 0 || !matches!(dimension, 2..=4) {
+                    return None;
+                }
+                if dimension == 2 && height != 1 || dimension == 4 && depth == 0 {
+                    return None;
+                }
+                if dimension == 4 && array_size != 1 {
+                    return None;
+                }
+                volume = dimension == 4;
+                if misc & 0x4 != 0 {
+                    array_size = array_size.checked_mul(6)?;
+                    cube_faces = 1;
+                }
+                match format {
+                    71 | 72 | 80 | 81 => block_bytes = Some(8),
+                    74 | 75 | 77 | 78 | 83 | 84 | 95 | 96 | 98 | 99 => block_bytes = Some(16),
+                    61 | 62 | 63 | 49 | 51 | 28 | 29 | 87 | 91 => bits_per_pixel = Some(32),
+                    54 | 56 => bits_per_pixel = Some(16),
+                    41 | 42 => bits_per_pixel = Some(64),
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        }
+    } else if pf_flags & DDPF_RGB != 0 {
+        if !matches!(rgb_bits, 8 | 16 | 24 | 32)
+            || u32_le(&h, 92)? == 0
+            || u32_le(&h, 96)? == 0
+            || u32_le(&h, 100)? == 0
+        {
+            return None;
+        }
+        bits_per_pixel = Some(rgb_bits);
+    } else {
+        return None;
+    }
+    let max_dimension = width.max(height).max(if volume { depth } else { 1 });
+    let max_mips = 64 - max_dimension.leading_zeros() as u64;
+    if mips == 0 || mips > max_mips {
+        return None;
+    }
+    let mut total = header_bytes;
+    let mut w = width;
+    let mut hgt = height;
+    let mut d = if volume { depth } else { 1 };
+    for level in 0..mips {
+        let level_bytes = if let Some(block) = block_bytes {
+            w.div_ceil(4)
+                .checked_mul(hgt.div_ceil(4))?
+                .checked_mul(block)?
+                .checked_mul(d)?
+        } else {
+            let bpp = bits_per_pixel?;
+            let min_pitch = w.checked_mul(bpp)?.checked_add(7)?.checked_div(8)?;
+            let row_pitch = if level == 0 && flags & DDSD_PITCH != 0 {
+                if pitch_or_linear < min_pitch || pitch_or_linear > min_pitch.saturating_add(4096) {
+                    return None;
+                }
+                pitch_or_linear
+            } else {
+                min_pitch
+            };
+            row_pitch.checked_mul(hgt)?.checked_mul(d)?
+        };
+        total = total.checked_add(
+            level_bytes
+                .checked_mul(array_size)?
+                .checked_mul(cube_faces)?,
+        )?;
+        w = (w / 2).max(1);
+        hgt = (hgt / 2).max(1);
+        d = (d / 2).max(1);
+    }
+    if total < header_bytes || total > MAX_DDS || start.checked_add(total)? > limit {
+        return None;
+    }
+    Some(
+        Validated::new(total, 94)
+            .note("DDS: header, pixel format, dimensions and payload size validated"),
+    )
 }
 
 // ===== Additional audio validators =====
@@ -5019,6 +5277,138 @@ mod tests {
         )
         .unwrap();
         assert_eq!(summary.emitted, 0, "noise should produce no valid carves");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn camera_raw_and_dds_validators_require_structural_evidence() {
+        let dir = std::env::temp_dir().join(format!("relift-new-formats-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // CR3: ftyp with Canon's crx brand followed by a minimal valid box
+        // sequence. Start at zero also guards against rejecting valid files at
+        // the beginning of an image.
+        let cr3_path = dir.join("camera.cr3");
+        let mut cr3 = vec![0u8; 32];
+        cr3[0..4].copy_from_slice(&16u32.to_be_bytes());
+        cr3[4..8].copy_from_slice(b"ftyp");
+        cr3[8..12].copy_from_slice(b"crx ");
+        cr3[16..20].copy_from_slice(&8u32.to_be_bytes());
+        cr3[20..24].copy_from_slice(b"moov");
+        cr3[24..28].copy_from_slice(&8u32.to_be_bytes());
+        cr3[28..32].copy_from_slice(b"mdat");
+        std::fs::write(&cr3_path, &cr3).unwrap();
+        let cr3_src = FileSource::open(&cr3_path).unwrap();
+        assert_eq!(validate_cr3(&cr3_src, 0, cr3_src.len()).unwrap().length, 32);
+        cr3[8..12].copy_from_slice(b"isom");
+        std::fs::write(&cr3_path, &cr3).unwrap();
+        let cr3_bad = FileSource::open(&cr3_path).unwrap();
+        assert!(validate_cr3(&cr3_bad, 0, cr3_bad.len()).is_none());
+
+        // RAF: offset directory points to a valid embedded JPEG, an empty but
+        // well-formed metadata table, and a TIFF raw payload.
+        let raf_path = dir.join("camera.raf");
+        let mut raf = vec![0u8; 168];
+        raf[..16].copy_from_slice(b"FUJIFILMCCD-RAW ");
+        raf[16..20].copy_from_slice(b"0201");
+        raf[60..64].copy_from_slice(&0x0100u32.to_be_bytes());
+        raf[84..88].copy_from_slice(&128u32.to_be_bytes());
+        raf[88..92].copy_from_slice(&20u32.to_be_bytes());
+        raf[92..96].copy_from_slice(&108u32.to_be_bytes());
+        raf[96..100].copy_from_slice(&4u32.to_be_bytes());
+        raf[100..104].copy_from_slice(&160u32.to_be_bytes());
+        raf[104..108].copy_from_slice(&8u32.to_be_bytes());
+        raf[108..112].copy_from_slice(&0u32.to_be_bytes());
+        raf[128..130].copy_from_slice(&[0xff, 0xd8]);
+        raf[130..132].copy_from_slice(&[0xff, 0xc0]);
+        raf[132..134].copy_from_slice(&8u16.to_be_bytes());
+        raf[134..142].fill(1);
+        raf[140..142].copy_from_slice(&[0xff, 0xda]);
+        raf[142..144].copy_from_slice(&2u16.to_be_bytes());
+        raf[144..146].copy_from_slice(&[0xff, 0xd9]);
+        raf[160..164].copy_from_slice(b"II*\0");
+        std::fs::write(&raf_path, &raf).unwrap();
+        let raf_src = FileSource::open(&raf_path).unwrap();
+        assert_eq!(
+            validate_raf(&raf_src, 0, raf_src.len()).unwrap().length,
+            168
+        );
+        raf[88..92].copy_from_slice(&u32::MAX.to_be_bytes());
+        std::fs::write(&raf_path, &raf).unwrap();
+        let raf_bad = FileSource::open(&raf_path).unwrap();
+        assert!(validate_raf(&raf_bad, 0, raf_bad.len()).is_none());
+
+        // MRW: a bounded MRM block containing PRD sensor dimensions and a
+        // 12-bit raw payload. A naked magic is rejected.
+        let mrw_path = dir.join("camera.mrw");
+        let mut mrw = vec![0u8; 52];
+        mrw[..4].copy_from_slice(b"\0MRM");
+        mrw[4..8].copy_from_slice(&32u32.to_be_bytes());
+        mrw[8..12].copy_from_slice(b"\0PRD");
+        mrw[12..16].copy_from_slice(&24u32.to_be_bytes());
+        mrw[24..26].copy_from_slice(&2u16.to_be_bytes()); // height
+        mrw[26..28].copy_from_slice(&4u16.to_be_bytes()); // width
+        mrw[32] = 12; // stored bits per pixel
+        std::fs::write(&mrw_path, &mrw).unwrap();
+        let mrw_src = FileSource::open(&mrw_path).unwrap();
+        assert_eq!(validate_mrw(&mrw_src, 0, mrw_src.len()).unwrap().length, 52);
+        let mut mrw_bad = vec![0u8; 16];
+        mrw_bad[..4].copy_from_slice(b"\0MRM");
+        mrw_bad[4..8].copy_from_slice(&8u32.to_be_bytes());
+        std::fs::write(&mrw_path, &mrw_bad).unwrap();
+        let mrw_bad_src = FileSource::open(&mrw_path).unwrap();
+        assert!(validate_mrw(&mrw_bad_src, 0, mrw_bad_src.len()).is_none());
+
+        // DDS: valid dimensions, DXT1 format and calculated payload; the
+        // signature alone must not pass as a recovered texture.
+        let dds_path = dir.join("texture.dds");
+        let mut dds = vec![0u8; 160];
+        dds[..4].copy_from_slice(b"DDS ");
+        dds[4..8].copy_from_slice(&124u32.to_le_bytes());
+        dds[8..12].copy_from_slice(&0x100fu32.to_le_bytes());
+        dds[12..16].copy_from_slice(&8u32.to_le_bytes());
+        dds[16..20].copy_from_slice(&8u32.to_le_bytes());
+        dds[76..80].copy_from_slice(&32u32.to_le_bytes());
+        dds[80..84].copy_from_slice(&4u32.to_le_bytes());
+        dds[84..88].copy_from_slice(b"DXT1");
+        dds[108..112].copy_from_slice(&0x1000u32.to_le_bytes());
+        std::fs::write(&dds_path, &dds).unwrap();
+        let dds_src = FileSource::open(&dds_path).unwrap();
+        assert_eq!(
+            validate_dds(&dds_src, 0, dds_src.len()).unwrap().length,
+            160
+        );
+
+        // A 3D texture can have more mip levels than its width/height imply.
+        let volume_path = dir.join("volume.dds");
+        let mut volume_dds = vec![0u8; 128 + 127 * 8];
+        volume_dds[..4].copy_from_slice(b"DDS ");
+        volume_dds[4..8].copy_from_slice(&124u32.to_le_bytes());
+        volume_dds[8..12].copy_from_slice(&(0x100fu32 | 0x20000 | 0x800000).to_le_bytes());
+        volume_dds[12..16].copy_from_slice(&4u32.to_le_bytes());
+        volume_dds[16..20].copy_from_slice(&4u32.to_le_bytes());
+        volume_dds[24..28].copy_from_slice(&64u32.to_le_bytes());
+        volume_dds[28..32].copy_from_slice(&7u32.to_le_bytes());
+        volume_dds[76..80].copy_from_slice(&32u32.to_le_bytes());
+        volume_dds[80..84].copy_from_slice(&4u32.to_le_bytes());
+        volume_dds[84..88].copy_from_slice(b"DXT1");
+        volume_dds[108..112].copy_from_slice(&0x1000u32.to_le_bytes());
+        volume_dds[112..116].copy_from_slice(&0x200000u32.to_le_bytes());
+        std::fs::write(&volume_path, &volume_dds).unwrap();
+        let volume_src = FileSource::open(&volume_path).unwrap();
+        assert_eq!(
+            validate_dds(&volume_src, 0, volume_src.len())
+                .unwrap()
+                .length,
+            volume_dds.len() as u64
+        );
+
+        let mut dds_bad = vec![0u8; 128];
+        dds_bad[..4].copy_from_slice(b"DDS ");
+        std::fs::write(&dds_path, &dds_bad).unwrap();
+        let dds_bad_src = FileSource::open(&dds_path).unwrap();
+        assert!(validate_dds(&dds_bad_src, 0, dds_bad_src.len()).is_none());
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

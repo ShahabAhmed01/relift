@@ -21,7 +21,8 @@ use crate::error::{Error, Result};
 use crate::filter::CandidateFilter;
 use crate::hash::{hash_reader, Hasher};
 use crate::safety::{
-    sanitize_filename, sanitize_relative, validate_destination, DestinationDirectory,
+    ensure_destination_directory, sanitize_filename, sanitize_relative, validate_destination_path,
+    DestinationDirectory,
 };
 use crate::session::{
     append_json_line, load_header, now_iso, save_header_to, CandidateReader, RecoveryTotals,
@@ -138,8 +139,16 @@ pub fn run_recovery(
             header.source.size, header.source.fingerprint, identity.size, identity.fingerprint
         )));
     }
-    let dest = validate_destination(&header.source, &options.dest)?;
-    let destination_root = DestinationDirectory::open(&dest)?;
+    let dest = if options.dry_run {
+        validate_destination_path(&header.source, &options.dest)?
+    } else {
+        ensure_destination_directory(&header.source, &options.dest)?
+    };
+    let destination_root = if options.dry_run {
+        None
+    } else {
+        Some(DestinationDirectory::open(&dest)?)
+    };
     let started = now_iso();
     if !options.dry_run {
         header.status = SessionStatus::Recovering;
@@ -248,7 +257,10 @@ pub fn run_recovery(
             };
             push_result(&mut summary, record);
         } else {
-            let outcome = recover_one(src, &dest, &destination_root, &candidate, options.verify);
+            let destination_root = destination_root.as_ref().ok_or_else(|| {
+                Error::Other("recovery destination was not opened for a write run".into())
+            })?;
+            let outcome = recover_one(src, &dest, destination_root, &candidate, options.verify);
             match outcome {
                 Ok(record) => {
                     summary.bytes_written += record.bytes_written;

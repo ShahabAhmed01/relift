@@ -368,9 +368,10 @@ pub fn looks_like_device(path: &Path) -> bool {
     }
 }
 
-/// Block size for source identity sampling. Each block is hashed individually,
-/// then the block hashes are combined into a Merkle-tree-like structure.
-/// This ensures that any change anywhere in the source changes the fingerprint.
+/// Block size for source identity sampling. Each sampled block is hashed
+/// individually, then the block hashes are combined into a Merkle-like digest.
+/// Small sources are fully covered; large sources are sampled, so changes in
+/// unsampled regions are not guaranteed to change the fingerprint.
 const IDENTITY_BLOCK_SIZE: u64 = 64 * 1024;
 /// Maximum number of blocks to hash for identity. Beyond this, we sample
 /// logarithmically spaced blocks to keep computation bounded.
