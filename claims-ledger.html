@@ -1,0 +1,326 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Claims Ledger - Relift Documentation</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="index.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="installation.html"><strong aria-hidden="true">2.</strong> Installation</a></li><li class="chapter-item expanded "><a href="quickstart.html"><strong aria-hidden="true">3.</strong> Quick Start</a></li><li class="chapter-item expanded "><a href="CLI.html"><strong aria-hidden="true">4.</strong> CLI Reference</a></li><li class="chapter-item expanded "><a href="GUI.html"><strong aria-hidden="true">5.</strong> GUI Usage</a></li><li class="chapter-item expanded "><a href="filesystems.html"><strong aria-hidden="true">6.</strong> Filesystem Support</a></li><li class="chapter-item expanded "><a href="formats.html"><strong aria-hidden="true">7.</strong> Supported Formats</a></li><li class="chapter-item expanded "><a href="forensic-use.html"><strong aria-hidden="true">8.</strong> Forensic Use</a></li><li class="chapter-item expanded "><a href="troubleshooting.html"><strong aria-hidden="true">9.</strong> Troubleshooting</a></li><li class="chapter-item expanded "><a href="architecture.html"><strong aria-hidden="true">10.</strong> Architecture</a></li><li class="chapter-item expanded "><a href="benchmarks.html"><strong aria-hidden="true">11.</strong> Benchmarks</a></li><li class="chapter-item expanded "><a href="threat-model.html"><strong aria-hidden="true">12.</strong> Threat Model</a></li><li class="chapter-item expanded "><a href="limitations.html"><strong aria-hidden="true">13.</strong> Limitations</a></li><li class="chapter-item expanded "><a href="claims-ledger.html" class="active"><strong aria-hidden="true">14.</strong> Claims Ledger</a></li><li class="chapter-item expanded "><a href="comparison.html"><strong aria-hidden="true">15.</strong> Comparison</a></li><li class="chapter-item expanded "><a href="FAQ.html"><strong aria-hidden="true">16.</strong> FAQ</a></li><li class="chapter-item expanded "><a href="VERIFICATION.html"><strong aria-hidden="true">17.</strong> Verification</a></li><li class="chapter-item expanded "><a href="GAP_REPORT.html"><strong aria-hidden="true">18.</strong> Gap Report</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Relift Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="relift-claims-ledger"><a class="header" href="#relift-claims-ledger">Relift Claims Ledger</a></h1>
+<p>This ledger maps every public claim about Relift to its source-code evidence and
+validation status. It exists to keep documentation honest: a claim must be
+retracted or corrected when the code or tests no longer support it.</p>
+<h2 id="evidence-levels"><a class="header" href="#evidence-levels">Evidence levels</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Level</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>fixture-validated</code></td><td>Exercised by deterministic synthetic fixtures with SHA-256 byte comparison.</td></tr>
+<tr><td><code>probe-validated</code></td><td>Detection/probe has a deterministic fixture; metadata recovery is not validated.</td></tr>
+<tr><td><code>unit-tested</code></td><td>Covered by unit tests but not end-to-end with ground-truth bytes.</td></tr>
+<tr><td><code>implemented</code></td><td>Code exists; not yet covered by tests or fixtures.</td></tr>
+<tr><td><code>not-implemented</code></td><td>No code; claimed only in documentation (must be corrected).</td></tr>
+<tr><td><code>synthetic-only</code></td><td>Validated on synthetic fixtures only; no physical media tested.</td></tr>
+</tbody></table>
+</div>
+<h2 id="safety-claims"><a class="header" href="#safety-claims">Safety claims</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
+<tr><td>S1</td><td><code>ReadOnlySource</code> exposes no write method</td><td>Trait has only <code>len</code>, <code>sector_size</code>, <code>read_at</code>, <code>identity</code>, <code>description</code>, <code>read_exact_at</code>, <code>read_vec</code></td><td>fixture-validated</td><td><code>crates/relift-core/src/source.rs</code></td><td>Yes</td></tr>
+<tr><td>S2</td><td>Source is opened read-only on all platforms</td><td><code>GENERIC_READ</code> only (Windows), <code>O_RDONLY</code> (Linux/macOS)</td><td>implemented</td><td><code>crates/relift-core/src/source.rs</code></td><td>Yes</td></tr>
+<tr><td>S3</td><td>Destination on same physical device as source is refused</td><td><code>validate_destination</code> resolves ancestry and rejects same-disk</td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
+<tr><td>S4</td><td>Output files created with <code>create_new</code> (no overwrite)</td><td><code>CapabilityOpenOptions::create_new(true)</code></td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
+<tr><td>S5</td><td>Traversal components rejected in output paths</td><td><code>sanitize_relative</code> rejects <code>..</code>, <code>.</code>, absolute, prefix</td><td>unit-tested</td><td><code>crates/relift-core/src/safety.rs</code></td><td>Yes</td></tr>
+<tr><td>S6</td><td>Recovery refuses a source whose size/fingerprint differs from session</td><td><code>run_recovery</code> compares <code>size</code> and <code>fingerprint</code></td><td>unit-tested</td><td><code>crates/relift-core/src/recover.rs</code></td><td>Yes</td></tr>
+<tr><td>S7</td><td>Scan resume refuses a changed source</td><td><code>ensure_resumable</code> compares kind, size, fingerprint, device_id</td><td>unit-tested</td><td><code>crates/relift-core/src/scan.rs</code></td><td>Yes</td></tr>
+<tr><td>S8</td><td>No telemetry or network calls</td><td>No network dependencies in Cargo workspace</td><td>implemented</td><td><code>Cargo.toml</code>, <code>Cargo.lock</code></td><td>Yes</td></tr>
+</tbody></table>
+</div>
+<h2 id="recovery-correctness-claims"><a class="header" href="#recovery-correctness-claims">Recovery correctness claims</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
+<tr><td>R1</td><td>FAT32 deleted files recovered byte-exact</td><td>End-to-end test: scan → recover → SHA-256 vs fixture</td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+<tr><td>R2</td><td>exFAT deleted files recovered byte-exact</td><td>End-to-end test: scan → recover → SHA-256 vs fixture</td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+<tr><td>R3</td><td>NTFS deleted files recovered byte-exact</td><td>End-to-end test: scan → recover → SHA-256 vs fixture</td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+<tr><td>R4</td><td>ext4 deleted files recovered byte-exact</td><td>End-to-end test: scan → recover → SHA-256 vs fixture</td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+<tr><td>R5</td><td>NTFS deleted non-resident file with reallocated clusters is downgraded to <code>Partial</code></td><td>Unit test: <code>cluster_reuse_downgrades_to_partial</code></td><td>unit-tested</td><td><code>crates/relift-core/src/fs/ntfs.rs</code></td><td>Yes</td></tr>
+<tr><td>R6</td><td>NTFS deleted non-resident file with free clusters stays <code>Likely</code></td><td>Unit test: <code>cluster_free_keeps_likely</code></td><td>unit-tested</td><td><code>crates/relift-core/src/fs/ntfs.rs</code></td><td>Yes</td></tr>
+<tr><td>R7</td><td>NTFS unavailable bitmap reports <code>unknown</code></td><td>Unit test: <code>bitmap_unavailable_reports_unknown</code></td><td>unit-tested</td><td><code>crates/relift-core/src/fs/ntfs.rs</code></td><td>Yes</td></tr>
+<tr><td>R8</td><td>Sparse file holes and unwritten extents keep byte offsets</td><td>End-to-end test: <code>recovers_ext4_fixture_bytes</code> checks <code>sparse.bin</code></td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+</tbody></table>
+</div>
+<h2 id="carving-claims"><a class="header" href="#carving-claims">Carving claims</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
+<tr><td>C1</td><td>36 registered formats, each with a structural validator</td><td><code>registered_format_count_is_stable</code> test asserts 36 unique formats</td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C2</td><td>Random data produces zero false positives</td><td>Unit tests: <code>random_bytes_rejects_new_carvers</code>, <code>random_mz_is_rejected</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C3</td><td>MPEG-TS requires &gt;=4 consecutive valid 188-byte packets</td><td>Unit test: <code>mpegts_rejects_random_sync_bytes</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C4</td><td>Valid MPEG-TS is still carved</td><td>Unit test: <code>valid_mpegts_is_carved</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C5</td><td>Chunk overlap &gt;= max signature length - 1</td><td>Unit test: <code>overlap_covers_longest_signature</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C6</td><td>Signatures spanning chunk boundaries are found</td><td>Unit test: <code>signatures_at_chunk_boundaries_are_found</code></td><td>unit-tested</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C7</td><td>ZIP64 is not separately emitted</td><td>Code comment: shares <code>PK\x03\x04</code> magic with ZIP validator</td><td>implemented</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+<tr><td>C8</td><td>Unvalidated carves are never emitted</td><td><code>validate()</code> returns <code>Option</code>; only <code>Some</code> candidates are emitted</td><td>implemented</td><td><code>crates/relift-core/src/carve.rs</code></td><td>Yes</td></tr>
+</tbody></table>
+</div>
+<h2 id="filesystem-detection-claims"><a class="header" href="#filesystem-detection-claims">Filesystem detection claims</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
+<tr><td>F1</td><td>HFS+ probe identifies 'H+' at offset 1024</td><td>Unit test: <code>probe_identifies_hfsplus</code></td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+<tr><td>F2</td><td>APFS probe identifies 'NXSB' at offset 0</td><td>Unit test: <code>probe_identifies_apfs</code></td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+<tr><td>F3</td><td>Btrfs probe identifies <code>_BHRfS_M</code></td><td>Unit test: <code>probe_identifies_btrfs</code></td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+<tr><td>F4</td><td>XFS probe identifies 'XFSB'</td><td>Unit test: <code>probe_identifies_xfs</code></td><td>fixture-validated</td><td><code>crates/relift-core/tests/end_to_end.rs</code></td><td>Yes</td></tr>
+<tr><td>F5</td><td>HFS+/APFS/Btrfs/XFS metadata recovery not implemented</td><td><code>scan_metadata</code> returns &quot;not implemented&quot; warning</td><td>implemented</td><td><code>crates/relift-core/src/fs/mod.rs</code></td><td>Yes</td></tr>
+</tbody></table>
+</div>
+<h2 id="cli-claims"><a class="header" href="#cli-claims">CLI claims</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
+<tr><td>L1</td><td>Exit codes: 0 OK, 1 RUNTIME, 2 USAGE, 3 UNSAFE, 4 MISMATCH, 5 PARTIAL</td><td>Unit tests: <code>error_exit_codes_are_stable</code>, <code>partial_recovery_exit_code_is_stable</code></td><td>unit-tested</td><td><code>crates/relift-cli/src/main.rs</code></td><td>Yes</td></tr>
+<tr><td>L2</td><td><code>--json</code> produces machine-readable output</td><td>Contract test: <code>scan_json_is_valid_and_recovery_rejects_a_changed_source</code></td><td>unit-tested</td><td><code>crates/relift-cli/tests/contract.rs</code></td><td>Yes</td></tr>
+<tr><td>L3</td><td><code>--resume</code> continues a cancelled session</td><td>Contract test: <code>scan_resume_continues_a_cancelled_session_and_rejects_a_changed_source</code></td><td>unit-tested</td><td><code>crates/relift-cli/tests/contract.rs</code></td><td>Yes</td></tr>
+<tr><td>L4</td><td><code>--dry-run</code> validates without writing</td><td>Unit test: <code>dry_run_plans_without_writing_or_mutating_the_session</code></td><td>unit-tested</td><td><code>crates/relift-core/src/recover.rs</code></td><td>Yes</td></tr>
+</tbody></table>
+</div>
+<h2 id="imaging-claims"><a class="header" href="#imaging-claims">Imaging claims</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Evidence</th><th>Level</th><th>Location</th><th>Verified</th></tr></thead><tbody>
+<tr><td>I1</td><td>Image is opened with <code>create_new</code> (existing file never overwritten)</td><td>Unit tests: <code>existing_manifest_is_never_overwritten</code>, <code>final_image_name_collision_does_not_replace_existing_file</code></td><td>unit-tested</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
+<tr><td>I2</td><td>Image SHA-256 verified by re-read</td><td>Unit test: <code>image_roundtrip_and_manifest</code></td><td>unit-tested</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
+<tr><td>I3</td><td>Imaging is a single copy pass (no mapfile resume)</td><td>Code: single <code>while at &lt; total</code> loop; no mapfile support</td><td>implemented</td><td><code>crates/relift-core/src/imaging.rs</code></td><td>Yes</td></tr>
+</tbody></table>
+</div>
+<h2 id="not-yet-implemented-documented-as-gaps"><a class="header" href="#not-yet-implemented-documented-as-gaps">Not yet implemented (documented as gaps)</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>ID</th><th>Claim</th><th>Status</th><th>Location</th></tr></thead><tbody>
+<tr><td>G1</td><td>E01/AFF4/VHD/VMDK/QCOW2/DMG container support</td><td>Not implemented; convert to raw first</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G2</td><td>Persistent imaging mapfile / multi-pass resume</td><td>Not implemented; <code>relift image</code> is single-pass</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G3</td><td>TUI (ratatui)</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G4</td><td>RAID assembly</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G5</td><td>Encryption unlock (BitLocker/LUKS/VeraCrypt/FileVault)</td><td>Not implemented</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G6</td><td>Signed releases / notarization</td><td>Not implemented; releases are unsigned</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G7</td><td>Package-manager submissions (Homebrew/winget/Scoop/AUR/Flatpak/Snap)</td><td>Not submitted; templates only</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+<tr><td>G8</td><td>Real-media validation</td><td>Not performed; synthetic fixtures only</td><td><code>docs/src/GAP_REPORT.md</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="claims-that-must-be-corrected-if-code-changes"><a class="header" href="#claims-that-must-be-corrected-if-code-changes">Claims that must be corrected if code changes</a></h2>
+<p>If any of the following change, the corresponding documentation must be updated at the same time:</p>
+<ul>
+<li>The number of registered carve formats (36): <code>registered_format_count_is_stable</code> test, <code>docs/src/formats.md</code>, <code>docs/src/support-matrix.md</code>, README, <code>llms.txt</code>, <code>llms-full.txt</code>.</li>
+<li>The test count (100): README badge and text.</li>
+<li>Filesystem support levels: <code>docs/src/support-matrix.md</code>, <code>docs/src/limitations.md</code>, README.</li>
+<li>Exit codes: <code>docs/src/CLI.md</code>, README, <code>crates/relift-cli/src/main.rs</code>.</li>
+<li>The source read-only invariant: <code>crates/relift-core/src/source.rs</code>, <code>docs/decisions/ADR-0002-read-only-invariant.md</code>.</li>
+</ul>
+<h2 id="validation-boundary"><a class="header" href="#validation-boundary">Validation boundary</a></h2>
+<p>All validation evidence above is against deterministic synthetic fixtures. No
+physical drive, deleted volume, or representative real-media recovery corpus has
+been validated. Claims about real-world recovery accuracy (precision, recall,
+F1) are <strong>not made</strong> and must not be made until a labelled ground-truth corpus
+is established (see <code>docs/GAP_REPORT.md</code>).</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="limitations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="comparison.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="limitations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="comparison.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
